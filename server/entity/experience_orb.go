@@ -1,12 +1,13 @@
 package entity
 
 import (
+	"math/rand/v2"
+	"slices"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
-	"math/rand/v2"
-	"slices"
 )
 
 // orbSplitSizes contains split sizes used for dropping experience orbs.

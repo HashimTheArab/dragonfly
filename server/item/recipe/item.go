@@ -1,9 +1,10 @@
 package recipe
 
 import (
+	"math"
+
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
-	"math"
 )
 
 // Item represents an item that can be used as either the input or output of an item. These do not

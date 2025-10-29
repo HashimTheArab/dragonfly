@@ -377,15 +377,15 @@ func (srv *Server) startListening() {
 // registered custom blocks. It allows block components to be created only once
 // at startup.
 func (srv *Server) makeBlockEntries() {
-	custom := slices.Collect(maps.Values(world.CustomBlocks()))
-	srv.customBlocks = make([]protocol.BlockEntry, len(custom))
+	custom := slices.Collect(maps.Values(srv.conf.Blocks.CustomBlocks()))
+	srv.customBlocks = make([]protocol.BlockEntry, 0, len(custom))
 
-	for i, b := range custom {
+	for _, b := range custom {
 		name, _ := b.EncodeBlock()
-		srv.customBlocks[i] = protocol.BlockEntry{
+		srv.customBlocks = append(srv.customBlocks, protocol.BlockEntry{
 			Name:       name,
-			Properties: blockinternal.Components(name, b, 10000+int32(i)),
-		}
+			Properties: blockinternal.Components(name, b, 10000+int32(len(srv.customBlocks))),
+		})
 	}
 }
 
@@ -551,6 +551,7 @@ func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Con
 		JoinMessage:    srv.conf.JoinMessage,
 		QuitMessage:    srv.conf.QuitMessage,
 		HandleStop:     srv.handleSessionClose,
+		BlockRegistry:  srv.conf.Blocks,
 	}.New(conn)
 
 	conf.Name = conn.IdentityData().DisplayName
@@ -588,6 +589,8 @@ func (srv *Server) createWorld(dim world.Dimension, nether, end **world.World) *
 			}
 			return nil
 		},
+		Biomes: srv.conf.Biomes,
+		Blocks: srv.conf.Blocks,
 	}
 	w := conf.New()
 	logger.Info("Opened dimension.", "name", w.Name())

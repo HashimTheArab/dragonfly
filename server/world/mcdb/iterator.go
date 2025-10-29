@@ -3,6 +3,7 @@ package mcdb
 import (
 	"encoding/binary"
 	"fmt"
+
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 	"github.com/df-mc/goleveldb/leveldb/iterator"
@@ -75,17 +76,17 @@ func (iter *ColumnIterator) Next() bool {
 		// multiple version keys.
 		return iter.Next()
 	}
-	iter.current, iter.err = iter.db.LoadColumn(iter.pos, iter.dim)
-	if iter.err != nil {
-		iter.err = fmt.Errorf("load chunk %v: %w", iter.pos, iter.err)
-		return false
-	}
 	iter.seen[key] = struct{}{}
 	return true
 }
 
 // Column returns the value of the current position/column pair, or nil if none.
 func (iter *ColumnIterator) Column() *chunk.Column {
+	iter.current, iter.err = iter.db.LoadColumn(iter.pos, iter.dim)
+	if iter.err != nil {
+		iter.err = fmt.Errorf("load chunk %v: %w", iter.pos, iter.err)
+		return nil
+	}
 	return iter.current
 }
 

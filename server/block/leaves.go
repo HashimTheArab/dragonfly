@@ -1,12 +1,13 @@
 package block
 
 import (
+	"math/rand/v2"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/event"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
-	"math/rand/v2"
 )
 
 // Leaves are blocks that grow as part of trees which mainly drop saplings and sticks.
@@ -100,7 +101,7 @@ func (l Leaves) BreakInfo() BreakInfo {
 	return newBreakInfo(0.2, alwaysHarvestable, func(t item.Tool) bool {
 		return t.ToolType() == item.TypeShears || t.ToolType() == item.TypeHoe
 	}, func(t item.Tool, enchantments []item.Enchantment) []item.Stack {
-		if t.ToolType() == item.TypeShears || hasSilkTouch(enchantments) {
+		if t != nil && t.ToolType() == item.TypeShears || hasSilkTouch(enchantments) {
 			return []item.Stack{item.NewStack(l, 1)}
 		}
 		var drops []item.Stack

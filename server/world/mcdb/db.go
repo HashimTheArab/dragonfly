@@ -5,6 +5,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand/v2"
+	"os"
+	"path/filepath"
+	"slices"
+	"time"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
@@ -12,11 +18,6 @@ import (
 	"github.com/df-mc/goleveldb/leveldb"
 	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
-	"math/rand/v2"
-	"os"
-	"path/filepath"
-	"slices"
-	"time"
 )
 
 // DB implements a world provider for the Minecraft world format, which
@@ -30,12 +31,20 @@ type DB struct {
 }
 
 // Open creates a new provider reading and writing from/to files under the path
-// passed using default options. If a world is present at the path, Open will
+// passed using default options. If a world is present at the path, New will
 // parse its data and initialise the world with it. If the data cannot be
 // parsed, an error is returned.
 func Open(dir string) (*DB, error) {
 	var conf Config
 	return conf.Open(dir)
+}
+
+func (db *DB) LDB() *leveldb.DB {
+	return db.ldb
+}
+
+func (db *DB) LevelDat() *leveldat.Data {
+	return db.ldat
 }
 
 // Settings returns the world.Settings of the world loaded by the DB.
@@ -57,7 +66,7 @@ type playerData struct {
 
 // LoadPlayerSpawnPosition loads the players spawn position stored in the level.dat from their UUID.
 func (db *DB) LoadPlayerSpawnPosition(id uuid.UUID) (pos cube.Pos, exists bool, err error) {
-	serverData, _, exists, err := db.loadPlayerData(id)
+	serverData, _, exists, err := db.LoadPlayerData(id)
 	if !exists || err != nil {
 		return cube.Pos{}, exists, err
 	}
@@ -68,8 +77,8 @@ func (db *DB) LoadPlayerSpawnPosition(id uuid.UUID) (pos cube.Pos, exists bool, 
 	return cube.Pos{int(x.(int32)), int(y.(int32)), int(z.(int32))}, true, nil
 }
 
-// loadPlayerData loads the data stored in a LevelDB database for a specific UUID.
-func (db *DB) loadPlayerData(id uuid.UUID) (serverData map[string]interface{}, key string, exists bool, err error) {
+// LoadPlayerData loads the data stored in a LevelDB database for a specific UUID.
+func (db *DB) LoadPlayerData(id uuid.UUID) (serverData map[string]interface{}, key string, exists bool, err error) {
 	data, err := db.ldb.Get([]byte("player_"+id.String()), nil)
 	if errors.Is(err, leveldb.ErrNotFound) {
 		return nil, "", false, nil
@@ -95,6 +104,19 @@ func (db *DB) loadPlayerData(id uuid.UUID) (serverData map[string]interface{}, k
 	return serverData, d.ServerID, true, nil
 }
 
+func (db *DB) SaveLocalPlayerData(data map[string]any) error {
+	playerDataBytes, err := nbt.MarshalEncoding(data, nbt.LittleEndian)
+	if err != nil {
+		return fmt.Errorf("save player: error encoding nbt: %w", err)
+	}
+
+	if err := db.ldb.Put([]byte(keyLocalPlayer), playerDataBytes, nil); err != nil {
+		return fmt.Errorf("save player: error Adding to db: %w", err)
+	}
+
+	return nil
+}
+
 // SavePlayerSpawnPosition saves the player spawn position passed to the levelDB database.
 func (db *DB) SavePlayerSpawnPosition(id uuid.UUID, pos cube.Pos) error {
 	_, err := db.ldb.Get([]byte("player_"+id.String()), nil)
@@ -109,7 +131,7 @@ func (db *DB) SavePlayerSpawnPosition(id uuid.UUID, pos cube.Pos) error {
 		if err := db.ldb.Put([]byte("player_"+id.String()), data, nil); err != nil {
 			return fmt.Errorf("write player data (uuid=%v): %w", id, err)
 		}
-	} else if d, k, _, err = db.loadPlayerData(id); err != nil {
+	} else if d, k, _, err = db.LoadPlayerData(id); err != nil {
 		return err
 	}
 	d["SpawnX"], d["SpawnY"], d["SpawnZ"] = int32(pos.X()), int32(pos.Y()), int32(pos.Z())
@@ -159,7 +181,7 @@ func (db *DB) column(k dbKey) (*chunk.Column, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read sub chunks: %w", err)
 	}
-	col.Chunk, err = chunk.DiskDecode(cdata, k.dim.Range())
+	col.Chunk, err = chunk.DiskDecode(db.conf.Blocks, cdata, k.dim.Range())
 	if err != nil {
 		return nil, fmt.Errorf("decode chunk data: %w", err)
 	}
@@ -314,7 +336,8 @@ func (db *DB) scheduledUpdates(k dbKey) ([]chunk.ScheduledBlockUpdate, int64, er
 	for i, tick := range m.TickList {
 		t, _ := tick["time"].(int64)
 		bl, _ := tick["blockState"].(map[string]any)
-		block, err := chunk.BlockPaletteEncoding.DecodeBlockState(bl)
+		bpe := chunk.BlockPaletteEncoding{Blocks: db.conf.Blocks}
+		block, err := bpe.DecodeBlockState(bl)
 		if err != nil {
 			db.conf.Log.Error("read scheduled updates: decode block state: " + err.Error())
 			continue
@@ -370,6 +393,22 @@ func (db *DB) storeFinalisation(batch *leveldb.Batch, k dbKey, finalisation uint
 	p := make([]byte, 4)
 	binary.LittleEndian.PutUint32(p, finalisation)
 	batch.Put(k.Sum(keyFinalisation), p)
+}
+
+func (db *DB) StoreEntities(pos world.ChunkPos, dim world.Dimension, e []chunk.Entity) error {
+	k := dbKey{pos: pos, dim: dim}
+	n := 1 + len(e)
+	batch := leveldb.MakeBatch(n)
+	db.storeEntities(batch, k, e)
+	return db.ldb.Write(batch, nil)
+}
+
+func (db *DB) StoreBlockNBTs(pos world.ChunkPos, dim world.Dimension, blockEntities []chunk.BlockEntity) error {
+	k := dbKey{pos: pos, dim: dim}
+	n := 1
+	batch := leveldb.MakeBatch(n)
+	db.storeBlockEntities(batch, k, blockEntities)
+	return db.ldb.Write(batch, nil)
 }
 
 func (db *DB) storeEntities(batch *leveldb.Batch, k dbKey, entities []chunk.Entity) {
@@ -447,10 +486,11 @@ func (db *DB) storeScheduledUpdates(batch *leveldb.Batch, k dbKey, tick int64, u
 		return
 	}
 	list := make([]map[string]any, len(updates))
+	bpe := chunk.BlockPaletteEncoding{Blocks: db.conf.Blocks}
 	for i, update := range updates {
 		list[i] = map[string]any{
 			"x": int32(update.Pos[0]), "y": int32(update.Pos[1]), "z": int32(update.Pos[2]),
-			"time": update.Tick, "blockState": chunk.BlockPaletteEncoding.EncodeBlockState(update.Block),
+			"time": update.Tick, "blockState": bpe.EncodeBlockState(update.Block),
 		}
 	}
 	b, err := nbt.MarshalEncoding(scheduledUpdates{CurrentTick: int32(tick), TickList: list}, nbt.LittleEndian)

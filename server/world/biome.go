@@ -23,38 +23,55 @@ type Biome interface {
 	EncodeBiome() int
 }
 
-// biomes holds a map of id => Biome to be used for looking up the biome by an ID. It is registered
-// to when calling RegisterBiome.
-var biomes = map[int]Biome{}
+type BiomeRegistry struct {
+	IDToBiome   map[int]Biome
+	NameToBiome map[string]Biome
+}
 
-var biomeByName = map[string]Biome{}
+var DefaultBiomes = &BiomeRegistry{
+	IDToBiome:   make(map[int]Biome),
+	NameToBiome: make(map[string]Biome),
+}
 
-// RegisterBiome registers a biome to the map so that it can be saved and loaded with the world.
-func RegisterBiome(b Biome) {
+func (br *BiomeRegistry) Clone() *BiomeRegistry {
+	br2 := &BiomeRegistry{
+		make(map[int]Biome),
+		make(map[string]Biome),
+	}
+	for id, biome := range br.IDToBiome {
+		br2.IDToBiome[id] = biome
+	}
+	for name, biome := range br.NameToBiome {
+		br2.NameToBiome[name] = biome
+	}
+	return br2
+}
+
+func (br *BiomeRegistry) Register(b Biome) {
 	id := b.EncodeBiome()
-	if _, ok := biomes[id]; ok {
+	if _, ok := br.IDToBiome[id]; ok {
 		panic("cannot register the same biome (" + b.String() + ") twice")
 	}
-	biomes[id] = b
-	biomeByName[b.String()] = b
+	br.IDToBiome[id] = b
+	br.NameToBiome[b.String()] = b
 }
 
 // BiomeByID looks up a biome by the ID and returns it if found.
-func BiomeByID(id int) (Biome, bool) {
-	e, ok := biomes[id]
+func (br *BiomeRegistry) BiomeByID(id int) (Biome, bool) {
+	e, ok := br.IDToBiome[id]
 	return e, ok
 }
 
 // BiomeByName looks up a biome by the name and returns it if found.
-func BiomeByName(name string) (Biome, bool) {
-	e, ok := biomeByName[name]
+func (br *BiomeRegistry) BiomeByName(name string) (Biome, bool) {
+	e, ok := br.NameToBiome[name]
 	return e, ok
 }
 
 // Biomes returns a slice of all registered biomes.
-func Biomes() []Biome {
-	bs := make([]Biome, 0, len(biomes))
-	for _, b := range biomes {
+func (br *BiomeRegistry) Biomes() []Biome {
+	bs := make([]Biome, 0, len(br.IDToBiome))
+	for _, b := range br.IDToBiome {
 		bs = append(bs, b)
 	}
 	return bs
@@ -62,6 +79,10 @@ func Biomes() []Biome {
 
 // ocean returns an ocean biome.
 func ocean() Biome {
-	o, _ := BiomeByID(0)
+	o, _ := DefaultBiomes.BiomeByID(0)
 	return o
+}
+
+func RegisterBiome(b Biome) {
+	DefaultBiomes.Register(b)
 }

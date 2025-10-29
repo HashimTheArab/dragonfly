@@ -1,9 +1,10 @@
 package world
 
 import (
+	"time"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/go-gl/mathgl/mgl64"
-	"time"
 )
 
 // weather implements weather related methods for World. World embeds this
@@ -187,7 +188,7 @@ func (w weather) tickLightning(tx *Tx) {
 // selected, the lightning strike will fail.
 func (w weather) strikeLightning(tx *Tx, c ChunkPos) {
 	if pos := w.lightningPosition(tx, c); tx.ThunderingAt(cube.PosFromVec3(pos)) {
-		tx.AddEntity(w.w.conf.Entities.conf.Lightning(EntitySpawnOpts{Position: pos}))
+		tx.AddEntity(w.w.conf.Entities.Config().Lightning(EntitySpawnOpts{Position: pos}))
 	}
 }
 

@@ -3,12 +3,13 @@ package nbtconv
 import (
 	"bytes"
 	"encoding/gob"
+	"time"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
 	"golang.org/x/exp/constraints"
-	"time"
 )
 
 // Bool reads a uint8 value from a map at key k and returns true if it equals 1.
@@ -175,7 +176,7 @@ func Block(m map[string]any, k string) world.Block {
 	if mk, ok := m[k].(map[string]any); ok {
 		name, _ := mk["name"].(string)
 		properties, _ := mk["states"].(map[string]any)
-		b, _ := world.BlockByName(name, properties)
+		b, _ := world.DefaultBlockRegistry.BlockByName(name, properties)
 		return b
 	}
 	return nil

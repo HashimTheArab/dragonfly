@@ -39,7 +39,7 @@ type Config struct {
 	// Resources is a slice of resource packs to use on the server. When joining
 	// the server, the player will then first be requested to download these
 	// resource packs.
-	Resources []*resource.Pack
+	Resources []resource.Pack
 	// ResourcesRequires specifies if the downloading of resource packs is
 	// required to join the server. If set to true, players will not be able to
 	// join without first downloading and applying the Resources above.
@@ -105,6 +105,9 @@ type Config struct {
 	// may be added to the Server's worlds. If no entity types are registered,
 	// Entities will be set to entity.DefaultRegistry.
 	Entities world.EntityRegistry
+
+	Biomes *world.BiomeRegistry
+	Blocks world.BlockRegistry
 }
 
 // New creates a Server using fields of conf. The Server's worlds are created
@@ -141,11 +144,17 @@ func (conf Config) New() *Server {
 	if conf.ShutdownMessage.Zero() {
 		conf.ShutdownMessage = chat.MessageServerDisconnect
 	}
-	if len(conf.Entities.Types()) == 0 {
+	if conf.Entities == nil || len(conf.Entities.Types()) == 0 {
 		conf.Entities = entity.DefaultRegistry
 	}
+	if conf.Biomes == nil {
+		conf.Biomes = world.DefaultBiomes
+	}
+	if conf.Blocks == nil {
+		conf.Blocks = world.DefaultBlockRegistry
+	}
 	if !conf.DisableResourceBuilding {
-		if pack, ok := packbuilder.BuildResourcePack(); ok {
+		if pack, ok := packbuilder.BuildResourcePack(conf.Blocks); ok {
 			conf.Resources = append(conf.Resources, pack)
 		}
 	}
@@ -167,7 +176,6 @@ func (conf Config) New() *Server {
 	}
 
 	creative_registerCreativeItems()
-	world_finaliseBlockRegistry()
 	recipe_registerVanilla()
 
 	srv.world = srv.createWorld(world.Overworld, &srv.nether, &srv.end)
@@ -283,14 +291,14 @@ func (uc UserConfig) Config(log *slog.Logger) (Config, error) {
 }
 
 // loadResources loads all resource packs found in a directory passed.
-func loadResources(dir string) ([]*resource.Pack, error) {
+func loadResources(dir string) ([]resource.Pack, error) {
 	_ = os.MkdirAll(dir, 0777)
 
 	resources, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read dir: %w", err)
 	}
-	packs := make([]*resource.Pack, len(resources))
+	packs := make([]resource.Pack, len(resources))
 	for i, entry := range resources {
 		packs[i], err = resource.ReadPath(filepath.Join(dir, entry.Name()))
 		if err != nil {

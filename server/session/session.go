@@ -99,6 +99,8 @@ type Session struct {
 	debugShapesRemove chan int
 
 	closeBackground chan struct{}
+
+	br world.BlockRegistry
 }
 
 // Conn represents a connection that packets are read from and written to by a Session. In addition, it holds some
@@ -151,6 +153,8 @@ type Config struct {
 	JoinMessage, QuitMessage chat.Translation
 
 	HandleStop func(*world.Tx, Controllable)
+
+	BlockRegistry world.BlockRegistry
 }
 
 func (conf Config) New(conn Conn) *Session {
@@ -198,7 +202,7 @@ func (conf Config) New(conn Conn) *Session {
 
 	s.registerHandlers()
 	s.sendBiomes()
-	groups, items := creativeContent()
+	groups, items := s.creativeContent()
 	s.writePacket(&packet.CreativeContent{Groups: groups, Items: items})
 	s.sendRecipes()
 	s.sendArmourTrimData()

@@ -1,11 +1,12 @@
 package item
 
 import (
+	"time"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/sound"
 	"github.com/go-gl/mathgl/mgl64"
-	"time"
 )
 
 // Hoe is a tool generally used to till dirt and grass blocks into farmland blocks for planting crops.
@@ -17,7 +18,7 @@ type Hoe struct {
 // UseOnBlock will turn a dirt or grass block into a farmland if the necessary properties are met.
 func (h Hoe) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx, _ User, ctx *UseContext) bool {
 	if b, ok := tx.Block(pos).(tillable); ok {
-		if res, ok := b.Till(); ok {
+		if res, ok := b.Till(tx, pos); ok {
 			if face == cube.FaceDown {
 				// Tilled land isn't created when the bottom face is clicked.
 				return false
@@ -39,7 +40,7 @@ func (h Hoe) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx
 type tillable interface {
 	// Till returns a block that results from tilling it. If tilling it does not have a result, the bool returned
 	// is false.
-	Till() (world.Block, bool)
+	Till(tx *world.Tx, pos cube.Pos) (world.Block, bool)
 }
 
 // MaxCount ...

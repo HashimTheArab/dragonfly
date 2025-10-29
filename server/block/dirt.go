@@ -1,6 +1,7 @@
 package block
 
 import (
+	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 )
 
@@ -19,7 +20,7 @@ func (d Dirt) SoilFor(block world.Block) bool {
 	switch block.(type) {
 	case ShortGrass, Fern, DoubleTallGrass, DeadBush:
 		return !d.Coarse
-	case Flower, DoubleFlower, NetherSprouts, PinkPetals, SugarCane:
+	case Flower, DoubleFlower, NetherSprouts, PinkPetals, SugarCane, Azalea, Sapling:
 		return true
 	}
 	return false
@@ -31,7 +32,7 @@ func (d Dirt) BreakInfo() BreakInfo {
 }
 
 // Till ...
-func (d Dirt) Till() (world.Block, bool) {
+func (d Dirt) Till(*world.World, cube.Pos) (world.Block, bool) {
 	if d.Coarse {
 		return Dirt{Coarse: false}, true
 	}

@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
@@ -22,7 +23,7 @@ func (*MobEquipmentHandler) Handle(p packet.Packet, s *Session, tx *world.Tx, c 
 		// This window ID is expected, but we don't handle it.
 		return nil
 	case protocol.WindowIDInventory:
-		return s.VerifyAndSetHeldSlot(int(pk.InventorySlot), stackToItem(pk.NewItem.Stack), c)
+		return s.VerifyAndSetHeldSlot(int(pk.InventorySlot), s.stackToItem(pk.NewItem.Stack), c)
 	default:
 		return fmt.Errorf("only main inventory should be involved in slot change, got window ID %v", pk.WindowID)
 	}

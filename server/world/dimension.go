@@ -1,8 +1,9 @@
 package world
 
 import (
-	"github.com/df-mc/dragonfly/server/block/cube"
 	"time"
+
+	"github.com/df-mc/dragonfly/server/block/cube"
 )
 
 var (
@@ -46,6 +47,11 @@ type dimensionRegistry struct {
 func newDimensionRegistry(dim map[int]Dimension) *dimensionRegistry {
 	ids := make(map[Dimension]int, len(dim))
 	for k, v := range dim {
+		if o, ok := v.(overworld); ok {
+			if o.legacy {
+				k -= 10
+			}
+		}
 		ids[v] = k
 	}
 	return &dimensionRegistry{dimensions: dim, ids: ids}
@@ -82,12 +88,20 @@ type (
 		WeatherCycle() bool
 		TimeCycle() bool
 	}
-	overworld struct{}
+
+	// overworld with 0 - 255 height
+	overworld struct{ legacy bool }
 	nether    struct{}
 	end       struct{}
 )
 
-func (overworld) Range() cube.Range                 { return cube.Range{-64, 319} }
+func (w overworld) Range() cube.Range {
+	if w.legacy {
+		return cube.Range{0, 255}
+	}
+	return cube.Range{-64, 319}
+}
+func (overworld) EncodeDimension() int              { return 0 }
 func (overworld) WaterEvaporates() bool             { return false }
 func (overworld) LavaSpreadDuration() time.Duration { return time.Second * 3 / 2 }
 func (overworld) WeatherCycle() bool                { return true }

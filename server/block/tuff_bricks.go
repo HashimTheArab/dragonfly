@@ -1,5 +1,7 @@
 package block
 
+import "image/color"
+
 // TuffBricks are a decorational variant of Tuff that can be crafted or found naturally in Trial Chambers.
 type TuffBricks struct {
 	solid
@@ -28,4 +30,8 @@ func (t TuffBricks) EncodeBlock() (string, map[string]any) {
 		return "minecraft:chiseled_tuff_bricks", nil
 	}
 	return "minecraft:tuff_bricks", nil
+}
+
+func (t TuffBricks) Color() color.RGBA {
+	return color.RGBA{}
 }

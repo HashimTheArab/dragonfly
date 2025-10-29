@@ -12,7 +12,7 @@ type DirtPath struct {
 }
 
 // Till ...
-func (p DirtPath) Till() (world.Block, bool) {
+func (p DirtPath) Till(*world.World, cube.Pos) (world.Block, bool) {
 	return Farmland{}, true
 }
 

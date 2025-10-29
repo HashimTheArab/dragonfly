@@ -1,12 +1,13 @@
 package world
 
 import (
-	"github.com/df-mc/dragonfly/server/block/cube"
-	"github.com/go-gl/mathgl/mgl64"
 	"iter"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/go-gl/mathgl/mgl64"
 )
 
 // Tx represents a synchronised transaction performed on a World. Most
@@ -89,7 +90,7 @@ func (tx *Tx) ScheduleBlockUpdate(pos cube.Pos, b Block, delay time.Duration) {
 // HighestLightBlocker gets the Y value of the highest fully light blocking
 // block at the x and z values passed in the World.
 func (tx *Tx) HighestLightBlocker(x, z int) int {
-	return tx.World().highestLightBlocker(x, z)
+	return tx.World().HighestLightBlocker(x, z)
 }
 
 // HighestBlock looks up the highest non-air block in the World at a specific x

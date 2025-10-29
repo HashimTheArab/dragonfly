@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
+
 	// The following four imports are essential for this package: They make sure this package is loaded after
 	// all these imports. This ensures that all blocks and items are registered before the creative items are
 	// registered in the init function in this package.
@@ -131,7 +132,7 @@ func itemStackFromEntry(data creativeItemEntry) (item.Stack, bool) {
 		// Item with a block, try parsing the block, then try asserting that to an item. Blocks no longer
 		// have their metadata sent, but we still need to get that metadata in order to be able to register
 		// different block states as different items.
-		if b, ok := world.BlockByName(data.Name, data.BlockProperties); ok {
+		if b, ok := world.DefaultBlockRegistry.BlockByName(data.Name, data.BlockProperties); ok {
 			if it, ok = b.(world.Item); !ok {
 				return item.Stack{}, false
 			}

@@ -1,6 +1,9 @@
 package session
 
 import (
+	"math"
+	"time"
+
 	"github.com/df-mc/dragonfly/server/entity"
 	"github.com/df-mc/dragonfly/server/entity/effect"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
@@ -10,8 +13,6 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
-	"math"
-	"time"
 )
 
 // parseEntityMetadata returns an entity metadata object with default values. It is equivalent to setting

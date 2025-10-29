@@ -55,6 +55,9 @@ type Config struct {
 	// Entities is an EntityRegistry with all Entity types registered that may
 	// be added to the World.
 	Entities EntityRegistry
+
+	Biomes *BiomeRegistry
+	Blocks BlockRegistry
 }
 
 // New creates a new World using the Config conf. The World returned will start

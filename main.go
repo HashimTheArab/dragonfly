@@ -2,12 +2,49 @@ package main
 
 import (
 	"fmt"
+	"os"
+
+	"log/slog"
+
 	"github.com/df-mc/dragonfly/server"
 	"github.com/df-mc/dragonfly/server/player/chat"
+	"github.com/df-mc/dragonfly/server/world"
+	"github.com/df-mc/dragonfly/server/world/chunk"
 	"github.com/pelletier/go-toml"
-	"log/slog"
-	"os"
+	"github.com/thomaso-mirodin/intmath/i32"
 )
+
+type debugGenerator struct{}
+
+// GenerateChunk ...
+func (debugGenerator) GenerateChunk(cp world.ChunkPos, chunk *chunk.Chunk) {
+	blockCount := chunk.BlockRegistry.BlockCount()
+	length := i32.Sqrt(int32(blockCount))
+
+	for x := uint8(0); x < 16; x++ {
+		for z := uint8(0); z < 16; z++ {
+			X := cp.X()*16 + int32(x)
+			Z := cp.Z()*16 + int32(z)
+			if X%2 == 0 || Z%2 == 0 {
+				continue
+			}
+			X /= 2
+			Z /= 2
+			if Z > length {
+				continue
+			}
+			if X > length || X < 0 {
+				continue
+			}
+			rid := (X + Z*length)
+			if rid < 0 || rid >= int32(blockCount) {
+				continue
+			}
+
+			chunk.SetBlock(x, int16(chunk.Range()[0])+1, z, 0, uint32(rid))
+		}
+	}
+}
 
 func main() {
 	slog.SetLogLoggerLevel(slog.LevelDebug)
@@ -15,6 +52,10 @@ func main() {
 	conf, err := readConfig(slog.Default())
 	if err != nil {
 		panic(err)
+	}
+
+	conf.Generator = func(dim world.Dimension) world.Generator {
+		return debugGenerator{}
 	}
 
 	srv := conf.New()

@@ -2,15 +2,16 @@ package world
 
 import (
 	"encoding/binary"
-	"github.com/df-mc/dragonfly/server/block/cube"
-	"github.com/go-gl/mathgl/mgl64"
-	"github.com/google/uuid"
 	"io"
 	"maps"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/go-gl/mathgl/mgl64"
+	"github.com/google/uuid"
 )
 
 // EntityType is the type of Entity. It specifies the name, encoded Entity
@@ -351,7 +352,13 @@ type HealingSource interface {
 
 // EntityRegistry is a mapping that EntityTypes may be registered to. It is used
 // for loading entities from disk in a World's Provider.
-type EntityRegistry struct {
+type EntityRegistry interface {
+	Config() EntityRegistryConfig
+	Lookup(name string) (EntityType, bool)
+	Types() []EntityType
+}
+
+type EntityRegistryImpl struct {
 	conf EntityRegistryConfig
 	ent  map[string]EntityType
 }
@@ -385,24 +392,24 @@ func (conf EntityRegistryConfig) New(ent []EntityType) EntityRegistry {
 		}
 		m[name] = e
 	}
-	return EntityRegistry{conf: conf, ent: m}
+	return EntityRegistryImpl{conf: conf, ent: m}
 }
 
 // Config returns the EntityRegistryConfig that was used to create the
 // EntityRegistry.
-func (reg EntityRegistry) Config() EntityRegistryConfig {
+func (reg EntityRegistryImpl) Config() EntityRegistryConfig {
 	return reg.conf
 }
 
 // Lookup looks up an EntityType by its name. If found, the EntityType is
 // returned and the bool is true. The bool is false otherwise.
-func (reg EntityRegistry) Lookup(name string) (EntityType, bool) {
+func (reg EntityRegistryImpl) Lookup(name string) (EntityType, bool) {
 	t, ok := reg.ent[name]
 	return t, ok
 }
 
 // Types returns all EntityTypes passed upon construction of the EntityRegistry.
-func (reg EntityRegistry) Types() []EntityType {
+func (reg EntityRegistryImpl) Types() []EntityType {
 	return slices.Collect(maps.Values(reg.ent))
 }
 

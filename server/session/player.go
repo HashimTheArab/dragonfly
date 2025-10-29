@@ -90,7 +90,7 @@ func (s *Session) SendRespawn(pos mgl64.Vec3, c Controllable) {
 
 // sendBiomes sends all the vanilla biomes to the session.
 func (s *Session) sendBiomes() {
-	definitions, stringList := world.BiomeDefinitions()
+	definitions, stringList := world.BiomeDefinitions(world.DefaultBiomes)
 	s.writePacket(&packet.BiomeDefinitionList{
 		BiomeDefinitions: definitions,
 		StringList:       stringList,
@@ -113,7 +113,7 @@ func (s *Session) sendRecipes() {
 				RecipeID:        uuid.New().String(),
 				Priority:        int32(i.Priority()),
 				Input:           stacksToIngredientItems(i.Input()),
-				Output:          stacksToRecipeStacks(i.Output()),
+				Output:          s.stacksToRecipeStacks(i.Output()),
 				Block:           i.Block(),
 				RecipeNetworkID: networkID,
 			})
@@ -124,12 +124,12 @@ func (s *Session) sendRecipes() {
 				Width:           int32(i.Shape().Width()),
 				Height:          int32(i.Shape().Height()),
 				Input:           stacksToIngredientItems(i.Input()),
-				Output:          stacksToRecipeStacks(i.Output()),
+				Output:          s.stacksToRecipeStacks(i.Output()),
 				Block:           i.Block(),
 				RecipeNetworkID: networkID,
 			})
 		case recipe.SmithingTransform:
-			input, output := stacksToIngredientItems(i.Input()), stacksToRecipeStacks(i.Output())
+			input, output := stacksToIngredientItems(i.Input()), s.stacksToRecipeStacks(i.Output())
 			recipes = append(recipes, &protocol.SmithingTransformRecipe{
 				RecipeID:        uuid.New().String(),
 				Base:            input[0],
@@ -151,8 +151,8 @@ func (s *Session) sendRecipes() {
 			})
 		case recipe.Furnace:
 			recipes = append(recipes, &protocol.FurnaceRecipe{
-				InputType: stackFromItem(i.Input()[0].(item.Stack)).ItemType,
-				Output:    stackFromItem(i.Output()[0]),
+				InputType: s.stackFromItem(i.Input()[0].(item.Stack)).ItemType,
+				Output:    s.stackFromItem(i.Output()[0]),
 				Block:     i.Block(),
 			})
 		case recipe.Potion:
@@ -222,7 +222,7 @@ func (s *Session) sendInv(inv *inventory.Inventory, windowID uint32) {
 		Content:  make([]protocol.ItemInstance, 0, inv.Size()),
 	}
 	for _, i := range inv.Slots() {
-		pk.Content = append(pk.Content, instanceFromItem(i))
+		pk.Content = append(pk.Content, s.instanceFromItem(i))
 	}
 	s.writePacket(pk)
 }
@@ -232,7 +232,7 @@ func (s *Session) sendItem(item item.Stack, slot int, windowID uint32) {
 	s.writePacket(&packet.InventorySlot{
 		WindowID: windowID,
 		Slot:     uint32(slot),
-		NewItem:  instanceFromItem(item),
+		NewItem:  s.instanceFromItem(item),
 	})
 }
 
@@ -639,7 +639,7 @@ func (s *Session) broadcastOffHandFunc(tx *world.Tx, c Controllable) inventory.S
 			i, _ := s.offHand.Item(0)
 			s.writePacket(&packet.InventoryContent{
 				WindowID: protocol.WindowIDOffHand,
-				Content:  []protocol.ItemInstance{instanceFromItem(i)},
+				Content:  []protocol.ItemInstance{s.instanceFromItem(i)},
 			})
 		}
 	}
@@ -682,7 +682,7 @@ func (s *Session) SendHeldSlot(slot int, c Controllable, force bool) {
 	mainHand, _ := c.HeldItems()
 	s.writePacket(&packet.MobEquipment{
 		EntityRuntimeID: selfEntityRuntimeID,
-		NewItem:         instanceFromItem(mainHand),
+		NewItem:         s.instanceFromItem(mainHand),
 		InventorySlot:   byte(slot),
 		HotBarSlot:      byte(slot),
 	})
@@ -942,14 +942,14 @@ func valueOrDefault[T comparable](v, def T) T {
 }
 
 // stackFromItem converts an item.Stack to its network ItemStack representation.
-func stackFromItem(it item.Stack) protocol.ItemStack {
+func (s *Session) stackFromItem(it item.Stack) protocol.ItemStack {
 	if it.Empty() {
 		return protocol.ItemStack{}
 	}
 
 	var blockRuntimeID uint32
 	if b, ok := it.Item().(world.Block); ok {
-		blockRuntimeID = world.BlockRuntimeID(b)
+		blockRuntimeID = s.br.BlockRuntimeID(b)
 	}
 
 	rid, meta, _ := world.ItemRuntimeID(it.Item())
@@ -967,7 +967,7 @@ func stackFromItem(it item.Stack) protocol.ItemStack {
 }
 
 // stackToItem converts a network ItemStack representation back to an item.Stack.
-func stackToItem(it protocol.ItemStack) item.Stack {
+func (s *Session) stackToItem(it protocol.ItemStack) item.Stack {
 	t, ok := world.ItemByRuntimeID(it.NetworkID, int16(it.MetadataValue))
 	if !ok {
 		t = block.Air{}
@@ -976,7 +976,7 @@ func stackToItem(it protocol.ItemStack) item.Stack {
 		// It shouldn't matter if it (for whatever reason) wasn't able to get the block runtime ID,
 		// since on the next line, we assert that the block is an item. If it didn't succeed, it'll
 		// return air anyway.
-		b, _ := world.BlockByRuntimeID(uint32(it.BlockRuntimeID))
+		b, _ := s.br.BlockByRuntimeID(uint32(it.BlockRuntimeID))
 		if t, ok = b.(world.Item); !ok {
 			t = block.Air{}
 		}
@@ -985,23 +985,23 @@ func stackToItem(it protocol.ItemStack) item.Stack {
 	if nbter, ok := t.(world.NBTer); ok && len(it.NBTData) != 0 {
 		t = nbter.DecodeNBT(it.NBTData).(world.Item)
 	}
-	s := item.NewStack(t, int(it.Count))
-	return nbtconv.Item(it.NBTData, &s)
+	st := item.NewStack(t, int(it.Count))
+	return nbtconv.Item(it.NBTData, &st)
 }
 
 // instanceFromItem converts an item.Stack to its network ItemInstance representation.
-func instanceFromItem(it item.Stack) protocol.ItemInstance {
+func (s *Session) instanceFromItem(it item.Stack) protocol.ItemInstance {
 	return protocol.ItemInstance{
 		StackNetworkID: item_id(it),
-		Stack:          stackFromItem(it),
+		Stack:          s.stackFromItem(it),
 	}
 }
 
 // stacksToRecipeStacks converts a list of item.Stacks to their protocol representation with damage stripped for recipes.
-func stacksToRecipeStacks(inputs []item.Stack) []protocol.ItemStack {
+func (s *Session) stacksToRecipeStacks(inputs []item.Stack) []protocol.ItemStack {
 	items := make([]protocol.ItemStack, 0, len(inputs))
 	for _, i := range inputs {
-		items = append(items, deleteDamage(stackFromItem(i)))
+		items = append(items, deleteDamage(s.stackFromItem(i)))
 	}
 	return items
 }
@@ -1040,13 +1040,13 @@ func stacksToIngredientItems(inputs []recipe.Item) []protocol.ItemDescriptorCoun
 }
 
 // creativeContent returns all creative groups, and creative inventory items as protocol item stacks.
-func creativeContent() ([]protocol.CreativeGroup, []protocol.CreativeItem) {
+func (s *Session) creativeContent() ([]protocol.CreativeGroup, []protocol.CreativeItem) {
 	groups := make([]protocol.CreativeGroup, 0, len(creative.Groups()))
 	for _, group := range creative.Groups() {
 		groups = append(groups, protocol.CreativeGroup{
 			Category: int32(group.Category.Uint8()),
 			Name:     group.Name,
-			Icon:     deleteDamage(stackFromItem(group.Icon)),
+			Icon:     deleteDamage(s.stackFromItem(group.Icon)),
 		})
 	}
 
@@ -1060,7 +1060,7 @@ func creativeContent() ([]protocol.CreativeGroup, []protocol.CreativeItem) {
 		}
 		it = append(it, protocol.CreativeItem{
 			CreativeItemNetworkID: uint32(index) + 1,
-			Item:                  deleteDamage(stackFromItem(i.Stack)),
+			Item:                  deleteDamage(s.stackFromItem(i.Stack)),
 			GroupIndex:            uint32(group),
 		})
 	}

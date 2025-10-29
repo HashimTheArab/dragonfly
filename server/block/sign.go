@@ -1,14 +1,15 @@
 package block
 
 import (
+	"image/color"
+	"time"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/sound"
 	"github.com/go-gl/mathgl/mgl64"
-	"image/color"
-	"time"
 )
 
 // Sign is a non-solid block that can display text on the front and back of the block.

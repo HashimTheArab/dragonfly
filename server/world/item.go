@@ -3,9 +3,11 @@ package world
 import (
 	_ "embed"
 	"fmt"
+	"image"
+
 	"github.com/df-mc/dragonfly/server/item/category"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
-	"image"
+	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
 // Item represents an item that may be added to an inventory. It has a method to encode the item to an ID and
@@ -49,6 +51,39 @@ func RegisterItem(item Item) {
 		panic(fmt.Sprintf("item name %v does not have a runtime ID", name))
 	}
 	items[h] = item
+}
+
+type serverItem struct {
+	CustomItem
+	name string
+	rid  int32
+}
+
+func (s serverItem) Name() string {
+	return s.name
+}
+
+func (s serverItem) EncodeItem() (string, int16) {
+	return s.name, 0
+}
+
+func InsertCustomItems(entries []protocol.ItemEntry) {
+	for _, ie := range entries {
+		if _, ok := itemNamesToRuntimeIDs[ie.Name]; !ok {
+			c := serverItem{name: ie.Name, rid: int32(ie.RuntimeID)}
+			customItems = append(customItems, c)
+			name, meta := c.EncodeItem()
+			items[itemHash{name: name, meta: meta}] = c
+		}
+
+		itemRuntimeIDsToNames[int32(ie.RuntimeID)] = ie.Name
+		itemNamesToRuntimeIDs[ie.Name] = int32(ie.RuntimeID)
+	}
+}
+
+func ItemRidByName(name string) (rid int32, ok bool) {
+	rid, ok = itemNamesToRuntimeIDs[name]
+	return
 }
 
 // itemHash is a combination of an item's name and metadata. It is used as a key in hash maps.

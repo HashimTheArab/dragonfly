@@ -1,13 +1,14 @@
 package block
 
 import (
+	"math"
+	"time"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/entity/effect"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
-	"math"
-	"time"
 )
 
 // Beacon is a block that projects a light beam skyward, and can provide status effects such as speed, Jump

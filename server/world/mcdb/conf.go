@@ -2,12 +2,14 @@ package mcdb
 
 import (
 	"fmt"
-	"github.com/df-mc/dragonfly/server/world/mcdb/leveldat"
-	"github.com/df-mc/goleveldb/leveldb"
-	"github.com/df-mc/goleveldb/leveldb/opt"
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"github.com/df-mc/dragonfly/server/world"
+	"github.com/df-mc/dragonfly/server/world/mcdb/leveldat"
+	"github.com/df-mc/goleveldb/leveldb"
+	"github.com/df-mc/goleveldb/leveldb/opt"
 )
 
 // Config holds the optional parameters of a DB.
@@ -18,6 +20,8 @@ type Config struct {
 	// LDBOptions holds LevelDB specific default options, such as the block size
 	// or compression used in the database.
 	LDBOptions *opt.Options
+
+	Blocks world.BlockRegistry
 }
 
 // Open creates a new DB reading and writing from/to files under the path
@@ -34,6 +38,9 @@ func (conf Config) Open(dir string) (*DB, error) {
 	}
 	if conf.LDBOptions.BlockSize == 0 {
 		conf.LDBOptions.BlockSize = 16 * opt.KiB
+	}
+	if conf.Blocks == nil {
+		conf.Blocks = world.DefaultBlockRegistry
 	}
 	_ = os.MkdirAll(filepath.Join(dir, "db"), 0777)
 

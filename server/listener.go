@@ -51,11 +51,11 @@ type listener struct {
 // Accept blocks until the next connection is established and returns it. An error is returned if the Listener was
 // closed using Close.
 func (l listener) Accept() (session.Conn, error) {
-	conn, err := l.Listener.Accept()
+	mcConn, err := l.Listener.AcceptMinecraft()
 	if err != nil {
 		return nil, err
 	}
-	return conn.(session.Conn), err
+	return mcConn, err
 }
 
 // Disconnect disconnects a connection from the Listener with a reason.

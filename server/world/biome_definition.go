@@ -17,6 +17,7 @@ var (
 //
 //lint:ignore U1000 Function is used through compiler directives.
 func finaliseBiomeRegistry() {
+	biomes := DefaultBiomes.Biomes()
 	for _, b := range biomes {
 		id := b.EncodeBiome()
 		if id > maxVanillaBiomeID {
@@ -26,7 +27,7 @@ func finaliseBiomeRegistry() {
 }
 
 // BiomeDefinitions returns the list of biome definitions along with the associated StringList.
-func BiomeDefinitions() ([]protocol.BiomeDefinition, []string) {
+func BiomeDefinitions(biomeRegistry *BiomeRegistry) ([]protocol.BiomeDefinition, []string) {
 	var (
 		internedStrings     []string
 		internedStringIndex = make(map[string]int)
@@ -42,6 +43,7 @@ func BiomeDefinitions() ([]protocol.BiomeDefinition, []string) {
 		return index
 	}
 
+	biomes := biomeRegistry.Biomes()
 	encodedBiomes := make([]protocol.BiomeDefinition, 0, len(biomes))
 	for _, b := range biomes {
 		nameIndex := intern(b.String())
