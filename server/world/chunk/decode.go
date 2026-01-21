@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/sandertv/gophertunnel/minecraft/nbt"
 )
 
 // StateToRuntimeID must hold a function to convert a name and its state properties to a runtime ID.
@@ -15,7 +16,7 @@ var StateToRuntimeID func(name string, properties map[string]any) (runtimeID uin
 // The sub chunk count passed must be that found in the LevelChunk packet.
 // NetworkDecode creates a new buffer and calls NetworkDecodeBuffer.
 // noinspection GoUnusedExportedFunction
-func NetworkDecode(air uint32, data []byte, count int, r cube.Range) (*Chunk, error) {
+func NetworkDecode(air uint32, data []byte, count int, r cube.Range) (*Chunk, []map[string]any, error) {
 	return NetworkDecodeBuffer(air, bytes.NewBuffer(data), count, r)
 }
 
@@ -23,7 +24,7 @@ func NetworkDecode(air uint32, data []byte, count int, r cube.Range) (*Chunk, er
 // returned is nil and the error non-nil.
 // The sub chunk count passed must be that found in the LevelChunk packet.
 // noinspection GoUnusedExportedFunction
-func NetworkDecodeBuffer(air uint32, buf *bytes.Buffer, count int, r cube.Range) (*Chunk, error) {
+func NetworkDecodeBuffer(air uint32, buf *bytes.Buffer, count int, r cube.Range) (*Chunk, []map[string]any, error) {
 	var (
 		c   = New(air, r)
 		err error
@@ -32,21 +33,21 @@ func NetworkDecodeBuffer(air uint32, buf *bytes.Buffer, count int, r cube.Range)
 		index := uint8(i)
 		c.sub[index], err = decodeSubChunk(buf, c, &index, NetworkEncoding)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	var last *PalettedStorage
 	for i := 0; i < len(c.sub); i++ {
 		b, err := decodePalettedStorage(buf, NetworkEncoding, BiomePaletteEncoding)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if b == nil {
 			// b == nil means this paletted storage had the flag pointing to the previous one. It basically means we should
 			// inherit whatever palette we decoded last.
 			if i == 0 {
 				// This should never happen and there is no way to handle this.
-				return nil, fmt.Errorf("first biome storage pointed to previous one")
+				return nil, nil, fmt.Errorf("first biome storage pointed to previous one")
 			}
 			b = last
 		} else {
@@ -54,7 +55,33 @@ func NetworkDecodeBuffer(air uint32, buf *bytes.Buffer, count int, r cube.Range)
 		}
 		c.biomes[i] = b
 	}
-	return c, nil
+	borderBlocks, _ := buf.ReadByte()
+	buf.Next(int(borderBlocks))
+
+	blockNBTs, err := DecodeBlockNBTs(buf)
+	if err != nil {
+		return nil, nil, err
+	}
+	return c, blockNBTs, nil
+}
+
+func DecodeBlockNBTs(buf *bytes.Buffer) ([]map[string]any, error) {
+	var blockNBTs []map[string]any
+	if buf.Len() > 0 {
+		dec := nbt.NewDecoderWithEncoding(buf, nbt.NetworkLittleEndian)
+		dec.AllowZero = true
+		for buf.Len() > 0 {
+			blockNBT := make(map[string]any, 0)
+			err := dec.Decode(&blockNBT)
+			if err != nil {
+				return nil, err
+			}
+			if len(blockNBT) > 0 {
+				blockNBTs = append(blockNBTs, blockNBT)
+			}
+		}
+	}
+	return blockNBTs, nil
 }
 
 // DiskDecode decodes the data from a SerialisedData object into a chunk and returns it. If the data was
