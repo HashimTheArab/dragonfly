@@ -108,6 +108,9 @@ func (l *Loader) Load(tx *Tx, n int) {
 			if len(l.loadQueue) > 1 {
 				// Rotate this chunk to the end so we can schedule prefetches for additional chunks this tick.
 				l.loadQueue = append(l.loadQueue[1:], pos)
+			} else {
+				// No other work can be done until this chunk finishes loading.
+				break
 			}
 			continue
 		}
