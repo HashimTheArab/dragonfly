@@ -100,7 +100,17 @@ func (l *Loader) Load(tx *Tx, n int) {
 		}
 
 		pos := l.loadQueue[0]
-		c := tx.w.chunk(pos)
+		c, ok := tx.w.chunks[pos]
+		if !ok {
+			// Don't block the world transaction goroutine on provider IO and lighting. Instead, schedule a background
+			// prefetch and retry this chunk later.
+			tx.w.requestPrefetch(pos)
+			if len(l.loadQueue) > 1 {
+				// Rotate this chunk to the end so we can schedule prefetches for additional chunks this tick.
+				l.loadQueue = append(l.loadQueue[1:], pos)
+			}
+			continue
+		}
 
 		l.viewer.ViewChunk(pos, l.w.Dimension(), c.BlockEntities, c.Chunk)
 		l.w.addViewer(tx, c, l)

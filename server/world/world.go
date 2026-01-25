@@ -52,6 +52,15 @@ type World struct {
 	// from this map after some time of not being used.
 	chunks map[ChunkPos]*Column
 
+	// prefetchRequests is used to asynchronously load columns (and precompute per-chunk lighting) outside of
+	// the world transaction goroutine, so that loading chunks for viewers doesn't block the entire world.
+	prefetchRequests chan ChunkPos
+	prefetchMu       sync.Mutex
+	prefetchInFlight map[ChunkPos]struct{}
+	// genMu serialises chunk generation for async prefetch. Generation is not expected to be performance critical
+	// for most servers using pre-made maps, but this ensures generator implementations aren't invoked concurrently.
+	genMu sync.Mutex
+
 	// entities holds a map of entities currently loaded and the last ChunkPos
 	// that the Entity was in. These are tracked so that a call to RemoveEntity
 	// can find the correct Entity.

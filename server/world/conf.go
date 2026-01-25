@@ -96,6 +96,8 @@ func (conf Config) New() *World {
 		entities:         make(map[*EntityHandle]ChunkPos),
 		viewers:          make(map[*Loader]Viewer),
 		chunks:           make(map[ChunkPos]*Column),
+		prefetchRequests: make(chan ChunkPos, 512),
+		prefetchInFlight: make(map[ChunkPos]struct{}),
 		queueClosing:     make(chan struct{}),
 		closing:          make(chan struct{}),
 		queue:            make(chan transaction, 128),
@@ -116,6 +118,7 @@ func (conf Config) New() *World {
 	go t.tickLoop(w)
 	go w.autoSave()
 	go w.handleTransactions()
+	go w.prefetchLoop()
 
 	<-w.Exec(t.tick)
 	return w
