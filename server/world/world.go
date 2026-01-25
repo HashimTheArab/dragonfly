@@ -1050,6 +1050,7 @@ func (w *World) close() {
 	})
 
 	close(w.closing)
+	close(w.prefetchRequests)
 	w.running.Wait()
 
 	close(w.queueClosing)
@@ -1181,7 +1182,9 @@ func (w *World) loadChunk(pos ChunkPos) (*Column, error) {
 		col := newColumn(chunk.New(airRID, w.Range()))
 		w.chunks[pos] = col
 
+		w.genMu.Lock()
 		w.conf.Generator.GenerateChunk(pos, col.Chunk)
+		w.genMu.Unlock()
 		return col, nil
 	default:
 		return newColumn(chunk.New(airRID, w.Range())), err

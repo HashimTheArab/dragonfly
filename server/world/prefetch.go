@@ -14,17 +14,20 @@ const prefetchWorkers = 4
 func (w *World) prefetchLoop() {
 	for range prefetchWorkers {
 		go func() {
+			defer w.running.Done()
 			for {
 				select {
-				case pos := <-w.prefetchRequests:
-					w.prefetchOne(pos)
 				case <-w.closing:
 					return
+				case pos, ok := <-w.prefetchRequests:
+					if !ok {
+						return
+					}
+					w.prefetchOne(pos)
 				}
 			}
 		}()
 	}
-	<-w.closing
 }
 
 // prefetchOne performs provider IO and per-chunk light filling, then schedules installation in the world. It must
@@ -49,9 +52,18 @@ func (w *World) prefetchOne(pos ChunkPos) {
 	// Fill light for this chunk only. Cross-chunk spreading is done when installing the chunk (transaction-owned).
 	chunk.LightArea([]*chunk.Chunk{c.Chunk}, int(pos[0]), int(pos[1])).Fill()
 
-	_ = w.Exec(func(tx *Tx) {
-		w.installPrefetched(pos, c, err)
-	})
+	select {
+	case <-w.closing:
+		// World is closing: don't enqueue a transaction that might never run.
+		w.prefetchMu.Lock()
+		delete(w.prefetchInFlight, pos)
+		w.prefetchMu.Unlock()
+		return
+	default:
+		_ = w.Exec(func(tx *Tx) {
+			w.installPrefetched(pos, c, err)
+		})
+	}
 }
 
 func (w *World) installPrefetched(pos ChunkPos, c *chunk.Column, loadErr error) {

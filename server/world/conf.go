@@ -112,7 +112,7 @@ func (conf Config) New() *World {
 	w.handler.Store(&h)
 
 	w.queueing.Add(1)
-	w.running.Add(2)
+	w.running.Add(2 + prefetchWorkers)
 
 	t := ticker{interval: time.Second / 20}
 	go t.tickLoop(w)
