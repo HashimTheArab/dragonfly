@@ -33,6 +33,7 @@ type World struct {
 	queue        chan transaction
 	queueClosing chan struct{}
 	queueing     sync.WaitGroup
+	metrics      worldMetrics
 
 	// advance is a bool that specifies if this World should advance the current
 	// tick, time and weather saved in the Settings struct held by the World.
@@ -51,6 +52,10 @@ type World struct {
 	// chunks holds a cache of chunks currently loaded. These chunks are cleared
 	// from this map after some time of not being used.
 	chunks map[ChunkPos]*Column
+
+	// saveRequests is a background persistence queue used to keep slow provider writes off the transaction goroutine
+	// for chunk unloads.
+	saveRequests chan saveRequest
 
 	// prefetchRequests is used to asynchronously load columns (and precompute per-chunk lighting) outside of
 	// the world transaction goroutine, so that loading chunks for viewers doesn't block the entire world.
@@ -124,13 +129,17 @@ type ExecFunc func(tx *Tx)
 // that is closed once the transaction is complete.
 func (w *World) Exec(f ExecFunc) <-chan struct{} {
 	c := make(chan struct{})
+	start := time.Now()
 	w.queue <- normalTransaction{c: c, f: f}
+	w.metrics.observeExecEnqueue(time.Since(start), len(w.queue))
 	return c
 }
 
 func (w *World) weakExec(invalid *atomic.Bool, cond *sync.Cond, f ExecFunc) <-chan bool {
 	c := make(chan bool, 1)
+	start := time.Now()
 	w.queue <- weakTransaction{c: c, f: f, invalid: invalid, cond: cond}
+	w.metrics.observeExecEnqueue(time.Since(start), len(w.queue))
 	return c
 }
 
@@ -1010,9 +1019,7 @@ func (w *World) save(f func(*Tx, ChunkPos, *Column)) ExecFunc {
 func (w *World) saveChunk(_ *Tx, pos ChunkPos, c *Column) {
 	if !w.conf.ReadOnly && c.modified {
 		c.Compact()
-		if err := w.conf.Provider.StoreColumn(pos, w.conf.Dim, w.columnTo(c, pos)); err != nil {
-			w.conf.Log.Error("save chunk: "+err.Error(), "X", pos[0], "Z", pos[1])
-		}
+		w.submitSyncColumnSave(pos, w.columnTo(c, pos))
 	}
 }
 
@@ -1021,6 +1028,23 @@ func (w *World) saveChunk(_ *Tx, pos ChunkPos, c *Column) {
 // in it are closed.
 func (w *World) closeChunk(tx *Tx, pos ChunkPos, c *Column) {
 	w.saveChunk(tx, pos, c)
+	w.scheduledUpdates.removeChunk(pos)
+	// Note: We close c.Entities here because some entities may remove
+	// themselves from the world in their Close method, which can lead to
+	// unexpected conditions.
+	for _, e := range slices.Clone(c.Entities) {
+		_ = e.mustEntity(tx).Close()
+	}
+	clear(c.Entities)
+	delete(w.chunks, pos)
+}
+
+// closeChunkAsync persists a chunk snapshot asynchronously and unloads it from memory.
+func (w *World) closeChunkAsync(tx *Tx, pos ChunkPos, c *Column) {
+	if !w.conf.ReadOnly && c.modified {
+		c.Compact()
+		w.submitAsyncColumnSave(pos, w.columnTo(c, pos))
+	}
 	w.scheduledUpdates.removeChunk(pos)
 	// Note: We close c.Entities here because some entities may remove
 	// themselves from the world in their Close method, which can lead to
@@ -1050,7 +1074,6 @@ func (w *World) close() {
 	})
 
 	close(w.closing)
-	close(w.prefetchRequests)
 	w.running.Wait()
 
 	close(w.queueClosing)
@@ -1255,7 +1278,7 @@ func (w *World) autoSave() {
 func (w *World) closeUnusedChunks(tx *Tx) {
 	for pos, c := range w.chunks {
 		if len(c.viewers) == 0 {
-			w.closeChunk(tx, pos, c)
+			w.closeChunkAsync(tx, pos, c)
 		}
 	}
 }

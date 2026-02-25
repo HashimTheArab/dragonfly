@@ -96,6 +96,7 @@ func (conf Config) New() *World {
 		entities:         make(map[*EntityHandle]ChunkPos),
 		viewers:          make(map[*Loader]Viewer),
 		chunks:           make(map[ChunkPos]*Column),
+		saveRequests:     make(chan saveRequest, 512),
 		prefetchRequests: make(chan ChunkPos, 512),
 		prefetchInFlight: make(map[ChunkPos]struct{}),
 		queueClosing:     make(chan struct{}),
@@ -112,13 +113,15 @@ func (conf Config) New() *World {
 	w.handler.Store(&h)
 
 	w.queueing.Add(1)
-	w.running.Add(2 + prefetchWorkers)
+	w.running.Add(3 + prefetchWorkers + saveWorkers)
 
 	t := ticker{interval: time.Second / 20}
 	go t.tickLoop(w)
 	go w.autoSave()
 	go w.handleTransactions()
 	go w.prefetchLoop()
+	go w.saveLoop()
+	go w.metricsLoop()
 
 	<-w.Exec(t.tick)
 	return w

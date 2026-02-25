@@ -110,5 +110,15 @@ func (w *World) requestPrefetch(pos ChunkPos) {
 	select {
 	case w.prefetchRequests <- pos:
 	case <-w.closing:
+		w.prefetchMu.Lock()
+		delete(w.prefetchInFlight, pos)
+		w.prefetchMu.Unlock()
+	default:
+		// Keep the transaction path non-blocking under load. If the queue is saturated, clear in-flight so we can
+		// retry this position later.
+		w.prefetchMu.Lock()
+		delete(w.prefetchInFlight, pos)
+		w.prefetchMu.Unlock()
+		w.metrics.observePrefetchDropped()
 	}
 }

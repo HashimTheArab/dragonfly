@@ -302,7 +302,9 @@ type normalTransaction struct {
 // ntx.c.
 func (ntx normalTransaction) Run(w *World) {
 	tx := &Tx{w: w}
+	start := time.Now()
 	ntx.f(tx)
+	w.metrics.observeTx(time.Since(start))
 	tx.close()
 	close(ntx.c)
 }
@@ -323,7 +325,9 @@ func (wtx weakTransaction) Run(w *World) {
 	valid := !wtx.invalid.Load()
 	if valid {
 		tx := &Tx{w: w}
+		start := time.Now()
 		wtx.f(tx)
+		w.metrics.observeTx(time.Since(start))
 		tx.close()
 	}
 	// We have to acquire a lock on wtx.cond.L here to make sure cond.Wait()
