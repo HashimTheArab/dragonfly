@@ -72,6 +72,12 @@ func (w *World) installPrefetched(pos ChunkPos, c *chunk.Column, loadErr error) 
 	delete(w.prefetchInFlight, pos)
 	w.prefetchMu.Unlock()
 
+	if loadErr != nil && !errors.Is(loadErr, leveldb.ErrNotFound) {
+		// Keep errored loads out of the chunk cache so later accesses can retry the provider.
+		w.conf.Log.Error("load chunk: "+loadErr.Error(), "X", pos[0], "Z", pos[1])
+		return
+	}
+
 	if _, ok := w.chunks[pos]; ok {
 		// Already loaded by some other path.
 		return
@@ -86,10 +92,6 @@ func (w *World) installPrefetched(pos ChunkPos, c *chunk.Column, loadErr error) 
 
 	// Spreading light requires neighbouring chunks and must happen with transaction-owned access to chunks.
 	w.calculateLight(pos)
-
-	if loadErr != nil && !errors.Is(loadErr, leveldb.ErrNotFound) {
-		w.conf.Log.Error("load chunk: "+loadErr.Error(), "X", pos[0], "Z", pos[1])
-	}
 }
 
 // requestPrefetch schedules an asynchronous load of the chunk at pos if it isn't already loaded or in-flight.
