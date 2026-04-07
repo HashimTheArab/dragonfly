@@ -483,6 +483,11 @@ func (s *Session) ViewParticle(pos mgl64.Vec3, p world.Particle) {
 			EventType: packet.LevelEventParticleLegacyEvent | 88,
 			Position:  vec64To32(pos),
 		})
+	case particle.WindExplosion:
+		s.writePacket(&packet.LevelEvent{
+			EventType: packet.LevelEventParticlesWindExplosion,
+			Position:  vec64To32(pos),
+		})
 	}
 }
 
@@ -652,6 +657,8 @@ func (s *Session) playSound(pos mgl64.Vec3, t world.Sound, disableRelative bool)
 		case sound.Dream():
 			pk.SoundType = packet.SoundEventGoatCall7
 		}
+	case sound.WindChargeBurst:
+		pk.SoundType = packet.SoundEventWindChargeBurst
 	case sound.FireExtinguish:
 		pk.SoundType = packet.SoundEventExtinguishFire
 	case sound.Ignite:
@@ -715,6 +722,10 @@ func (s *Session) playSound(pos mgl64.Vec3, t world.Sound, disableRelative bool)
 		pk.SoundType = packet.SoundEventBarrelClose
 	case sound.BarrelOpen:
 		pk.SoundType = packet.SoundEventBarrelOpen
+	case sound.ShulkerBoxClose:
+		pk.SoundType = packet.SoundEventShulkerBoxClosed
+	case sound.ShulkerBoxOpen:
+		pk.SoundType = packet.SoundEventShulkerBoxOpen
 	case sound.BlockBreaking:
 		pk.SoundType, pk.ExtraData = packet.SoundEventHit, int32(world.BlockRuntimeID(so.Block))
 	case sound.ItemBreak:
@@ -1090,7 +1101,7 @@ func (s *Session) OpenBlockContainer(pos cube.Pos, tx *world.Tx) {
 	if s.containerOpened.Load() && *s.openedPos.Load() == pos {
 		return
 	}
-	s.closeCurrentContainer(tx)
+	s.closeCurrentContainer(tx, false)
 
 	b := tx.Block(pos)
 	if container, ok := b.(block.Container); ok {
@@ -1169,6 +1180,7 @@ func (s *Session) openNormalContainer(b block.Container, pos cube.Pos, tx *world
 		containerType = protocol.ContainerTypeHopper
 	}
 
+	s.openedContainerID.Store(uint32(containerType))
 	s.writePacket(&packet.ContainerOpen{
 		WindowID:                nextID,
 		ContainerType:           containerType,
@@ -1310,13 +1322,23 @@ func (s *Session) nextWindowID() byte {
 
 // closeWindow closes the container window currently opened. If no window is open, closeWindow will do
 // nothing.
-func (s *Session) closeWindow() {
+func (s *Session) closeWindow(clientRequested bool) bool {
 	if !s.containerOpened.CompareAndSwap(true, false) {
-		return
+		return false
 	}
+	containerType := byte(s.openedContainerID.Load())
+	windowID := byte(s.openedWindowID.Load())
+
 	s.openedContainerID.Store(0)
 	s.openedWindow.Store(inventory.New(1, nil))
-	s.writePacket(&packet.ContainerClose{WindowID: byte(s.openedWindowID.Load())})
+	if !clientRequested {
+		s.writePacket(&packet.ContainerClose{
+			WindowID:      windowID,
+			ContainerType: containerType,
+			ServerSide:    true,
+		})
+	}
+	return true
 }
 
 // entityRuntimeID returns the runtime ID of the entity passed.

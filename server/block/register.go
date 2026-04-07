@@ -93,6 +93,7 @@ func init() {
 	world.RegisterBlock(Sand{})
 	world.RegisterBlock(SeaLantern{})
 	world.RegisterBlock(Shroomlight{})
+	world.RegisterBlock(Slime{})
 	world.RegisterBlock(SmithingTable{})
 	world.RegisterBlock(SmoothBasalt{})
 	world.RegisterBlock(Snow{})
@@ -189,6 +190,7 @@ func init() {
 	registerAll(allSandstones())
 	registerAll(allSeaPickles())
 	registerAll(allSigns())
+	registerAll(allShulkerBoxes())
 	registerAll(allSkulls())
 	registerAll(allSlabs())
 	registerAll(allSmokers())
@@ -199,6 +201,7 @@ func init() {
 	registerAll(allStoneBricks())
 	registerAll(allStonecutters())
 	registerAll(allSugarCane())
+	registerAll(allSweetBerryBushes())
 	registerAll(allTorches())
 	registerAll(allTrapdoors())
 	registerAll(allVines())
@@ -346,7 +349,10 @@ func init() {
 	world.RegisterItem(Sand{})
 	world.RegisterItem(SeaLantern{})
 	world.RegisterItem(SeaPickle{})
+	world.RegisterItem(baseShulkerBoxItem{})
+	world.RegisterItem(ShulkerBox{})
 	world.RegisterItem(Shroomlight{})
+	world.RegisterItem(Slime{})
 	world.RegisterItem(SmithingTable{})
 	world.RegisterItem(Smoker{})
 	world.RegisterItem(SmoothBasalt{})
@@ -356,6 +362,7 @@ func init() {
 	world.RegisterItem(Sponge{Wet: true})
 	world.RegisterItem(Sponge{})
 	world.RegisterItem(SporeBlossom{})
+	world.RegisterItem(SweetBerries{})
 	world.RegisterItem(Stonecutter{})
 	world.RegisterItem(Stone{Smooth: true})
 	world.RegisterItem(Stone{})
@@ -402,6 +409,7 @@ func init() {
 		world.RegisterItem(ConcretePowder{Colour: c})
 		world.RegisterItem(Concrete{Colour: c})
 		world.RegisterItem(GlazedTerracotta{Colour: c})
+		world.RegisterItem(ShulkerBox{Dyed: true, Colour: c})
 		world.RegisterItem(StainedGlassPane{Colour: c})
 		world.RegisterItem(StainedGlass{Colour: c})
 		world.RegisterItem(StainedTerracotta{Colour: c})
@@ -409,7 +417,8 @@ func init() {
 	}
 	for _, w := range WoodTypes() {
 		if w != WarpedWood() && w != CrimsonWood() {
-			world.RegisterItem(Leaves{Wood: w, Persistent: true})
+			t, _ := w.Leaves()
+			world.RegisterItem(Leaves{Type: t, Persistent: true})
 		}
 		world.RegisterItem(Log{Wood: w, Stripped: true})
 		world.RegisterItem(Log{Wood: w})
@@ -422,6 +431,8 @@ func init() {
 		world.RegisterItem(Wood{Wood: w, Stripped: true})
 		world.RegisterItem(Wood{Wood: w})
 	}
+	world.RegisterItem(Leaves{Type: AzaleaLeaves(), Persistent: true})
+	world.RegisterItem(Leaves{Type: FloweringAzaleaLeaves(), Persistent: true})
 	for _, ore := range OreTypes() {
 		world.RegisterItem(CoalOre{Type: ore})
 		world.RegisterItem(CopperOre{Type: ore})

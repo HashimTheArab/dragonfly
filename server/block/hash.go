@@ -161,9 +161,11 @@ const (
 	hashSeaPickle
 	hashShortGrass
 	hashShroomlight
+	hashShulkerBox
 	hashSign
 	hashSkull
 	hashSlab
+	hashSlime
 	hashSmithingTable
 	hashSmoker
 	hashSmoothBasalt
@@ -180,6 +182,7 @@ const (
 	hashStoneBricks
 	hashStonecutter
 	hashSugarCane
+	hashSweetBerryBush
 	hashTNT
 	hashTerracotta
 	hashTorch
@@ -624,7 +627,7 @@ func (l Lava) Hash() (uint64, uint64) {
 }
 
 func (l Leaves) Hash() (uint64, uint64) {
-	return hashLeaves, uint64(l.Wood.Uint8()) | uint64(boolByte(l.Persistent))<<4 | uint64(boolByte(l.ShouldUpdate))<<5
+	return hashLeaves, uint64(l.Type.Uint8()) | uint64(boolByte(l.Persistent))<<4 | uint64(boolByte(l.ShouldUpdate))<<5
 }
 
 func (l Lectern) Hash() (uint64, uint64) {
@@ -831,6 +834,10 @@ func (Shroomlight) Hash() (uint64, uint64) {
 	return hashShroomlight, 0
 }
 
+func (s ShulkerBox) Hash() (uint64, uint64) {
+	return hashShulkerBox, uint64(boolByte(s.Dyed)) | uint64(s.Colour.Uint8())<<1
+}
+
 func (s Sign) Hash() (uint64, uint64) {
 	return hashSign, uint64(s.Wood.Uint8()) | uint64(s.Attach.Uint8())<<4
 }
@@ -841,6 +848,10 @@ func (s Skull) Hash() (uint64, uint64) {
 
 func (s Slab) Hash() (uint64, uint64) {
 	return hashSlab, world.BlockHash(s.Block) | uint64(boolByte(s.Top))<<32 | uint64(boolByte(s.Double))<<33
+}
+
+func (Slime) Hash() (uint64, uint64) {
+	return hashSlime, 0
 }
 
 func (SmithingTable) Hash() (uint64, uint64) {
@@ -905,6 +916,10 @@ func (s Stonecutter) Hash() (uint64, uint64) {
 
 func (c SugarCane) Hash() (uint64, uint64) {
 	return hashSugarCane, uint64(c.Age)
+}
+
+func (s SweetBerryBush) Hash() (uint64, uint64) {
+	return hashSweetBerryBush, uint64(s.Age)
 }
 
 func (TNT) Hash() (uint64, uint64) {
