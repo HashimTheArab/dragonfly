@@ -125,7 +125,8 @@ func redstoneDoorPowerState(pos cube.Pos, top bool, tx *world.Tx) (redstonePower
 	if top {
 		pos = pos.Side(cube.FaceDown)
 	}
-	return redstonePowerStateKey{w: tx.World(), pos: pos}, redstonePowerMask(pos, cube.HorizontalFaces(), tx) | redstonePowerMask(pos.Side(cube.FaceUp), cube.HorizontalFaces(), tx)<<4
+	faces := cube.Faces()
+	return redstonePowerStateKey{w: tx.World(), pos: pos}, redstonePowerMask(pos, faces, tx) | redstonePowerMask(pos.Side(cube.FaceUp), faces, tx)<<len(faces)
 }
 
 // redstonePowerState returns the key and current power mask for a one-block mechanism.

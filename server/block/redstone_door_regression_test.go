@@ -125,6 +125,48 @@ func TestCopperDoorAcceptsHorizontalRedstonePowerOnEitherHalf(t *testing.T) {
 	})
 }
 
+func TestWoodDoorAcceptsVerticalRedstonePower(t *testing.T) {
+	tests := []struct {
+		name     string
+		powerPos func(bottomPos, topPos cube.Pos) cube.Pos
+	}{
+		{
+			name: "above top half",
+			powerPos: func(_, topPos cube.Pos) cube.Pos {
+				return topPos.Side(cube.FaceUp)
+			},
+		},
+		{
+			name: "below bottom half",
+			powerPos: func(bottomPos, _ cube.Pos) cube.Pos {
+				return bottomPos.Side(cube.FaceDown)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testRedstoneTx(t, func(tx *world.Tx) error {
+				bottomPos := cube.Pos{0, 1, 0}
+				topPos := bottomPos.Side(cube.FaceUp)
+				door := WoodDoor{Wood: OakWood(), Facing: cube.North}
+
+				tx.SetBlock(bottomPos, door, nil)
+				tx.SetBlock(topPos, WoodDoor{Wood: OakWood(), Facing: cube.North, Top: true}, nil)
+				tx.SetBlock(tt.powerPos(bottomPos, topPos), RedstoneBlock{}, nil)
+
+				door.RedstoneUpdate(bottomPos, tx)
+				if bottom := tx.Block(bottomPos).(WoodDoor); !bottom.Open {
+					return fmt.Errorf("wooden door did not open from redstone power %s", tt.name)
+				}
+				if top := tx.Block(topPos).(WoodDoor); !top.Open {
+					return fmt.Errorf("wooden door top half did not mirror open state from redstone power %s", tt.name)
+				}
+				return nil
+			})
+		})
+	}
+}
+
 func TestWoodTrapdoorRedstonePowerChangesRespectManualToggle(t *testing.T) {
 	testRedstoneTx(t, func(tx *world.Tx) error {
 		pos := cube.Pos{0, 1, 0}
