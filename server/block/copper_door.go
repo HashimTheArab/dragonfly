@@ -96,6 +96,26 @@ func (d CopperDoor) NeighbourUpdateTick(pos, changedNeighbour cube.Pos, tx *worl
 	}
 }
 
+// RedstoneUpdate ...
+func (d CopperDoor) RedstoneUpdate(pos cube.Pos, tx *world.Tx) {
+	d.checkRedstonePower(pos, tx)
+}
+
+// checkRedstonePower checks if the door should open or close based on redstone power.
+func (d CopperDoor) checkRedstonePower(pos cube.Pos, tx *world.Tx) {
+	key, mask := redstoneDoorPowerState(pos, d.Top, tx)
+	open, changed := redstoneOpenFromPowerChange(key, mask, d.Open)
+	if !changed {
+		return
+	}
+	d.activate(pos, tx, open)
+}
+
+// otherHalfPos returns the position of the matching top or bottom half of the door.
+func (d CopperDoor) otherHalfPos(pos cube.Pos) cube.Pos {
+	return pos.Side(cube.Face(boolByte(!d.Top)))
+}
+
 // UseOnBlock handles the directional placing of doors
 func (d CopperDoor) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx, user item.User, ctx *item.UseContext) bool {
 	if face != cube.FaceUp {
@@ -129,14 +149,26 @@ func (d CopperDoor) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *w
 	place(tx, pos, d, user, ctx)
 	place(tx, pos.Side(cube.FaceUp), CopperDoor{Oxidation: d.Oxidation, Waxed: d.Waxed, Facing: d.Facing, Top: true, Right: d.Right}, user, ctx)
 	ctx.CountSub = 1
-	return placed(ctx)
+
+	if placed(ctx) {
+		d.checkRedstonePower(pos, tx)
+		return true
+	}
+	return false
 }
 
 func (d CopperDoor) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, _ item.User, _ *item.UseContext) bool {
-	d.Open = !d.Open
+	d.activate(pos, tx, !d.Open)
+	key, mask := redstoneDoorPowerState(pos, d.Top, tx)
+	setRedstonePowerState(key, mask)
+	return true
+}
+
+func (d CopperDoor) activate(pos cube.Pos, tx *world.Tx, open bool) {
+	d.Open = open
 	tx.SetBlock(pos, d, nil)
 
-	otherPos := pos.Side(cube.Face(boolByte(!d.Top)))
+	otherPos := d.otherHalfPos(pos)
 	other := tx.Block(otherPos)
 	if door, ok := other.(CopperDoor); ok {
 		door.Open = d.Open
@@ -144,10 +176,9 @@ func (d CopperDoor) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, _ item.Use
 	}
 	if d.Open {
 		tx.PlaySound(pos.Vec3Centre(), sound.DoorOpen{Block: d})
-		return true
+		return
 	}
 	tx.PlaySound(pos.Vec3Centre(), sound.DoorClose{Block: d})
-	return true
 }
 
 func (d CopperDoor) RandomTick(pos cube.Pos, tx *world.Tx, r *rand.Rand) {
@@ -158,7 +189,10 @@ func (d CopperDoor) RandomTick(pos cube.Pos, tx *world.Tx, r *rand.Rand) {
 func (d CopperDoor) BreakInfo() BreakInfo {
 	return newBreakInfo(3, func(t item.Tool) bool {
 		return t.ToolType() == item.TypePickaxe && t.HarvestLevel() >= item.ToolTierStone.HarvestLevel
-	}, pickaxeEffective, oneOf(d))
+	}, pickaxeEffective, oneOf(d)).withBreakHandler(func(pos cube.Pos, tx *world.Tx, _ item.User) {
+		key, _ := redstoneDoorPowerState(pos, d.Top, tx)
+		clearRedstonePowerState(key)
+	})
 }
 
 // SideClosed ...

@@ -2,6 +2,7 @@ package block
 
 import (
 	"slices"
+	"sync"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/block/model"
@@ -107,6 +108,75 @@ func updateRedstone(pos cube.Pos, tx *world.Tx) {
 func updateDirectionalRedstone(pos cube.Pos, tx *world.Tx, face cube.Face) {
 	updateAroundRedstone(pos, tx)
 	updateAroundRedstone(pos.Side(face), tx, face.Opposite())
+}
+
+type redstonePowerStateKey struct {
+	w   *world.World
+	pos cube.Pos
+}
+
+var (
+	redstonePowerStatesMu sync.Mutex
+	redstonePowerStates   = map[redstonePowerStateKey]uint64{}
+)
+
+// redstoneDoorPowerState returns the key and current power mask for a two-block door.
+func redstoneDoorPowerState(pos cube.Pos, top bool, tx *world.Tx) (redstonePowerStateKey, uint64) {
+	if top {
+		pos = pos.Side(cube.FaceDown)
+	}
+	return redstonePowerStateKey{w: tx.World(), pos: pos}, redstonePowerMask(pos, cube.HorizontalFaces(), tx) | redstonePowerMask(pos.Side(cube.FaceUp), cube.HorizontalFaces(), tx)<<4
+}
+
+// redstonePowerState returns the key and current power mask for a one-block mechanism.
+func redstonePowerState(pos cube.Pos, faces []cube.Face, tx *world.Tx) (redstonePowerStateKey, uint64) {
+	return redstonePowerStateKey{w: tx.World(), pos: pos}, redstonePowerMask(pos, faces, tx)
+}
+
+// setRedstonePowerState records the current redstone power mask for a mechanism.
+func setRedstonePowerState(key redstonePowerStateKey, mask uint64) {
+	redstonePowerStatesMu.Lock()
+	defer redstonePowerStatesMu.Unlock()
+
+	if mask == 0 {
+		delete(redstonePowerStates, key)
+		return
+	}
+	redstonePowerStates[key] = mask
+}
+
+// redstoneOpenFromPowerChange reports the open state a mechanism should move to after its power mask changed.
+func redstoneOpenFromPowerChange(key redstonePowerStateKey, mask uint64, open bool) (bool, bool) {
+	redstonePowerStatesMu.Lock()
+	defer redstonePowerStatesMu.Unlock()
+
+	previous, ok := redstonePowerStates[key]
+	if (!ok && mask == 0) || (ok && previous == mask) {
+		return false, false
+	}
+	if mask == 0 {
+		delete(redstonePowerStates, key)
+	} else {
+		redstonePowerStates[key] = mask
+	}
+	powered := mask != 0
+	return powered, powered != open
+}
+
+// clearRedstonePowerState clears tracked redstone power for a mechanism.
+func clearRedstonePowerState(key redstonePowerStateKey) {
+	setRedstonePowerState(key, 0)
+}
+
+// redstonePowerMask returns a bit mask of the faces currently receiving redstone power.
+func redstonePowerMask(pos cube.Pos, faces []cube.Face, tx *world.Tx) (mask uint64) {
+	for i, face := range faces {
+		adjacentPos := pos.Side(face)
+		if tx.RedstonePower(adjacentPos, face, true) > 0 {
+			mask |= 1 << i
+		}
+	}
+	return mask
 }
 
 // identifyNeighbours identifies the neighbouring positions of a given node, determines their types, and links them into

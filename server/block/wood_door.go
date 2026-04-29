@@ -72,30 +72,13 @@ func (d WoodDoor) RedstoneUpdate(pos cube.Pos, tx *world.Tx) {
 
 // checkRedstonePower checks if the door should open or close based on redstone power.
 func (d WoodDoor) checkRedstonePower(pos cube.Pos, tx *world.Tx) {
-	powered := d.powered(pos, tx)
-	if powered == d.Open {
+	key, mask := redstoneDoorPowerState(pos, d.Top, tx)
+	open, changed := redstoneOpenFromPowerChange(key, mask, d.Open)
+	if !changed {
 		return
 	}
 
-	d.activate(pos, tx, powered)
-}
-
-// Powered checks if the door is receiving redstone power from any adjacent block.
-func (d WoodDoor) powered(pos cube.Pos, tx *world.Tx) bool {
-	for _, face := range cube.HorizontalFaces() {
-		adjacentPos := pos.Side(face)
-		if tx.RedstonePower(adjacentPos, face, true) > 0 {
-			return true
-		}
-	}
-	otherPos := d.otherHalfPos(pos)
-	for _, face := range cube.HorizontalFaces() {
-		adjacentPos := otherPos.Side(face)
-		if tx.RedstonePower(adjacentPos, face, true) > 0 {
-			return true
-		}
-	}
-	return false
+	d.activate(pos, tx, open)
 }
 
 // otherHalfPos returns the position of the matching top or bottom half of the door.
@@ -165,12 +148,17 @@ func (d WoodDoor) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *wor
 // Activate ...
 func (d WoodDoor) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, _ item.User, _ *item.UseContext) bool {
 	d.activate(pos, tx, !d.Open)
+	key, mask := redstoneDoorPowerState(pos, d.Top, tx)
+	setRedstonePowerState(key, mask)
 	return true
 }
 
 // BreakInfo ...
 func (d WoodDoor) BreakInfo() BreakInfo {
-	return newBreakInfo(3, alwaysHarvestable, axeEffective, oneOf(d))
+	return newBreakInfo(3, alwaysHarvestable, axeEffective, oneOf(d)).withBreakHandler(func(pos cube.Pos, tx *world.Tx, _ item.User) {
+		key, _ := redstoneDoorPowerState(pos, d.Top, tx)
+		clearRedstonePowerState(key)
+	})
 }
 
 // SideClosed ...

@@ -1,14 +1,15 @@
 package block
 
 import (
+	"math"
+	"time"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/sound"
 	"github.com/go-gl/mathgl/mgl64"
-	"math"
-	"time"
 )
 
 // WoodTrapdoor is a block that can be used as an openable 1x1 barrier.
@@ -52,24 +53,52 @@ func (t WoodTrapdoor) UseOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.Ve
 	t.Top = (clickPos.Y() > 0.5 && face != cube.FaceUp) || face == cube.FaceDown
 
 	place(tx, pos, t, user, ctx)
-	return placed(ctx)
+	if placed(ctx) {
+		t.checkRedstonePower(pos, tx)
+		return true
+	}
+	return false
+}
+
+// RedstoneUpdate ...
+func (t WoodTrapdoor) RedstoneUpdate(pos cube.Pos, tx *world.Tx) {
+	t.checkRedstonePower(pos, tx)
+}
+
+// checkRedstonePower checks if the trapdoor should open or close based on redstone power changes.
+func (t WoodTrapdoor) checkRedstonePower(pos cube.Pos, tx *world.Tx) {
+	key, mask := redstonePowerState(pos, cube.Faces(), tx)
+	open, changed := redstoneOpenFromPowerChange(key, mask, t.Open)
+	if !changed {
+		return
+	}
+	t.activate(pos, tx, open)
 }
 
 // Activate ...
 func (t WoodTrapdoor) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, _ item.User, _ *item.UseContext) bool {
-	t.Open = !t.Open
+	t.activate(pos, tx, !t.Open)
+	key, mask := redstonePowerState(pos, cube.Faces(), tx)
+	setRedstonePowerState(key, mask)
+	return true
+}
+
+func (t WoodTrapdoor) activate(pos cube.Pos, tx *world.Tx, open bool) {
+	t.Open = open
 	tx.SetBlock(pos, t, nil)
 	if t.Open {
 		tx.PlaySound(pos.Vec3Centre(), sound.TrapdoorOpen{Block: t})
-		return true
+		return
 	}
 	tx.PlaySound(pos.Vec3Centre(), sound.TrapdoorClose{Block: t})
-	return true
 }
 
 // BreakInfo ...
 func (t WoodTrapdoor) BreakInfo() BreakInfo {
-	return newBreakInfo(3, alwaysHarvestable, axeEffective, oneOf(t))
+	return newBreakInfo(3, alwaysHarvestable, axeEffective, oneOf(t)).withBreakHandler(func(pos cube.Pos, tx *world.Tx, _ item.User) {
+		key, _ := redstonePowerState(pos, cube.Faces(), tx)
+		clearRedstonePowerState(key)
+	})
 }
 
 // FuelInfo ...

@@ -46,7 +46,11 @@ func (t CopperTrapdoor) UseOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.
 	t.Top = (clickPos.Y() > 0.5 && face != cube.FaceUp) || face == cube.FaceDown
 
 	place(tx, pos, t, user, ctx)
-	return placed(ctx)
+	if placed(ctx) {
+		t.checkRedstonePower(pos, tx)
+		return true
+	}
+	return false
 }
 
 // Wax waxes the copper trapdoor to stop it from oxidising further.
@@ -82,15 +86,36 @@ func (t CopperTrapdoor) WithOxidationLevel(o OxidationType) Oxidisable {
 	return t
 }
 
+// RedstoneUpdate ...
+func (t CopperTrapdoor) RedstoneUpdate(pos cube.Pos, tx *world.Tx) {
+	t.checkRedstonePower(pos, tx)
+}
+
+// checkRedstonePower checks if the trapdoor should open or close based on redstone power changes.
+func (t CopperTrapdoor) checkRedstonePower(pos cube.Pos, tx *world.Tx) {
+	key, mask := redstonePowerState(pos, cube.Faces(), tx)
+	open, changed := redstoneOpenFromPowerChange(key, mask, t.Open)
+	if !changed {
+		return
+	}
+	t.activate(pos, tx, open)
+}
+
 func (t CopperTrapdoor) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, _ item.User, _ *item.UseContext) bool {
-	t.Open = !t.Open
+	t.activate(pos, tx, !t.Open)
+	key, mask := redstonePowerState(pos, cube.Faces(), tx)
+	setRedstonePowerState(key, mask)
+	return true
+}
+
+func (t CopperTrapdoor) activate(pos cube.Pos, tx *world.Tx, open bool) {
+	t.Open = open
 	tx.SetBlock(pos, t, nil)
 	if t.Open {
 		tx.PlaySound(pos.Vec3Centre(), sound.TrapdoorOpen{Block: t})
-		return true
+		return
 	}
 	tx.PlaySound(pos.Vec3Centre(), sound.TrapdoorClose{Block: t})
-	return true
 }
 
 func (t CopperTrapdoor) RandomTick(pos cube.Pos, tx *world.Tx, r *rand.Rand) {
@@ -101,7 +126,10 @@ func (t CopperTrapdoor) RandomTick(pos cube.Pos, tx *world.Tx, r *rand.Rand) {
 func (t CopperTrapdoor) BreakInfo() BreakInfo {
 	return newBreakInfo(3, func(t item.Tool) bool {
 		return t.ToolType() == item.TypePickaxe && t.HarvestLevel() >= item.ToolTierStone.HarvestLevel
-	}, pickaxeEffective, oneOf(t))
+	}, pickaxeEffective, oneOf(t)).withBreakHandler(func(pos cube.Pos, tx *world.Tx, _ item.User) {
+		key, _ := redstonePowerState(pos, cube.Faces(), tx)
+		clearRedstonePowerState(key)
+	})
 }
 
 // SideClosed ...
