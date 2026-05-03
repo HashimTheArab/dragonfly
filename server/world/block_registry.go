@@ -7,99 +7,12 @@ import (
 	"math/bits"
 	"slices"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/brentp/intintmap"
 	"github.com/df-mc/dragonfly/server/world/chunk"
-	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/segmentio/fasthash/fnv1"
-	"github.com/zaataylor/cartesian/cartesian"
 )
-
-func splitNamespace(identifier string) (ns, name string) {
-	parts := strings.Split(identifier, ":")
-	return parts[0], parts[len(parts)-1]
-}
-
-var traitLookup = map[string][]any{
-	"minecraft:facing_direction": {
-		"north", "east", "south", "west", "down", "up",
-	},
-	"minecraft:cardinal_direction": {
-		"north", "east", "south", "west",
-	},
-	"minecraft:vertical_half": {
-		"top", "bottom",
-	},
-	"minecraft:block_face": {
-		"north", "east", "south", "west", "down", "up",
-	},
-}
-
-// AddCustomBlocks registers each non-vanilla block entry's permutations as block states on the
-// DefaultBlockRegistry so they can be resolved during chunk encoding/decoding.
-func AddCustomBlocks(entries []protocol.BlockEntry) error {
-	for _, entry := range entries {
-		ns, _ := splitNamespace(entry.Name)
-		if ns == "minecraft" {
-			continue
-		}
-
-		var propertyNames []string
-		var propertyValues []any
-
-		props, ok := entry.Properties["properties"].([]any)
-		if ok {
-			for _, v := range props {
-				v := v.(map[string]any)
-				name := v["name"].(string)
-				enum := v["enum"]
-				propertyNames = append(propertyNames, name)
-				propertyValues = append(propertyValues, enum)
-			}
-		}
-
-		traits, ok := entry.Properties["traits"].([]any)
-		if ok {
-			for _, trait := range traits {
-				trait := trait.(map[string]any)
-				enabledStates := trait["enabled_states"].(map[string]any)
-				for k, enabled := range enabledStates {
-					if !strings.ContainsRune(k, ':') {
-						k = "minecraft:" + k
-					}
-					if enabled.(uint8) == 0 {
-						continue
-					}
-					v, ok := traitLookup[k]
-					if !ok {
-						return fmt.Errorf("unresolved trait %s", k)
-					}
-
-					propertyNames = append(propertyNames, k)
-					propertyValues = append(propertyValues, v)
-				}
-			}
-		}
-
-		permutations := cartesian.NewCartesianProduct(propertyValues).Values()
-
-		for _, values := range permutations {
-			m := make(map[string]any)
-			for i, value := range values {
-				name := propertyNames[i]
-				m[name] = value
-			}
-			DefaultBlockRegistry.RegisterBlockState(BlockState{
-				Name:       entry.Name,
-				Properties: m,
-			})
-		}
-	}
-
-	return nil
-}
 
 // DefaultBlockRegistry is the default (vanilla) block registry used by Dragonfly when no custom registry is provided.
 //
@@ -317,18 +230,63 @@ func (br *BasicBlockRegistry) Clone() *BasicBlockRegistry {
 	br2.blockInfos = append([]blockInfo(nil), br.blockInfos...)
 
 	if br.finalized {
-		br2.hashes = intintmap.New(len(br.blocks), 0.999)
-		for rid, b := range br2.blocks {
-			if _, hash := b.Hash(); hash == math.MaxUint64 {
-				continue
-			}
-			br2.hashes.Put(int64(br2.BlockHash(b)), int64(rid))
-		}
+		br2.rebuildBlockHashesLocked()
 		br2.networkhashToRids = make(map[uint32]uint32, len(br.networkhashToRids))
 		maps.Copy(br2.networkhashToRids, br.networkhashToRids)
 	}
 
 	return br2
+}
+
+func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) ([]byte, error) {
+	br.mu.Lock()
+	defer br.mu.Unlock()
+
+	h := stateHash{name: s.Name, properties: hashProperties(s.Properties)}
+	if _, ok := br.stateRuntimeIDs[h]; ok {
+		return scratch, nil
+	}
+	if _, ok := br.blockProperties[s.Name]; !ok {
+		br.blockProperties[s.Name] = s.Properties
+	}
+
+	rid := uint32(len(br.blocks))
+	br.blocks = append(br.blocks, unknownBlock{BlockState: s})
+	br.stateRuntimeIDs[h] = rid
+	if !br.finalized {
+		return scratch, nil
+	}
+
+	if bits.Len64(uint64(len(br.blocks))) != br.bitSize {
+		br.bitSize = bits.Len64(uint64(len(br.blocks)))
+		br.rebuildBlockHashesLocked()
+	}
+	br.blockInfos = append(br.blockInfos, defaultUnknownBlockInfo())
+
+	var netHash uint32
+	netHash, scratch = networkBlockHash(s.Name, s.Properties, scratch)
+	if other, ok := br.networkhashToRids[netHash]; ok {
+		otherName, otherProperties := br.blocks[other].EncodeBlock()
+		return scratch, fmt.Errorf("network block hash collision for (%s %+v) and (%s %+v)", s.Name, s.Properties, otherName, otherProperties)
+	}
+	br.networkhashToRids[netHash] = rid
+	return scratch, nil
+}
+
+func (br *BasicBlockRegistry) rebuildBlockHashesLocked() {
+	br.hashes = intintmap.New(len(br.blocks), 0.999)
+	for rid, b := range br.blocks {
+		if _, hash := b.Hash(); hash == math.MaxUint64 {
+			continue
+		}
+		br.hashes.Put(int64(br.BlockHash(b)), int64(rid))
+	}
+}
+
+func defaultUnknownBlockInfo() blockInfo {
+	var info blockInfo
+	info.setLightFilter(15)
+	return info
 }
 
 // NewBlockRegistry returns a mutable registry seeded with all vanilla block states and block implementations.
@@ -448,9 +406,8 @@ func (br *BasicBlockRegistry) Finalize() {
 		}
 		br.stateRuntimeIDs[h] = rid
 
-		var info blockInfo
+		info := defaultUnknownBlockInfo()
 		// Default to fully opaque. Blocks that implement lightDiffuser may override this (e.g., air -> 0, leaves -> 1-14).
-		info.setLightFilter(15)
 		if diffuser, ok := b.(lightDiffuser); ok {
 			info.setLightFilter(diffuser.LightDiffusionLevel())
 		}
