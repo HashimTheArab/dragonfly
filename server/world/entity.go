@@ -350,6 +350,28 @@ type HealingSource interface {
 	HealingSource()
 }
 
+// HurtResult describes the outcome of a call to Hurt on a living entity.
+type HurtResult uint8
+
+const (
+	// HurtDamaged indicates the entity took damage from the call.
+	HurtDamaged HurtResult = iota
+	// HurtImmune indicates the call landed but no damage was applied because
+	// the entity was immune. Examples include attack immunity,
+	// fire resistance, player gamemodes that disallow damage, and other.
+	HurtImmune
+	// HurtCancelled indicates the hurt event was cancelled by gameplay
+	// logic, for example by a player Handler. No damage was applied and
+	// no attacker-side side effects should follow.
+	HurtCancelled
+)
+
+// Damaged reports whether the entity took damage.
+func (r HurtResult) Damaged() bool { return r == HurtDamaged }
+
+// Cancelled reports whether the hurt event was cancelled by gameplay logic.
+func (r HurtResult) Cancelled() bool { return r == HurtCancelled }
+
 // EntityRegistry is a mapping that EntityTypes may be registered to. It is used
 // for loading entities from disk in a World's Provider.
 type EntityRegistry struct {

@@ -577,11 +577,11 @@ func (p *Player) fall(distance float64) {
 // health that the player currently has, the player is killed and will have to
 // respawn.
 // If the damage passed is negative, Hurt will not do anything. Hurt returns the
-// final damage dealt to the Player and if the Player was vulnerable to this
-// kind of damage.
-func (p *Player) Hurt(dmg float64, src world.DamageSource) (float64, bool) {
+// final damage dealt to the Player and a world.HurtResult describing the
+// outcome of the call.
+func (p *Player) Hurt(dmg float64, src world.DamageSource) (float64, world.HurtResult) {
 	if _, ok := p.Effect(effect.FireResistance); (ok && src.Fire()) || p.Dead() || !p.GameMode().AllowsTakingDamage() || dmg < 0 {
-		return 0, false
+		return 0, world.HurtImmune
 	}
 	totalDamage := p.FinalDamageFrom(dmg, src)
 	damageLeft := totalDamage
@@ -589,14 +589,14 @@ func (p *Player) Hurt(dmg float64, src world.DamageSource) (float64, bool) {
 	immune := time.Now().Before(p.immuneUntil)
 	if immune {
 		if damageLeft = damageLeft - p.lastDamage; damageLeft <= 0 {
-			return 0, false
+			return 0, world.HurtImmune
 		}
 	}
 
 	immunity := time.Second / 2
 	ctx := event.C(p)
 	if p.Handler().HandleHurt(ctx, &damageLeft, immune, &immunity, src); ctx.Cancelled() {
-		return 0, false
+		return 0, world.HurtCancelled
 	}
 	p.setAttackImmunity(immunity, totalDamage)
 
@@ -610,11 +610,11 @@ func (p *Player) Hurt(dmg float64, src world.DamageSource) (float64, bool) {
 		if _, ok := offHand.Item().(item.Totem); ok {
 			p.applyTotemEffects()
 			p.SetHeldItems(hand, offHand.Grow(-1))
-			return 0, false
+			return 0, world.HurtImmune
 		} else if _, ok := hand.Item().(item.Totem); ok {
 			p.applyTotemEffects()
 			p.SetHeldItems(hand.Grow(-1), offHand)
-			return 0, false
+			return 0, world.HurtImmune
 		}
 	}
 
@@ -652,7 +652,7 @@ func (p *Player) Hurt(dmg float64, src world.DamageSource) (float64, bool) {
 	if p.Dead() {
 		p.kill(src)
 	}
-	return totalDamage, true
+	return totalDamage, world.HurtDamaged
 }
 
 // applyTotemEffects is an unexported function that is used to handle totem effects.
@@ -1801,15 +1801,21 @@ func (p *Player) AttackEntity(e world.Entity) bool {
 		dmg *= 1.5
 	}
 
-	n, vulnerable := living.Hurt(dmg, entity.AttackDamageSource{Attacker: p})
+	n, result := living.Hurt(dmg, entity.AttackDamageSource{Attacker: p})
 	i, left := p.HeldItems()
 
-	if durable, ok := i.Item().(item.Durable); ok {
-		p.SetHeldItems(p.damageItem(i, durable.DurabilityInfo().AttackDurability), left)
+	// Weapon durability is consumed on any attack that reaches a living target,
+	// including when the target is immune to damage such as creative-mode.
+	// Attacker-side side effects such as weapon durability consumption should
+	// not run if the hurt event was cancelled.
+	if !result.Cancelled() {
+		if durable, ok := i.Item().(item.Durable); ok {
+			p.SetHeldItems(p.damageItem(i, durable.DurabilityInfo().AttackDurability), left)
+		}
 	}
 
 	p.tx.PlaySound(entity.EyePosition(e), sound.Attack{Damage: !mgl64.FloatEqual(n, 0)})
-	if !vulnerable {
+	if !result.Damaged() {
 		return true
 	}
 	if critical {
