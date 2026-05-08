@@ -1500,8 +1500,10 @@ func (p *Player) UseItem() {
 		if !p.canRelease() {
 			return
 		}
-		p.usingSince, p.usingItem = time.Now(), true
-		p.updateState()
+		if !p.usingItem {
+			p.usingSince, p.usingItem = time.Now(), true
+			p.updateState()
+		}
 	}
 	switch usable := it.(type) {
 	case item.Chargeable:

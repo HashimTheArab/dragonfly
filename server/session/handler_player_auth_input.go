@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/go-gl/mathgl/mgl64"
@@ -146,6 +147,12 @@ func (h PlayerAuthInputHandler) handleInputFlags(flags protocol.Bitset, s *Sessi
 	}
 	if flags.Load(packet.InputFlagStopFlying) {
 		c.StopFlying()
+	}
+	if c.UsingItem() && !flags.Load(packet.InputFlagStartUsingItem) {
+		held, _ := c.HeldItems()
+		if _, ok := held.Item().(item.Releasable); ok {
+			c.ReleaseItem()
+		}
 	}
 }
 
