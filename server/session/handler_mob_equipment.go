@@ -22,7 +22,11 @@ func (*MobEquipmentHandler) Handle(p packet.Packet, s *Session, tx *world.Tx, c 
 		// This window ID is expected, but we don't handle it.
 		return nil
 	case protocol.WindowIDInventory:
-		return s.VerifyAndSetHeldSlot(int(pk.InventorySlot), s.itemFromDescriptor(pk.NewItem), c)
+		it, err := s.itemFromDescriptor(pk.NewItem)
+		if err != nil {
+			return fmt.Errorf("decode mob equipment item: %w", err)
+		}
+		return s.VerifyAndSetHeldSlot(int(pk.InventorySlot), it, c)
 	default:
 		return fmt.Errorf("only main inventory should be involved in slot change, got window ID %v", pk.WindowID)
 	}

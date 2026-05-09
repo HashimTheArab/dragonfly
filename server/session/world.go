@@ -121,7 +121,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 			s.writePacket(&packet.AddItemActor{
 				EntityUniqueID:  int64(runtimeID),
 				EntityRuntimeID: runtimeID,
-				Item:            instanceFromItem(s.br, v.Behaviour().(*entity.ItemBehaviour).Item()),
+				Item:            s.descriptorFromItem(v.Behaviour().(*entity.ItemBehaviour).Item()),
 				Position:        vec64To32(v.Position()),
 				Velocity:        vec64To32(v.Velocity()),
 				EntityMetadata:  metadata,
@@ -316,10 +316,10 @@ func (s *Session) ViewEntityArmour(e world.Entity) {
 	// Show the entity's armour
 	s.writePacket(&packet.MobArmourEquipment{
 		EntityRuntimeID: runtimeID,
-		Helmet:          instanceFromItem(s.br, inv.Helmet()),
-		Chestplate:      instanceFromItem(s.br, inv.Chestplate()),
-		Leggings:        instanceFromItem(s.br, inv.Leggings()),
-		Boots:           instanceFromItem(s.br, inv.Boots()),
+		Helmet:          s.descriptorFromItem(inv.Helmet()),
+		Chestplate:      s.descriptorFromItem(inv.Chestplate()),
+		Leggings:        s.descriptorFromItem(inv.Leggings()),
+		Boots:           s.descriptorFromItem(inv.Boots()),
 	})
 }
 

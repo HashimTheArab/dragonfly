@@ -57,22 +57,30 @@ func (h *InventoryTransactionHandler) Handle(p packet.Packet, s *Session, tx *wo
 		h.resendInventories(s)
 		return
 	case *protocol.UseItemOnEntityTransactionData:
-		if err = s.VerifyAndSetHeldSlot(int(data.HotBarSlot), stackToItem(s.br, data.HeldItem.Stack), c); err != nil {
+		if err = h.verifyHeldSlot(s, data.HotBarSlot, data.HeldItem, c); err != nil {
 			return
 		}
 		return h.handleUseItemOnEntityTransaction(data, s, tx, c)
 	case *protocol.UseItemTransactionData:
-		if err = s.VerifyAndSetHeldSlot(int(data.HotBarSlot), stackToItem(s.br, data.HeldItem.Stack), c); err != nil {
+		if err = h.verifyHeldSlot(s, data.HotBarSlot, data.HeldItem, c); err != nil {
 			return
 		}
 		return h.handleUseItemTransaction(data, s, c)
 	case *protocol.ReleaseItemTransactionData:
-		if err = s.VerifyAndSetHeldSlot(int(data.HotBarSlot), stackToItem(s.br, data.HeldItem.Stack), c); err != nil {
+		if err = h.verifyHeldSlot(s, data.HotBarSlot, data.HeldItem, c); err != nil {
 			return
 		}
 		return h.handleReleaseItemTransaction(c)
 	}
 	return fmt.Errorf("unhandled inventory transaction type %T", pk.TransactionData)
+}
+
+func (h *InventoryTransactionHandler) verifyHeldSlot(s *Session, hotBarSlot int32, heldItem protocol.NetworkItemStackDescriptor, c Controllable) error {
+	held, err := s.itemFromDescriptor(heldItem)
+	if err != nil {
+		return fmt.Errorf("decode held item: %w", err)
+	}
+	return s.VerifyAndSetHeldSlot(int(hotBarSlot), held, c)
 }
 
 // resendInventories resends all inventories of the player.
@@ -97,12 +105,24 @@ func (h *InventoryTransactionHandler) handleNormalTransaction(pk *packet.Invento
 	for _, action := range pk.Actions {
 		switch {
 		case action.SourceType == protocol.InventoryActionSourceWorld && action.InventorySlot == 0:
-			if old := stackToItem(s.br, action.OldItem.Stack); !old.Empty() {
+			old, err := s.itemFromDescriptor(action.OldItem)
+			if err != nil {
+				return fmt.Errorf("decode old dropped item: %w", err)
+			}
+			if !old.Empty() {
 				return fmt.Errorf("unexpected non-empty old item in transaction action: %#v", action.OldItem)
 			}
-			count = int(action.NewItem.Stack.Count)
+			dropped, err := s.itemFromDescriptor(action.NewItem)
+			if err != nil {
+				return fmt.Errorf("decode new dropped item: %w", err)
+			}
+			count = dropped.Count()
 		case action.SourceType == protocol.InventoryActionSourceContainer && action.WindowID == protocol.WindowIDInventory:
-			if expected = stackToItem(s.br, action.OldItem.Stack); expected.Empty() {
+			var err error
+			if expected, err = s.itemFromDescriptor(action.OldItem); err != nil {
+				return fmt.Errorf("decode expected inventory item: %w", err)
+			}
+			if expected.Empty() {
 				return fmt.Errorf("unexpected empty old item in transaction action: %#v", action.OldItem)
 			}
 			slot = int(action.InventorySlot)

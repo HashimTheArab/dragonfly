@@ -43,8 +43,27 @@ func TestSessionItemDescriptorHelpersRoundTripEmptyStack(t *testing.T) {
 		t.Fatalf("empty stack descriptor = %#v, want zero descriptor", desc)
 	}
 
-	out := s.itemFromDescriptor(desc)
+	out, err := s.itemFromDescriptor(desc)
+	if err != nil {
+		t.Fatalf("empty descriptor decode returned error: %v", err)
+	}
 	if !out.Empty() {
 		t.Fatalf("empty descriptor decoded to %#v, want empty stack", out)
+	}
+}
+
+func TestSessionItemFromDescriptorReturnsErrorForMalformedUserData(t *testing.T) {
+	s := &Session{
+		conn: descriptorTestConn{shieldID: 512},
+		br:   world.DefaultBlockRegistry,
+	}
+
+	_, err := s.itemFromDescriptor(protocol.NetworkItemStackDescriptor{
+		NetworkID:      42,
+		Count:          1,
+		UserDataBuffer: string([]byte{0xff}),
+	})
+	if err == nil {
+		t.Fatal("expected malformed descriptor user data to return an error")
 	}
 }

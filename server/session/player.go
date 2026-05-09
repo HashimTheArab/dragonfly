@@ -226,10 +226,10 @@ func (s *Session) sendArmourTrimData() {
 func (s *Session) sendInv(inv *inventory.Inventory, windowID uint32) {
 	pk := &packet.InventoryContent{
 		WindowID: windowID,
-		Content:  make([]protocol.ItemInstance, 0, inv.Size()),
+		Content:  make([]protocol.NetworkItemStackDescriptor, 0, inv.Size()),
 	}
 	for _, i := range inv.Slots() {
-		pk.Content = append(pk.Content, instanceFromItem(s.br, i))
+		pk.Content = append(pk.Content, s.descriptorFromItem(i))
 	}
 	s.writePacket(pk)
 }
@@ -647,7 +647,7 @@ func (s *Session) broadcastOffHandFunc(tx *world.Tx, c Controllable) inventory.S
 			i, _ := s.offHand.Item(0)
 			s.writePacket(&packet.InventoryContent{
 				WindowID: protocol.WindowIDOffHand,
-				Content:  []protocol.ItemInstance{instanceFromItem(s.br, i)},
+				Content:  []protocol.NetworkItemStackDescriptor{s.descriptorFromItem(i)},
 			})
 		}
 	}
@@ -976,8 +976,12 @@ func (s *Session) descriptorFromItem(it item.Stack) protocol.NetworkItemStackDes
 }
 
 // itemFromDescriptor converts a NetworkItemStackDescriptor received from the client to an item.Stack.
-func (s *Session) itemFromDescriptor(d protocol.NetworkItemStackDescriptor) item.Stack {
-	return stackToItem(s.br, protocol.DescriptorToInstance(d, s.shieldID()).Stack)
+func (s *Session) itemFromDescriptor(d protocol.NetworkItemStackDescriptor) (item.Stack, error) {
+	i, err := protocol.SafeDescriptorToInstance(d, s.shieldID())
+	if err != nil {
+		return item.Stack{}, err
+	}
+	return stackToItem(s.br, i.Stack), nil
 }
 
 func (s *Session) shieldID() int32 {
