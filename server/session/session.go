@@ -129,6 +129,8 @@ type Conn interface {
 	ChunkRadius() int
 	// Latency returns the current latency measured over the Conn.
 	Latency() time.Duration
+	// ShieldID returns the runtime item ID of minecraft:shield for this connection.
+	ShieldID() int32
 	// Flush flushes the packets buffered by the Conn, sending all of them out immediately.
 	Flush() error
 	// RemoteAddr returns the remote network address.

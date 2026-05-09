@@ -239,7 +239,7 @@ func (s *Session) sendItem(item item.Stack, slot int, windowID uint32) {
 	s.writePacket(&packet.InventorySlot{
 		WindowID: windowID,
 		Slot:     uint32(slot),
-		NewItem:  instanceFromItem(s.br, item),
+		NewItem:  s.descriptorFromItem(item),
 	})
 }
 
@@ -695,7 +695,7 @@ func (s *Session) SendHeldSlot(slot int, c Controllable, force bool) {
 	mainHand, _ := c.HeldItems()
 	s.writePacket(&packet.MobEquipment{
 		EntityRuntimeID: selfEntityRuntimeID,
-		NewItem:         instanceFromItem(s.br, mainHand),
+		NewItem:         s.descriptorFromItem(mainHand),
 		InventorySlot:   byte(slot),
 		HotBarSlot:      byte(slot),
 	})
@@ -968,6 +968,23 @@ func stackToItem(br world.BlockRegistry, it protocol.ItemStack) item.Stack {
 	}
 	s := item.NewStack(t, int(it.Count))
 	return nbtconv.Item(it.NBTData, &s)
+}
+
+// descriptorFromItem converts an item.Stack to a NetworkItemStackDescriptor.
+func (s *Session) descriptorFromItem(it item.Stack) protocol.NetworkItemStackDescriptor {
+	return protocol.InstanceToDescriptor(instanceFromItem(s.br, it), s.shieldID())
+}
+
+// itemFromDescriptor converts a NetworkItemStackDescriptor received from the client to an item.Stack.
+func (s *Session) itemFromDescriptor(d protocol.NetworkItemStackDescriptor) item.Stack {
+	return stackToItem(s.br, protocol.DescriptorToInstance(d, s.shieldID()).Stack)
+}
+
+func (s *Session) shieldID() int32 {
+	if s == nil || s.conn == nil {
+		return 0
+	}
+	return s.conn.ShieldID()
 }
 
 // instanceFromItem converts an item.Stack to its network ItemInstance representation.

@@ -287,12 +287,12 @@ func (s *Session) ViewEntityItems(e world.Entity) {
 	// Show the main hand item.
 	s.writePacket(&packet.MobEquipment{
 		EntityRuntimeID: runtimeID,
-		NewItem:         instanceFromItem(s.br, mainHand),
+		NewItem:         s.descriptorFromItem(mainHand),
 	})
 	// Show the off-hand item.
 	s.writePacket(&packet.MobEquipment{
 		EntityRuntimeID: runtimeID,
-		NewItem:         instanceFromItem(s.br, offHand),
+		NewItem:         s.descriptorFromItem(offHand),
 		WindowID:        protocol.WindowIDOffHand,
 	})
 }
@@ -1234,7 +1234,7 @@ func (s *Session) ViewSlotChange(slot int, newItem item.Stack) {
 	s.writePacket(&packet.InventorySlot{
 		WindowID: s.openedWindowID.Load(),
 		Slot:     uint32(slot),
-		NewItem:  instanceFromItem(s.br, newItem),
+		NewItem:  s.descriptorFromItem(newItem),
 	})
 }
 
