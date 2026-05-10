@@ -3,6 +3,11 @@
 .zed/
 .vscode/
 
+# Local tooling state (Claude Code / OMC)
+.claude/
+.omc/
+.omx/
+
 # Dragonfly
 /world/
 /players/
