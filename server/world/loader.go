@@ -1,10 +1,11 @@
 package world
 
 import (
-	"github.com/go-gl/mathgl/mgl64"
 	"maps"
 	"math"
 	"sync"
+
+	"github.com/go-gl/mathgl/mgl64"
 )
 
 // Loader implements the loading of the world. A loader can typically be moved around the world to load
@@ -88,29 +89,42 @@ func (l *Loader) Move(tx *Tx, pos mgl64.Vec3) {
 // every chunk loaded, the Viewer passed through construction in New has its ViewChunk method called.
 // Load does nothing for n <= 0.
 func (l *Loader) Load(tx *Tx, n int) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if l.closed || l.w == nil {
-		return
-	}
 	for i := 0; i < n; i++ {
+		l.mu.Lock()
+		if l.closed || l.w == nil {
+			l.mu.Unlock()
+			return
+		}
 		if len(l.loadQueue) == 0 {
+			l.mu.Unlock()
 			break
 		}
-
 		pos := l.loadQueue[0]
-		c := tx.w.chunk(pos)
-
-		l.viewer.ViewChunk(pos, l.w.Dimension(), c.BlockEntities, c.Chunk)
-		l.w.addViewer(tx, c, l)
-
-		l.loaded[pos] = c
+		w := tx.World()
 
 		// Shift the first element from the load queue off so that we can take a new one during the next
 		// iteration.
 		l.loadQueue = l.loadQueue[1:]
+		l.mu.Unlock()
+
+		w.loadChunkAsync(tx, pos, func(tx2 *Tx, chunk *Column) {
+			l.viewChunk(tx2, pos, chunk)
+		})
 	}
+}
+
+// viewChunk adds chunk to the Viewer.
+func (l *Loader) viewChunk(tx *Tx, pos ChunkPos, c *Column) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.closed || l.viewer == nil || l.w == nil || l.w != tx.World() {
+		return
+	}
+	l.viewer.ViewChunk(pos, l.w.Dimension(), c.BlockEntities, c.Chunk)
+	l.w.addViewer(tx, c, l)
+
+	l.loaded[pos] = c
 }
 
 // Chunk attempts to return a chunk at the given ChunkPos. If the chunk is not loaded, the second return value will
