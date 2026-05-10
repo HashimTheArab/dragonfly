@@ -11,10 +11,20 @@ import (
 // TraverseBlocks panics if the start and end positions are the same.
 func TraverseBlocks(start, end mgl64.Vec3, f func(pos cube.Pos) (con bool)) {
 	dir := end.Sub(start)
-	if mgl64.FloatEqual(dir.LenSqr(), 0) {
+	if !finiteVec3(start) || !finiteVec3(end) || !finiteVec3(dir) {
+		return
+	}
+	lengthSqr := dir.LenSqr()
+	if !finiteFloat(lengthSqr) {
+		return
+	}
+	if mgl64.FloatEqual(lengthSqr, 0) {
 		panic("start and end points are the same, giving a zero direction vector")
 	}
 	dir = dir.Normalize()
+	if !finiteVec3(dir) {
+		return
+	}
 
 	b := cube.PosFromVec3(start)
 
@@ -25,6 +35,9 @@ func TraverseBlocks(start, end mgl64.Vec3, f func(pos cube.Pos) (con bool)) {
 	delta := safeDivideVec3(step, dir)
 
 	r := start.Sub(end).Len()
+	if !finiteFloat(r) {
+		return
+	}
 	for {
 		if !f(b) {
 			return
@@ -51,6 +64,16 @@ func TraverseBlocks(start, end mgl64.Vec3, f func(pos cube.Pos) (con bool)) {
 			max[2] += delta[2]
 		}
 	}
+}
+
+// finiteVec3 returns true if all components of v are finite numbers.
+func finiteVec3(v mgl64.Vec3) bool {
+	return finiteFloat(v[0]) && finiteFloat(v[1]) && finiteFloat(v[2])
+}
+
+// finiteFloat returns true if f is neither NaN nor infinite.
+func finiteFloat(f float64) bool {
+	return !math.IsNaN(f) && !math.IsInf(f, 0)
 }
 
 // safeDivideVec3 ...

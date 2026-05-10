@@ -151,6 +151,10 @@ func (lt *ProjectileBehaviour) Tick(e *Ent, tx *world.Tx) *Movement {
 	}
 	vel := e.Velocity()
 	m, result := lt.tickMovement(e, tx)
+	if m == nil {
+		_ = e.Close()
+		return nil
+	}
 	e.data.Pos, e.data.Vel = m.pos, m.vel
 
 	lt.collisionPos, lt.collided, lt.ageCollided = cube.Pos{}, false, 0
@@ -285,10 +289,16 @@ func (lt *ProjectileBehaviour) hitEntity(l Living, e *Ent, vel mgl64.Vec3) {
 // based on gravity and drag.
 func (lt *ProjectileBehaviour) tickMovement(e *Ent, tx *world.Tx) (*Movement, trace.Result) {
 	pos, vel := e.Position(), e.Velocity()
+	if !finiteVec3(pos) || !finiteVec3(vel) {
+		return nil, nil
+	}
 	viewers := tx.Viewers(pos)
 
 	velBefore := vel
 	vel = lt.mc.applyHorizontalForces(tx, pos, lt.mc.applyVerticalForces(vel))
+	if !finiteVec3(vel) {
+		return nil, nil
+	}
 	rot := cube.Rotation{
 		mgl64.RadToDeg(math.Atan2(vel[0], vel[2])),
 		mgl64.RadToDeg(math.Atan2(vel[1], math.Hypot(vel[0], vel[2]))),
@@ -299,6 +309,9 @@ func (lt *ProjectileBehaviour) tickMovement(e *Ent, tx *world.Tx) (*Movement, tr
 		hit trace.Result
 		ok  bool
 	)
+	if !finiteVec3(end) {
+		return nil, nil
+	}
 	if !mgl64.FloatEqual(end.Sub(pos).LenSqr(), 0) {
 		if hit, ok = trace.Perform(pos, end, tx, e.H().Type().BBox(e).Grow(1.0), lt.ignores(e)); ok {
 			if _, ok := hit.(trace.BlockResult); ok {

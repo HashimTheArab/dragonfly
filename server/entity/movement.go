@@ -86,6 +86,16 @@ var zeroVec3 mgl64.Vec3
 // epsilon is the epsilon used for thresholds for change used for change in position and velocity.
 const epsilon = 0.001
 
+// finiteVec3 returns true if all components of v are finite numbers.
+func finiteVec3(v mgl64.Vec3) bool {
+	return finiteFloat(v[0]) && finiteFloat(v[1]) && finiteFloat(v[2])
+}
+
+// finiteFloat returns true if f is neither NaN nor infinite.
+func finiteFloat(f float64) bool {
+	return !math.IsNaN(f) && !math.IsInf(f, 0)
+}
+
 // applyVerticalForces applies gravity and drag on the Y axis, based on the Gravity and Drag values set.
 func (c *MovementComputer) applyVerticalForces(vel mgl64.Vec3) mgl64.Vec3 {
 	if c.DragBeforeGravity {
