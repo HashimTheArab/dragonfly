@@ -52,6 +52,8 @@ type World struct {
 	// from this map after some time of not being used.
 	chunks map[ChunkPos]*Column
 
+	blockSearch *blockSearchIndex
+
 	// entities holds a map of entities currently loaded and the last ChunkPos
 	// that the Entity was in. These are tracked so that a call to RemoveEntity
 	// can find the correct Entity.
@@ -263,8 +265,9 @@ func (w *World) setBlock(pos cube.Pos, b Block, opts *SetOpts) {
 		opts = &SetOpts{}
 	}
 
+	chunkPos := chunkPosFromBlockPos(pos)
 	x, y, z := uint8(pos[0]), int16(pos[1]), uint8(pos[2])
-	c := w.chunk(chunkPosFromBlockPos(pos))
+	c := w.chunk(chunkPos)
 
 	rid := w.conf.Blocks.BlockRuntimeID(b)
 
@@ -313,6 +316,7 @@ func (w *World) setBlock(pos cube.Pos, b Block, opts *SetOpts) {
 			}
 		}
 	}
+	w.blockSearch.indexRuntimeID(chunkPos, c.Block(x, y, z, 0))
 
 	for _, viewer := range viewers {
 		viewer.ViewBlockUpdate(pos, b, 0)
@@ -393,6 +397,7 @@ func (w *World) buildStructure(pos cube.Pos, s Structure) {
 							if b != nil {
 								rid := w.conf.Blocks.BlockRuntimeID(b)
 								sub.SetBlock(uint8(xOffset), uint8(yOffset), uint8(zOffset), 0, rid)
+								w.blockSearch.indexRuntimeID(chunkPos, rid)
 
 								nbtPos := cube.Pos{xOffset, yOffset, zOffset}
 								if w.conf.Blocks.NBTBlock(rid) {
@@ -480,6 +485,7 @@ func (w *World) setLiquid(pos cube.Pos, b Liquid) {
 	rid := w.conf.Blocks.BlockRuntimeID(b)
 	if w.removeLiquids(c, pos) {
 		c.SetBlock(x, y, z, 0, rid)
+		w.blockSearch.indexRuntimeID(chunkPos, rid)
 		for _, v := range c.viewers {
 			v.ViewBlockUpdate(pos, b, 0)
 		}
@@ -1045,6 +1051,7 @@ func (w *World) save(f func(*Tx, ChunkPos, *Column)) ExecFunc {
 func (w *World) saveChunk(_ *Tx, pos ChunkPos, c *Column) {
 	if !w.conf.ReadOnly && c.modified {
 		c.Compact()
+		w.blockSearch.reindexColumn(pos, c.Chunk)
 		if err := w.conf.Provider.StoreColumn(pos, w.conf.Dim, w.columnTo(c, pos)); err != nil {
 			w.conf.Log.Error("save chunk: "+err.Error(), "X", pos[0], "Z", pos[1])
 		}
@@ -1206,6 +1213,7 @@ func (w *World) loadChunk(pos ChunkPos) (*Column, error) {
 	case err == nil:
 		col := w.columnFrom(column, pos)
 		w.chunks[pos] = col
+		w.blockSearch.reindexColumn(pos, col.Chunk)
 		for _, e := range col.Entities {
 			w.entities[e] = pos
 			e.w = w
@@ -1217,6 +1225,7 @@ func (w *World) loadChunk(pos ChunkPos) (*Column, error) {
 		w.chunks[pos] = col
 
 		w.conf.Generator.GenerateChunk(pos, col.Chunk)
+		w.blockSearch.reindexColumn(pos, col.Chunk)
 		return col, nil
 	default:
 		return newColumn(chunk.New(w.conf.Blocks, w.Range())), err

@@ -185,6 +185,33 @@ func TestActivatedPortalCleanupOnBrokenFrame(t *testing.T) {
 	})
 }
 
+func TestPortalIgnoresNonAdjacentNeighbourUpdate(t *testing.T) {
+	w := world.New()
+	t.Cleanup(func() { _ = w.Close() })
+
+	origin := cube.Pos{8, 10, 8}
+	<-w.Exec(func(tx *world.Tx) {
+		buildVerticalFrame(tx, origin, cube.Z, 2, 3)
+		if !portal.ActivateNetherPortal(tx, origin) {
+			t.Fatal("ActivateNetherPortal() = false, want true")
+		}
+
+		broken := origin.Add(widthOffset(cube.Z, 2)).Add(cube.Pos{0, 1})
+		tx.SetBlock(broken, nil, nil)
+
+		updated := origin.Add(widthOffset(cube.Z, 1)).Add(cube.Pos{0, 1})
+		pb, ok := tx.Block(updated).(block.Portal)
+		if !ok {
+			t.Fatalf("block at updated position = %T, want block.Portal", tx.Block(updated))
+		}
+		pb.NeighbourUpdateTick(updated, updated.Add(cube.Pos{1, 1, 0}), tx)
+
+		if _, ok := tx.Block(updated).(block.Portal); !ok {
+			t.Fatal("portal was deactivated by a non-adjacent neighbour update")
+		}
+	})
+}
+
 func buildVerticalFrame(tx *world.Tx, origin cube.Pos, axis cube.Axis, width, height int) {
 	for x := 0; x < width; x++ {
 		p := origin.Add(widthOffset(axis, x))

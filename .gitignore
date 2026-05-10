@@ -5,3 +5,6 @@
 /world/
 /players/
 /resources/
+
+# Worktrees
+.worktrees/
