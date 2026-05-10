@@ -65,6 +65,15 @@ func (sub *SubChunk) SetBlock(x, y, z byte, layer uint8, block uint32) {
 	sub.Layer(layer).Set(x, y, z, block)
 }
 
+// FillBlocks sets every block in the half-open cuboid [x0,x1), [y0,y1),
+// [z0,z1) on layer to block. Coordinates must be within a single sub-chunk.
+func (sub *SubChunk) FillBlocks(x0, x1, y0, y1, z0, z1 byte, layer uint8, block uint32) {
+	if uint8(len(sub.storages)) <= layer && block == sub.air {
+		return
+	}
+	sub.Layer(layer).Fill(x0, x1, y0, y1, z0, z1, block)
+}
+
 // SetBlockLight sets the block light value at a specific position in the sub chunk.
 func (sub *SubChunk) SetBlockLight(x, y, z byte, level uint8) {
 	if ptr := &sub.blockLight[0]; ptr == noLightPtr {

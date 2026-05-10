@@ -133,6 +133,14 @@ type BasicBlockRegistry struct {
 	airRID uint32
 }
 
+// Finalized reports whether Finalize has been called on this registry. Useful in tests/init guards
+// that need to register additional blocks only when the registry is still mutable.
+func (br *BasicBlockRegistry) Finalized() bool {
+	br.mu.Lock()
+	defer br.mu.Unlock()
+	return br.finalized
+}
+
 func (br *BasicBlockRegistry) BitSize() int {
 	if !br.finalized {
 		panic("BlockRegistry.BitSize called on non finalized BlockRegistry")
@@ -504,6 +512,21 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 		return nil, false
 	}
 	return br.blocks[rid], true
+}
+
+// BlockImplemented returns true if a block with the name and properties passed has been registered with
+// a concrete implementation. It returns false for states that exist in the vanilla palette but are still
+// backed by an unknownBlock placeholder.
+func (br *BasicBlockRegistry) BlockImplemented(name string, properties map[string]any) bool {
+	if !br.finalized {
+		panic("BlockRegistry.BlockImplemented called on non finalized BlockRegistry")
+	}
+	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]
+	if !ok {
+		return false
+	}
+	_, unknown := br.blocks[rid].(unknownBlock)
+	return !unknown
 }
 
 // CustomBlocks returns a map of all custom blocks registered with their names as keys.

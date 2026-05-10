@@ -39,6 +39,23 @@ type PalettedStorage struct {
 	indices []uint32
 }
 
+// PaletteIndexCache caches palette indexes for runtime IDs in one storage.
+// Palette indexes are storage-local, so a cache must not be used with multiple
+// paletted storages or shared across concurrent storage writers.
+type PaletteIndexCache struct {
+	lastValue uint32
+	lastIndex uint16
+	lastSet   bool
+	small     [4]paletteIndexCacheEntry
+	smallLen  uint8
+	overflow  map[uint32]uint16
+}
+
+type paletteIndexCacheEntry struct {
+	value uint32
+	index uint16
+}
+
 // newPalettedStorage creates a new block storage using the uint32 slice as the indices and the palette passed.
 // The bits per block are calculated using the length of the uint32 slice.
 func newPalettedStorage(indices []uint32, palette *Palette) *PalettedStorage {
@@ -81,6 +98,42 @@ func (storage *PalettedStorage) Set(x, y, z byte, v uint32) {
 	storage.setPaletteIndex(x&15, y&15, z&15, uint16(index))
 }
 
+// SetCached sets a value at a specific x, y and z, reusing palette indexes
+// from cache when possible.
+func (storage *PalettedStorage) SetCached(x, y, z byte, v uint32, cache *PaletteIndexCache) {
+	if cache == nil {
+		storage.Set(x, y, z, v)
+		return
+	}
+	storage.setPaletteIndex(x&15, y&15, z&15, cache.index(storage, v))
+}
+
+// Fill sets every block in the half-open cuboid [x0,x1), [y0,y1), [z0,z1)
+// to v. Coordinates must be within a single sub-chunk. Fill resolves v's
+// palette index once, making it suitable for uniform bulk writes.
+func (storage *PalettedStorage) Fill(x0, x1, y0, y1, z0, z1 byte, v uint32) {
+	if x0 >= x1 || y0 >= y1 || z0 >= z1 {
+		return
+	}
+	if x0 == 0 && x1 == 16 && y0 == 0 && y1 == 16 && z0 == 0 && z1 == 16 {
+		*storage = *emptyStorage(v)
+		return
+	}
+
+	index := storage.palette.Index(v)
+	if index == -1 {
+		index = storage.addNew(v)
+	}
+	i := uint16(index)
+	for x := x0; x < x1; x++ {
+		for y := y0; y < y1; y++ {
+			for z := z0; z < z1; z++ {
+				storage.setPaletteIndex(x, y, z, i)
+			}
+		}
+	}
+}
+
 // Equal checks if two PalettedStorages are equal value wise. False is returned
 // if either of the storages are nil.
 func (storage *PalettedStorage) Equal(other *PalettedStorage) bool {
@@ -107,6 +160,54 @@ func (storage *PalettedStorage) addNew(v uint32) int16 {
 		storage.resize(storage.palette.size)
 	}
 	return index
+}
+
+func (cache *PaletteIndexCache) index(storage *PalettedStorage, v uint32) uint16 {
+	if cache.lastSet && cache.lastValue == v {
+		return cache.lastIndex
+	}
+	for i := uint8(0); i < cache.smallLen; i++ {
+		entry := cache.small[i]
+		if entry.value == v {
+			cache.lastValue, cache.lastIndex, cache.lastSet = v, entry.index, true
+			return entry.index
+		}
+	}
+	if cache.overflow != nil {
+		if index, ok := cache.overflow[v]; ok {
+			cache.lastValue, cache.lastIndex, cache.lastSet = v, index, true
+			return index
+		}
+	}
+
+	index := storage.palette.Index(v)
+	if index == -1 {
+		index = storage.addNew(v)
+	}
+	i := uint16(index)
+	if !cache.lastSet {
+		cache.small[0] = paletteIndexCacheEntry{value: v, index: i}
+		cache.smallLen = 1
+		cache.lastValue, cache.lastIndex, cache.lastSet = v, i, true
+		return i
+	}
+	if cache.smallLen < uint8(len(cache.small)) {
+		cache.small[cache.smallLen] = paletteIndexCacheEntry{value: v, index: i}
+		cache.smallLen++
+		cache.lastValue, cache.lastIndex, cache.lastSet = v, i, true
+		return i
+	}
+	if cache.overflow == nil {
+		cache.overflow = make(map[uint32]uint16, 8)
+		for j := uint8(0); j < cache.smallLen; j++ {
+			entry := cache.small[j]
+			cache.overflow[entry.value] = entry.index
+		}
+		cache.overflow[cache.lastValue] = cache.lastIndex
+	}
+	cache.overflow[v] = i
+	cache.lastValue, cache.lastIndex, cache.lastSet = v, i, true
+	return i
 }
 
 // paletteIndex looks up the Palette index at a given x, y and z value in the PalettedStorage. This palette

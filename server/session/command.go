@@ -175,6 +175,21 @@ func (s *Session) sendAvailableCommands(co Controllable, softEnums map[string]st
 	return m
 }
 
+// RefreshAvailableCommands signals the session tick loop to re-evaluate the
+// player's available commands (and resend them if anything changed) on the
+// next tick instead of waiting for the 5-second periodic check.
+//
+// Use this when a caller has changed the player's effective permission set
+// out-of-band — e.g., right after a custom user/rank record finishes loading
+// on join — so autocomplete and the /help list correct themselves within one
+// tick rather than up to 5 seconds later.
+//
+// Safe to call from any goroutine, including from inside a world transaction:
+// it never touches the world directly, just sets an atomic flag.
+func (s *Session) RefreshAvailableCommands() {
+	s.cmdsDirty.Store(true)
+}
+
 type commandEnum struct {
 	Type    string
 	Options []string

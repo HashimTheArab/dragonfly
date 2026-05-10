@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"iter"
 	"maps"
+	"math"
 	"math/rand/v2"
 	"slices"
 	"sync"
@@ -351,17 +352,172 @@ func (w *World) buildStructure(pos cube.Pos, s Structure) {
 		return w.block(cube.Pos{pos[0] + x, pos[1] + y, pos[2] + z})
 	}
 
+	br := w.conf.Blocks
+	airRID := br.AirRuntimeID()
+	blocksLen := uint32(br.BlockCount())
+	bitSizeVal := br.BitSize()
+
 	// We approach this on a per-chunk basis, so that we can keep only one chunk
 	// in memory at a time while not needing to acquire a new chunk lock for
 	// every block. This also allows us not to send block updates, but instead
 	// send a single chunk update once.
-	for chunkX := pos[0] >> 4; chunkX <= maxX>>4; chunkX++ {
-		for chunkZ := pos[2] >> 4; chunkZ <= maxZ>>4; chunkZ++ {
+	maxChunkX, maxChunkZ := maxX>>4, maxZ>>4
+	if width > 0 {
+		maxChunkX = (maxX - 1) >> 4
+	}
+	if length > 0 {
+		maxChunkZ = (maxZ - 1) >> 4
+	}
+	if uniform, ok := s.(UniformStructure); ok {
+		if b, liq, ok := uniform.Uniform(); ok {
+			w.fillVolume(pos, dim, b, liq)
+			return
+		}
+	}
+
+	if runtimeIDStructure, ok := s.(RuntimeIDStructure); ok {
+		// Keep this iteration shell in sync with the legacy Structure.At branch below.
+		// The branches are specialised so RuntimeIDStructure avoids cache setup and a
+		// per-cell dispatch branch.
+		for chunkX := pos[0] >> 4; chunkX <= maxChunkX; chunkX++ {
+			for chunkZ := pos[2] >> 4; chunkZ <= maxChunkZ; chunkZ++ {
+				chunkPos := ChunkPos{int32(chunkX), int32(chunkZ)}
+				c := w.chunk(chunkPos)
+
+				baseX, baseZ := chunkX<<4, chunkZ<<4
+				for i, sub := range c.Sub() {
+					var blockPaletteIndexes, liquidPaletteIndexes chunk.PaletteIndexCache
+					var blockStorage, liquidStorage *chunk.PalettedStorage
+					baseY := (i + (w.Range()[0] >> 4)) << 4
+					if baseY>>4 < pos[1]>>4 {
+						continue
+					} else if baseY >= maxY {
+						break
+					}
+
+					for localY := 0; localY < 16; localY++ {
+						yOffset := baseY + localY
+						if yOffset > w.Range()[1] || yOffset >= maxY {
+							// We've hit the height limit for blocks.
+							break
+						} else if yOffset < w.Range()[0] || yOffset < pos[1] {
+							// We've got a block below the minimum, but other blocks might still reach above
+							// it, so don't break but continue.
+							continue
+						}
+						for localX := 0; localX < 16; localX++ {
+							xOffset := baseX + localX
+							if xOffset < pos[0] || xOffset >= maxX {
+								continue
+							}
+							for localZ := 0; localZ < 16; localZ++ {
+								zOffset := baseZ + localZ
+								if zOffset < pos[2] || zOffset >= maxZ {
+									continue
+								}
+								placement := runtimeIDStructure.RuntimeIDAt(xOffset-pos[0], yOffset-pos[1], zOffset-pos[2], f)
+								if placement.PlaceBlock {
+									rid := placement.BlockRuntimeID
+									if rid >= blocksLen {
+										panic(fmt.Sprintf("RuntimeIDStructure returned invalid block runtime ID %d", rid))
+									}
+									if blockStorage == nil {
+										blockStorage = sub.Layer(0)
+									}
+									blockStorage.SetCached(uint8(xOffset), uint8(yOffset), uint8(zOffset), rid, &blockPaletteIndexes)
+
+									nbtPos := cube.Pos{xOffset, yOffset, zOffset}
+									if br.NBTBlock(rid) {
+										b := placement.Block
+										if b == nil {
+											b = br.BlockByRuntimeIDOrAir(rid)
+										}
+										c.BlockEntities[nbtPos] = b
+									} else if len(c.BlockEntities) != 0 {
+										delete(c.BlockEntities, nbtPos)
+									}
+								}
+								if placement.PlaceLiquid {
+									if placement.LiquidRuntimeID >= blocksLen {
+										panic(fmt.Sprintf("RuntimeIDStructure returned invalid liquid runtime ID %d", placement.LiquidRuntimeID))
+									}
+									if liquidStorage == nil {
+										liquidStorage = sub.Layer(1)
+									}
+									liquidStorage.SetCached(uint8(xOffset), uint8(yOffset), uint8(zOffset), placement.LiquidRuntimeID, &liquidPaletteIndexes)
+								} else if len(sub.Layers()) > 1 {
+									if liquidStorage == nil {
+										liquidStorage = sub.Layer(1)
+									}
+									liquidStorage.SetCached(uint8(xOffset), uint8(yOffset), uint8(zOffset), airRID, &liquidPaletteIndexes)
+								}
+							}
+						}
+					}
+				}
+				c.SetBlock(0, 0, 0, 0, c.Block(0, 0, 0, 0)) // Make sure the heightmap is recalculated.
+				c.modified = true
+
+				// After setting all blocks of the structure within a single chunk,
+				// refresh the chunk for all viewers once. Sessions queue bulk
+				// refreshes and drain them over ticks so large edits don't block
+				// the world transaction on network writes.
+				for _, viewer := range c.viewers {
+					viewBulkChunk(viewer, chunkPos, w.Dimension(), c.BlockEntities, c.Chunk)
+				}
+			}
+		}
+		return
+	}
+
+	// Keep this iteration shell in sync with the RuntimeIDStructure branch above.
+	// The branches intentionally differ only in their per-cell placement logic.
+	type runtimeIDCache struct {
+		firstKey uint64
+		firstRID uint32
+		firstSet bool
+		rids     map[uint64]uint32
+	}
+	var blockRuntimeIDs, liquidRuntimeIDs runtimeIDCache
+	runtimeIDCached := func(b Block, c *runtimeIDCache) uint32 {
+		if b == nil {
+			return airRID
+		}
+		base, hash := b.Hash()
+		if hash == math.MaxUint64 {
+			return br.BlockRuntimeID(b)
+		}
+		key := base | (hash << bitSizeVal)
+		if c.firstSet && c.firstKey == key {
+			return c.firstRID
+		}
+		if c.rids != nil {
+			if rid, ok := c.rids[key]; ok {
+				return rid
+			}
+		}
+		rid := br.BlockRuntimeID(b)
+		if !c.firstSet {
+			c.firstKey, c.firstRID, c.firstSet = key, rid, true
+			return rid
+		}
+		if c.rids == nil {
+			c.rids = make(map[uint64]uint32, 8)
+			c.rids[c.firstKey] = c.firstRID
+		}
+		c.rids[key] = rid
+		return rid
+	}
+
+	for chunkX := pos[0] >> 4; chunkX <= maxChunkX; chunkX++ {
+		for chunkZ := pos[2] >> 4; chunkZ <= maxChunkZ; chunkZ++ {
 			chunkPos := ChunkPos{int32(chunkX), int32(chunkZ)}
 			c := w.chunk(chunkPos)
 
 			baseX, baseZ := chunkX<<4, chunkZ<<4
 			for i, sub := range c.Sub() {
+				var blockPaletteIndexes, liquidPaletteIndexes chunk.PaletteIndexCache
+				var blockStorage, liquidStorage *chunk.PalettedStorage
 				baseY := (i + (w.Range()[0] >> 4)) << 4
 				if baseY>>4 < pos[1]>>4 {
 					continue
@@ -391,20 +547,29 @@ func (w *World) buildStructure(pos cube.Pos, s Structure) {
 							}
 							b, liq := s.At(xOffset-pos[0], yOffset-pos[1], zOffset-pos[2], f)
 							if b != nil {
-								rid := w.conf.Blocks.BlockRuntimeID(b)
-								sub.SetBlock(uint8(xOffset), uint8(yOffset), uint8(zOffset), 0, rid)
+								rid := runtimeIDCached(b, &blockRuntimeIDs)
+								if blockStorage == nil {
+									blockStorage = sub.Layer(0)
+								}
+								blockStorage.SetCached(uint8(xOffset), uint8(yOffset), uint8(zOffset), rid, &blockPaletteIndexes)
 
 								nbtPos := cube.Pos{xOffset, yOffset, zOffset}
 								if w.conf.Blocks.NBTBlock(rid) {
 									c.BlockEntities[nbtPos] = b
-								} else {
+								} else if len(c.BlockEntities) != 0 {
 									delete(c.BlockEntities, nbtPos)
 								}
 							}
 							if liq != nil {
-								sub.SetBlock(uint8(xOffset), uint8(yOffset), uint8(zOffset), 1, w.conf.Blocks.BlockRuntimeID(liq))
+								if liquidStorage == nil {
+									liquidStorage = sub.Layer(1)
+								}
+								liquidStorage.SetCached(uint8(xOffset), uint8(yOffset), uint8(zOffset), runtimeIDCached(liq, &liquidRuntimeIDs), &liquidPaletteIndexes)
 							} else if len(sub.Layers()) > 1 {
-								sub.SetBlock(uint8(xOffset), uint8(yOffset), uint8(zOffset), 1, w.conf.Blocks.AirRuntimeID())
+								if liquidStorage == nil {
+									liquidStorage = sub.Layer(1)
+								}
+								liquidStorage.SetCached(uint8(xOffset), uint8(yOffset), uint8(zOffset), airRID, &liquidPaletteIndexes)
 							}
 						}
 					}
@@ -414,12 +579,104 @@ func (w *World) buildStructure(pos cube.Pos, s Structure) {
 			c.modified = true
 
 			// After setting all blocks of the structure within a single chunk,
-			// we show the new chunk to all viewers once.
+			// refresh the chunk for all viewers once. Sessions queue bulk
+			// refreshes and drain them over ticks so large edits don't block
+			// the world transaction on network writes.
 			for _, viewer := range c.viewers {
-				viewer.ViewChunk(chunkPos, w.Dimension(), c.BlockEntities, c.Chunk)
+				viewBulkChunk(viewer, chunkPos, w.Dimension(), c.BlockEntities, c.Chunk)
 			}
 		}
 	}
+}
+
+// fillVolume fills a cuboid with the block and liquid passed. Unlike
+// buildStructure, fillVolume handles only uniform fills and resolves runtime
+// IDs once before writing affected chunks.
+func (w *World) fillVolume(pos cube.Pos, dims [3]int, b Block, liq Liquid) {
+	width, height, length := dims[0], dims[1], dims[2]
+	if width <= 0 || height <= 0 || length <= 0 {
+		return
+	}
+	minY, maxY := max(pos[1], w.Range()[0]), min(pos[1]+height, w.Range()[1]+1)
+	if minY >= maxY {
+		return
+	}
+
+	br := w.conf.Blocks
+	airRID := br.AirRuntimeID()
+
+	rid := br.BlockRuntimeID(b)
+	nbt := br.NBTBlock(rid)
+	var liquidRID uint32
+	if liq != nil {
+		liquidRID = br.BlockRuntimeID(liq)
+	}
+
+	minX, minZ := pos[0], pos[2]
+	maxX, maxZ := pos[0]+width, pos[2]+length
+	for chunkX := minX >> 4; chunkX <= (maxX-1)>>4; chunkX++ {
+		for chunkZ := minZ >> 4; chunkZ <= (maxZ-1)>>4; chunkZ++ {
+			chunkPos := ChunkPos{int32(chunkX), int32(chunkZ)}
+			c := w.chunk(chunkPos)
+
+			baseX, baseZ := chunkX<<4, chunkZ<<4
+			fromX, toX := max(minX, baseX), min(maxX, baseX+16)
+			fromZ, toZ := max(minZ, baseZ), min(maxZ, baseZ+16)
+			// wrote stays false only if a custom Dimension returns sub chunks
+			// that don't cover the full Y range. Built-in dimensions always
+			// write at least one sub chunk per affected column.
+			wrote := false
+			for i, sub := range c.Sub() {
+				baseY := (i + (w.Range()[0] >> 4)) << 4
+				fromY, toY := max(minY, baseY), min(maxY, baseY+16)
+				if fromY >= toY {
+					continue
+				}
+				wrote = true
+				localFromX, localToX := uint8(fromX-baseX), uint8(toX-baseX)
+				localFromY, localToY := uint8(fromY-baseY), uint8(toY-baseY)
+				localFromZ, localToZ := uint8(fromZ-baseZ), uint8(toZ-baseZ)
+
+				sub.FillBlocks(localFromX, localToX, localFromY, localToY, localFromZ, localToZ, 0, rid)
+				if liq != nil {
+					sub.FillBlocks(localFromX, localToX, localFromY, localToY, localFromZ, localToZ, 1, liquidRID)
+				} else if len(sub.Layers()) > 1 {
+					sub.FillBlocks(localFromX, localToX, localFromY, localToY, localFromZ, localToZ, 1, airRID)
+				}
+
+				if nbt || len(c.BlockEntities) != 0 {
+					for yOffset := fromY; yOffset < toY; yOffset++ {
+						for xOffset := fromX; xOffset < toX; xOffset++ {
+							for zOffset := fromZ; zOffset < toZ; zOffset++ {
+								if nbt {
+									c.BlockEntities[cube.Pos{xOffset, yOffset, zOffset}] = b
+								} else {
+									delete(c.BlockEntities, cube.Pos{xOffset, yOffset, zOffset})
+								}
+							}
+						}
+					}
+				}
+			}
+			if !wrote {
+				continue
+			}
+			c.SetBlock(0, 0, 0, 0, c.Block(0, 0, 0, 0)) // Make sure the heightmap is recalculated.
+			c.modified = true
+
+			for _, viewer := range c.viewers {
+				viewBulkChunk(viewer, chunkPos, w.Dimension(), c.BlockEntities, c.Chunk)
+			}
+		}
+	}
+}
+
+func viewBulkChunk(viewer Viewer, pos ChunkPos, dim Dimension, blockEntities map[cube.Pos]Block, c *chunk.Chunk) {
+	if bulkViewer, ok := viewer.(BulkChunkViewer); ok {
+		bulkViewer.ViewBulkChunk(pos)
+		return
+	}
+	viewer.ViewChunk(pos, dim, blockEntities, c)
 }
 
 // liquid attempts to return a Liquid block at the position passed. This
@@ -568,6 +825,13 @@ func (w *World) light(pos cube.Pos) uint8 {
 		// Above the rest of the world, so full skylight.
 		return 15
 	}
+	if w.conf.DisableLighting {
+		// Light data is never initialized when lighting is disabled.
+		// Reading from the sub-chunk light slices would panic. Return
+		// full brightness so block logic that checks light (grass
+		// growth, mob spawn gates) still behaves sensibly.
+		return 15
+	}
 	return w.chunk(chunkPosFromBlockPos(pos)).Light(uint8(pos[0]), int16(pos[1]), uint8(pos[2]))
 }
 
@@ -582,6 +846,9 @@ func (w *World) skyLight(pos cube.Pos) uint8 {
 	}
 	if pos[1] > w.ra[1] {
 		// Above the rest of the world, so full skylight.
+		return 15
+	}
+	if w.conf.DisableLighting {
 		return 15
 	}
 	return w.chunk(chunkPosFromBlockPos(pos)).SkyLight(uint8(pos[0]), int16(pos[1]), uint8(pos[2]))
@@ -1177,19 +1444,23 @@ func showEntity(e Entity, viewer Viewer) {
 // chunk reads a chunk from the position passed. If a chunk at that position is
 // not yet loaded, the chunk is loaded from the provider, or generated if it
 // did not yet exist. Additionally, chunks newly loaded have the light in them
-// calculated before they are returned.
+// calculated before they are returned (unless DisableLighting is set).
 func (w *World) chunk(pos ChunkPos) *Column {
 	c, ok := w.chunks[pos]
 	if ok {
 		return c
 	}
 	c, err := w.loadChunk(pos)
-	chunk.LightArea([]*chunk.Chunk{c.Chunk}, int(pos[0]), int(pos[1])).Fill()
+	if !w.conf.DisableLighting {
+		chunk.LightArea([]*chunk.Chunk{c.Chunk}, int(pos[0]), int(pos[1])).Fill()
+	}
 	if err != nil {
 		w.conf.Log.Error("load chunk: "+err.Error(), "X", pos[0], "Z", pos[1])
 		return c
 	}
-	w.calculateLight(pos)
+	if !w.conf.DisableLighting {
+		w.calculateLight(pos)
+	}
 	return c
 }
 
@@ -1319,6 +1590,13 @@ func (w *World) columnTo(col *Column, pos ChunkPos) *chunk.Column {
 	for _, e := range col.Entities {
 		data := e.encodeNBT()
 		maps.Copy(data, e.t.EncodeNBT(&e.data))
+		if e.t.EncodeEntity() == "minecraft:player" {
+			// Players are persisted through the player provider, not chunk
+			// entity storage. Saving them into columns leaves stale
+			// minecraft:player entities behind that cannot be restored as
+			// regular world entities on the next chunk load.
+			continue
+		}
 		data["identifier"] = e.t.EncodeEntity()
 		c.Entities = append(c.Entities, chunk.Entity{ID: int64(binary.LittleEndian.Uint64(e.id[8:])), Data: data})
 	}
@@ -1345,6 +1623,12 @@ func (w *World) columnFrom(c *chunk.Column, _ ChunkPos) *Column {
 			w.conf.Log.Error("read column: entity without identifier field", "ID", e.ID)
 			continue
 		}
+		if eid == "minecraft:player" {
+			// Older saves/forks may have incorrectly stored players as chunk
+			// entities. Ignore them silently: the real player data is loaded
+			// separately by the player provider when that player joins.
+			continue
+		}
 		t, ok := w.conf.Entities.Lookup(eid)
 		if !ok {
 			w.conf.Log.Error("read column: unknown entity type", "ID", e.ID, "type", eid)
@@ -1361,7 +1645,7 @@ func (w *World) columnFrom(c *chunk.Column, _ ChunkPos) *Column {
 		}
 		nb, ok := b.(NBTer)
 		if !ok {
-			w.conf.Log.Error("read column: block with nbt does not implement NBTer", "block", fmt.Sprintf("%#v", b))
+			w.conf.Log.Debug("read column: ignoring stale block entity data for non-NBT block", "block", fmt.Sprintf("%#v", b))
 			continue
 		}
 		col.BlockEntities[be.Pos] = nb.DecodeNBT(be.Data).(Block)

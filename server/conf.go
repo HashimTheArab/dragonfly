@@ -125,6 +125,14 @@ type Config struct {
 	// For a non-default registry, set this to world.NewBlockRegistry(), register blocks on that instance, and ensure
 	// it is finalized before use.
 	Blocks world.BlockRegistry
+	// DisableLighting skips light calculation entirely on chunk load for the
+	// default Server worlds. Use for practice/PvP servers where realistic
+	// lighting isn't needed and chunk load latency matters.
+	DisableLighting bool
+	// DisableVibrantVisuals tells clients to forcibly disable Vibrant Visuals
+	// (Bedrock's deferred rendering / fancy shaders). Reduces client GPU load
+	// and is useful for PvP servers where the visual upgrade isn't needed.
+	DisableVibrantVisuals bool
 }
 
 // New creates a Server using fields of conf. The Server's worlds are created

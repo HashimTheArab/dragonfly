@@ -565,6 +565,7 @@ func (srv *Server) createWorld(dim world.Dimension, nether, end **world.World) *
 		ChunkUnloadInterval: srv.conf.ChunkUnloadInterval,
 		Entities:            srv.conf.Entities,
 		Blocks:              srv.conf.Blocks,
+		DisableLighting:     srv.conf.DisableLighting,
 		PortalDestination: func(dim world.Dimension) *world.World {
 			switch dim {
 			case world.Nether:
@@ -657,4 +658,28 @@ var (
 // values in the runtime ID maps.
 func init() {
 	_ = nbt.Unmarshal(vanillaItemsData, &vanillaItems)
+}
+
+// VanillaItemEntry represents an entry in the vanilla items registry.
+type VanillaItemEntry struct {
+	RuntimeID      int32          `nbt:"runtime_id"`
+	ComponentBased bool           `nbt:"component_based"`
+	Version        int32          `nbt:"version"`
+	Data           map[string]any `nbt:"data,omitempty"`
+}
+
+// VanillaItems returns a copy of the vanilla items registry. This can be used
+// by multiversion libraries to seed their item mappings with the server's
+// actual item runtime IDs.
+func VanillaItems() map[string]VanillaItemEntry {
+	result := make(map[string]VanillaItemEntry, len(vanillaItems))
+	for name, entry := range vanillaItems {
+		result[name] = VanillaItemEntry{
+			RuntimeID:      entry.RuntimeID,
+			ComponentBased: entry.ComponentBased,
+			Version:        entry.Version,
+			Data:           entry.Data,
+		}
+	}
+	return result
 }

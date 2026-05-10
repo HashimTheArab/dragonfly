@@ -67,7 +67,7 @@ func (cfg Config) Apply(data *world.EntityData) {
 		effects:             entity.NewEffectManager(conf.Effects...),
 		locale:              conf.Locale,
 		cooldowns:           make(map[string]time.Time),
-		mc:                  &entity.MovementComputer{Gravity: 0.08, Drag: 0.02, DragBeforeGravity: true},
+		mc:                  &entity.MovementComputer{Gravity: 0.08, Drag: 0.02, DragBeforeGravity: false}, // PM applies drag after gravity
 		heldSlot:            &slot,
 		gameMode:            conf.GameMode,
 		skin:                conf.Skin,

@@ -77,6 +77,33 @@ type Viewer interface {
 	ViewEntityWake(e Entity)
 }
 
+// BulkChunkViewer is an optional interface for viewers that can queue an
+// authoritative chunk refresh after a bulk edit. Session implements this to
+// avoid writing thousands of chunk packets directly from the world transaction:
+// edited chunks are deduplicated and drained over later session ticks.
+type BulkChunkViewer interface {
+	ViewBulkChunk(pos ChunkPos)
+}
+
+// Flushable is an optional interface that Viewer implementations may
+// satisfy to signal that buffered packets should be pushed to the
+// network at well-defined points. The world ticker fires Flush at the
+// end of each tick after all viewer notifications (entity movement,
+// block updates, sounds, etc.) have been queued via writePacket. This
+// keeps packet delivery aligned with the 50ms world tick instead of
+// relying on independent per-viewer flush goroutines that drift
+// against the world clock and introduce up-to-50ms jitter on entity
+// position updates.
+//
+// Implementations that require flushing (the only one in this
+// codebase is *session.Session) call into their underlying connection's
+// Flush method. Viewers that don't queue packets (NopViewer, audio-only
+// viewers, etc.) should simply not implement this interface — the
+// ticker type-asserts before invoking.
+type Flushable interface {
+	Flush() error
+}
+
 // NopViewer is a Viewer implementation that does not implement any behaviour. It may be embedded by other structs to
 // prevent having to implement all of Viewer's methods.
 type NopViewer struct{}

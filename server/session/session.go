@@ -84,6 +84,10 @@ type Session struct {
 
 	lastChunkPos world.ChunkPos
 
+	bulkChunkMu     sync.Mutex
+	bulkChunkQueue  []world.ChunkPos
+	bulkChunkQueued map[world.ChunkPos]struct{}
+
 	recipes map[uint32]recipe.Recipe
 
 	blobMu                sync.Mutex
@@ -100,6 +104,12 @@ type Session struct {
 	debugShapeUpdates []debugShapeUpdate
 
 	viewLayer *world.ViewLayer
+
+	// cmdsDirty signals the session tick loop to run resendCommands on the
+	// next tick instead of waiting for the 5-second periodic check. Set by
+	// RefreshAvailableCommands when a caller (e.g. custom rank loader) has
+	// changed the player's effective permission set out-of-band.
+	cmdsDirty atomic.Bool
 
 	closeBackground chan struct{}
 
@@ -187,6 +197,7 @@ func (conf Config) New(conn Conn) *Session {
 		entityRuntimeIDs:       map[*world.EntityHandle]uint64{},
 		entities:               map[uint64]*world.EntityHandle{},
 		hiddenEntities:         map[uuid.UUID]struct{}{},
+		bulkChunkQueued:        map[world.ChunkPos]struct{}{},
 		blobs:                  map[uint64][]byte{},
 		chunkRadius:            int32(r),
 		maxChunkRadius:         int32(conf.MaxChunkRadius),
@@ -229,7 +240,9 @@ func (conf Config) New(conn Conn) *Session {
 			case <-s.closeBackground:
 				return
 			case pk := <-s.packets:
-				_ = conn.WritePacket(pk)
+				if err := conn.WritePacket(pk); err != nil {
+					s.conf.Log.Warn("write packet failed", "packet_id", pk.ID(), "err", err)
+				}
 			}
 		}
 	}()
@@ -348,12 +361,34 @@ func (s *Session) Latency() time.Duration {
 	return s.conn.Latency()
 }
 
+// Flush implements world.Flushable. Called by the world ticker at the
+// end of every tick to push packets queued during the tick — entity
+// movement, block updates, sounds, particles, inventory updates — to
+// the network immediately. Without this hook those packets would sit
+// in the connection's internal buffer until gophertunnel's auto-flush
+// goroutine (or a wrapping anti-cheat ticker) drained them on its
+// independent 50ms timer, drifting against the world clock and
+// surfacing as up-to-50ms variance per packet — visible to players
+// as projectile / entity jitter. Errors from the underlying conn
+// are returned for callers that care; the world tick discards them
+// because a flush failure on a session that's about to close isn't
+// actionable from inside the tick.
+func (s *Session) Flush() error {
+	return s.conn.Flush()
+}
+
 // ClientData returns the login.ClientData of the underlying *minecraft.Conn.
 func (s *Session) ClientData() login.ClientData {
 	return s.conn.ClientData()
 }
 
-// handlePackets continuously handles incoming packets from the connection. It processes them accordingly.
+const maxQueuedIncomingPackets = 65536
+
+// handlePackets continuously drains incoming packets from the connection. Packet
+// processing may need to enter the world transaction queue, which can be blocked
+// for a long time by large build commands. Keep the network reader separate from
+// the world-processing worker so a long command does not stop RakNet/gophertunnel
+// from reading ACKs, cache replies, movement/input, etc. while the command runs.
 // Once the connection is closed, handlePackets will return.
 func (s *Session) handlePackets() {
 	defer func() {
@@ -369,16 +404,93 @@ func (s *Session) handlePackets() {
 			s.Close(tx, e.(Controllable))
 		})
 	}()
+
+	incoming := make(chan packet.Packet, maxQueuedIncomingPackets)
+	processErr := make(chan packetProcessError, 1)
+	processDone := make(chan struct{})
+	processStop := make(chan struct{})
+	go s.processPackets(incoming, processErr, processDone, processStop)
+	defer func() {
+		close(processStop)
+		close(incoming)
+		<-processDone
+	}()
+
+	incomingDropLogged := false
 	for {
+		if incomingDropLogged && len(incoming) == 0 {
+			incomingDropLogged = false
+		}
 		pk, err := s.conn.ReadPacket()
 		if err != nil {
+			s.conf.Log.Warn("read packet failed, closing session", "err", err)
 			return
 		}
+
+		select {
+		case incoming <- pk:
+		case err := <-processErr:
+			s.conf.Log.Warn("process packet failed, closing session", "packet_id", err.packetID, "err", err.err)
+			return
+		default:
+			// If this ever fills, the client is sending far faster than we can
+			// process while the world is busy. Drop the oldest queued packet
+			// rather than blocking the reader and causing a RakNet timeout/close
+			// cascade. Newer movement/input/cache status packets are more useful
+			// after a long world edit than stale ones.
+			if !incomingDropLogged {
+				incomingDropLogged = true
+				s.conf.Log.Warn("incoming packet queue full, dropping oldest queued packets", "queued", len(incoming), "capacity", cap(incoming), "incoming_packet_id", pk.ID())
+			}
+			select {
+			case <-incoming:
+			default:
+			}
+			select {
+			case incoming <- pk:
+			case err := <-processErr:
+				s.conf.Log.Warn("process packet failed, closing session", "packet_id", err.packetID, "err", err.err)
+				return
+			}
+		}
+
+		select {
+		case err := <-processErr:
+			s.conf.Log.Warn("process packet failed, closing session", "packet_id", err.packetID, "err", err.err)
+			return
+		default:
+		}
+	}
+}
+
+type packetProcessError struct {
+	packetID uint32
+	err      error
+}
+
+func (s *Session) processPackets(incoming <-chan packet.Packet, processErr chan<- packetProcessError, done chan<- struct{}, stop <-chan struct{}) {
+	defer close(done)
+	for {
+		var pk packet.Packet
+		select {
+		case <-stop:
+			return
+		case p, ok := <-incoming:
+			if !ok {
+				return
+			}
+			pk = p
+		}
+
+		var err error
 		s.ent.ExecWorld(func(tx *world.Tx, e world.Entity) {
 			err = s.handlePacket(pk, tx, e.(Controllable))
 		})
 		if err != nil {
-			s.conf.Log.Debug("process packet: " + err.Error())
+			select {
+			case processErr <- packetProcessError{packetID: pk.ID(), err: err}:
+			default:
+			}
 			return
 		}
 	}
@@ -415,8 +527,10 @@ func (s *Session) background() {
 					// command changes. Those are generally only related to permission changes, which doesn't happen often.
 					r = s.resendEnums(enums, enumValues, softEnums, r, c)
 				}
-				if i%100 == 0 {
-					// Try to resend commands only every 5 seconds.
+				// Resend commands every 5 seconds OR immediately when an
+				// out-of-band caller (RefreshAvailableCommands) signals the
+				// effective permission set changed.
+				if i%100 == 0 || s.cmdsDirty.CompareAndSwap(true, false) {
 					if r, ok = s.resendCommands(r, c, softEnums); ok {
 						enums, enumValues = s.enums(c)
 					}
@@ -436,6 +550,7 @@ func (s *Session) sendChunks(tx *world.Tx, c Controllable) {
 	if w := tx.World(); s.chunkLoader.World() != w && w != nil {
 		worldSwitched = true
 		s.handleWorldSwitch(w, tx, c)
+		s.clearBulkChunkRefreshes()
 	}
 	pos := c.Position()
 	s.chunkLoader.Move(tx, pos)
@@ -456,11 +571,12 @@ func (s *Session) sendChunks(tx *world.Tx, c Controllable) {
 		toLoad = 4
 	}
 	s.chunkLoader.Load(tx, toLoad)
+	s.sendBulkChunkRefreshes(tx)
 }
 
 // handleWorldSwitch handles the player of the Session switching worlds.
 func (s *Session) handleWorldSwitch(w *world.World, tx *world.Tx, c Controllable) {
-	if s.conn.ClientCacheEnabled() {
+	if s.chunkBlobCacheEnabled() {
 		s.blobMu.Lock()
 		s.blobs = map[uint64][]byte{}
 		s.openChunkTransactions = nil

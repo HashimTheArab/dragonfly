@@ -1,0 +1,95 @@
+name: Sync upstream dragonfly
+
+on:
+  schedule:
+    # Weekly on Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/df-mc/dragonfly.git || true
+          git fetch upstream master
+
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          BEHIND=$(git rev-list --count HEAD..upstream/master)
+          echo "behind=$BEHIND" >> $GITHUB_OUTPUT
+          if [ "$BEHIND" -eq "0" ]; then
+            echo "Already up to date with upstream"
+          else
+            echo "$BEHIND new upstream commits available"
+          fi
+
+      - name: Create sync branch and merge
+        if: steps.check.outputs.behind != '0'
+        run: |
+          BRANCH="auto/upstream-sync-$(date +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          if git merge upstream/master --no-edit; then
+            echo "CONFLICTS=false" >> $GITHUB_ENV
+          else
+            echo "CONFLICTS=true" >> $GITHUB_ENV
+            git add -A
+            git commit --no-edit -m "Merge upstream/master (with conflicts to resolve)"
+          fi
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+
+      - name: Push branch and create PR
+        if: steps.check.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git push origin "$BRANCH"
+          BEHIND=${{ steps.check.outputs.behind }}
+          if [ "$CONFLICTS" = "true" ]; then
+            BODY="$(cat <<'BODY_EOF'
+          ## Automated upstream sync
+
+          **$BEHIND new commits** from [df-mc/dragonfly](https://github.com/df-mc/dragonfly).
+
+          **Manual conflict resolution required.** The automatic merge had conflicts that need to be resolved before merging.
+
+          ### Conflict resolution guidelines
+          - Keep ALL Velvet Practice custom modifications (Java KB, PocketMine armor, sprint reset, etc.)
+          - Accept upstream additions that don't conflict with custom code
+          - Test with `go build ./...` and `go vet ./...` after resolving
+          BODY_EOF
+          )"
+          else
+            BODY="$(cat <<'BODY_EOF'
+          ## Automated upstream sync
+
+          **$BEHIND new commits** from [df-mc/dragonfly](https://github.com/df-mc/dragonfly).
+
+          No conflicts detected. Review changes and merge when ready.
+
+          ### Before merging
+          - [ ] `go build ./...` passes
+          - [ ] `go vet ./...` passes
+          - [ ] Practice server builds against updated fork
+          BODY_EOF
+          )"
+          fi
+          gh pr create \
+            --title "Upstream sync: $(date +%Y-%m-%d)" \
+            --body "$BODY" \
+            --base master \
+            --head "$BRANCH"

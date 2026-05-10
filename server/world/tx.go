@@ -78,6 +78,19 @@ func (tx *Tx) BuildStructure(pos cube.Pos, s Structure) {
 	tx.World().buildStructure(pos, s)
 }
 
+// FillVolume fills the cuboid starting at pos with the dimensions passed.
+// FillVolume is optimised for uniform bulk writes: the foreground block and
+// liquid runtime IDs are resolved once, then written directly to affected
+// chunks. A nil block fills the volume with air. A nil liquid clears layer 1
+// where present, matching BuildStructure's nil-liquid behaviour.
+//
+// Like BuildStructure, FillVolume is a bulk edit path: It does not perform
+// neighbour block updates or liquid-displacement logic, and viewers receive
+// one ViewChunk call per affected chunk instead of per-block updates.
+func (tx *Tx) FillVolume(pos cube.Pos, dims [3]int, b Block, liq Liquid) {
+	tx.World().fillVolume(pos, dims, b, liq)
+}
+
 // ScheduleBlockUpdate schedules a block update at the position passed for the
 // block type passed after a specific delay. If the block at that position does
 // not handle block updates, nothing will happen.

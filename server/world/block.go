@@ -115,6 +115,16 @@ func BlockByName(name string, properties map[string]any) (Block, bool) {
 	return DefaultBlockRegistry.BlockByName(name, properties)
 }
 
+// BlockImplemented returns true if a block with the name and properties passed
+// has been registered with a concrete implementation in the DefaultBlockRegistry.
+// It returns false for states that exist in the vanilla palette but are still
+// backed by an unknownBlock placeholder. Custom blocks registered after a
+// fallback implementation has claimed a vanilla state will still conflict with
+// that fallback during registration.
+func BlockImplemented(name string, properties map[string]any) bool {
+	return DefaultBlockRegistry.BlockImplemented(name, properties)
+}
+
 // Blocks returns a slice of all blocks registered in the DefaultBlockRegistry.
 // If you use a non-default registry (NewBlockRegistry), use your registry instance's Blocks() instead.
 func Blocks() []Block {

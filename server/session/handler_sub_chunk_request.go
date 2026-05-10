@@ -18,7 +18,7 @@ func (*SubChunkRequestHandler) Handle(p packet.Packet, s *Session, tx *world.Tx,
 		s.writePacket(&packet.SubChunk{
 			Dimension:       pk.Dimension,
 			Position:        pk.Position,
-			CacheEnabled:    s.conn.ClientCacheEnabled(),
+			CacheEnabled:    s.chunkBlobCacheEnabled(),
 			SubChunkEntries: []protocol.SubChunkEntry{},
 		})
 		return nil

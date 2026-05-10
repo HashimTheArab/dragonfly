@@ -483,6 +483,56 @@ func (s *Session) ViewParticle(pos mgl64.Vec3, p world.Particle) {
 			EventType: packet.LevelEventParticleLegacyEvent | 88,
 			Position:  vec64To32(pos),
 		})
+	case particle.Heart:
+		s.writePacket(&packet.LevelEvent{
+			EventType: packet.LevelEventParticleLegacyEvent | 17,
+			Position:  vec64To32(pos),
+			EventData: int32(pa.Scale),
+		})
+	case particle.Critical:
+		s.writePacket(&packet.LevelEvent{
+			EventType: packet.LevelEventParticleLegacyEvent | 2,
+			Position:  vec64To32(pos),
+			EventData: int32(pa.Scale),
+		})
+	case particle.Smoke:
+		s.writePacket(&packet.LevelEvent{
+			EventType: packet.LevelEventParticleLegacyEvent | 4,
+			Position:  vec64To32(pos),
+			EventData: int32(pa.Scale),
+		})
+	case particle.Portal:
+		s.writePacket(&packet.LevelEvent{
+			EventType: packet.LevelEventParticleLegacyEvent | 11,
+			Position:  vec64To32(pos),
+		})
+	case particle.Explode:
+		s.writePacket(&packet.LevelEvent{
+			EventType: packet.LevelEventParticleLegacyEvent | 6,
+			Position:  vec64To32(pos),
+		})
+	case particle.AngryVillager:
+		s.writePacket(&packet.LevelEvent{
+			EventType: packet.LevelEventParticleLegacyEvent | 31,
+			Position:  vec64To32(pos),
+		})
+	case particle.HappyVillager:
+		s.writePacket(&packet.LevelEvent{
+			EventType: packet.LevelEventParticleLegacyEvent | 32,
+			Position:  vec64To32(pos),
+		})
+	case particle.Bubble:
+		s.writePacket(&packet.LevelEvent{
+			EventType: packet.LevelEventParticleLegacyEvent | 1,
+			Position:  vec64To32(pos),
+		})
+	case particle.Named:
+		s.writePacket(&packet.SpawnParticleEffect{
+			Dimension:      0, // Overworld
+			EntityUniqueID: -1,
+			Position:       vec64To32(pos),
+			ParticleName:   pa.Name,
+		})
 	}
 }
 

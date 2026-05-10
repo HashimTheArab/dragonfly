@@ -16,7 +16,7 @@ type hungerManager struct {
 // newHungerManager returns a new hunger manager with the default values for food level, saturation level and
 // exhaustion level.
 func newHungerManager() *hungerManager {
-	return &hungerManager{foodLevel: 20, saturationLevel: 5, foodTick: 1}
+	return &hungerManager{foodLevel: 20, saturationLevel: 0, foodTick: 1}
 }
 
 // Food returns the current food level of a player. The level returned is guaranteed to always be between 0
@@ -51,7 +51,7 @@ func (m *hungerManager) Reset() {
 	defer m.mu.Unlock()
 
 	m.foodLevel = 20
-	m.saturationLevel = 5
+	m.saturationLevel = 0
 	m.exhaustionLevel = 0
 	m.foodTick = 1
 }
@@ -81,35 +81,20 @@ func (m *hungerManager) exhaust(points float64) {
 	}
 }
 
-// saturate saturates the player's food and saturation by the amount of points passed. Note that the total
-// saturation will never exceed the total food value.
+// saturate adds food points to the player. Saturation is disabled for this server.
 func (m *hungerManager) saturate(food int, saturation float64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.foodLevel = max(min(m.foodLevel+food, 20), 0)
-	m.saturationLevel = max(min(m.saturationLevel+saturation, float64(m.foodLevel)), 0)
+	// Saturation disabled - ignore saturation parameter
 }
 
-// desaturate removes one saturation point from the player. If the saturation level of the player is already
-// 0, a point will be subtracted from the food level instead. If that level, too, is already 0, nothing will
-// happen.
+// desaturate removes one food point from the player. Saturation is disabled for this server.
 func (m *hungerManager) desaturate() {
-	if m.saturationLevel <= 0 && m.foodLevel != 0 {
+	if m.foodLevel > 0 {
 		m.foodLevel--
-	} else if m.saturationLevel > 0 {
-		m.saturationLevel = max(m.saturationLevel-1, 0)
 	}
-}
-
-// canQuicklyRegenerate checks if the player can quickly regenerate. The function returns true if Food() returns 20
-// and the player still has saturation left.
-// The rate of regeneration is 1/0.5 seconds.
-func (m *hungerManager) canQuicklyRegenerate() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	return m.foodLevel == 20 && m.saturationLevel > 0
 }
 
 // canRegenerate checks if the player with the amount of food levels in the hunger manager can regenerate.

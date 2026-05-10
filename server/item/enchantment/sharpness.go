@@ -33,8 +33,9 @@ func (sharpness) Rarity() item.EnchantmentRarity {
 }
 
 // Addend returns the additional damage when attacking with sharpness.
+// Formula matches PocketMine-MP: 0.5 * (level + 1)
 func (sharpness) Addend(level int) float64 {
-	return float64(level) * 1.25
+	return 0.5 * float64(level+1)
 }
 
 // CompatibleWithEnchantment ...

@@ -4,11 +4,10 @@ import (
 	_ "embed"
 	"fmt"
 
+	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
-	// The following four imports are essential for this package: They make sure this package is loaded after
-	// all these imports. This ensures that all blocks and items are registered before the creative items are
-	// registered in the init function in this package.
-	_ "github.com/df-mc/dragonfly/server/block"
+	// The block import is essential for this package: It makes sure blocks and
+	// items are registered before the creative items are registered.
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
@@ -119,6 +118,36 @@ func registerCreativeItems() {
 			continue
 		}
 		RegisterItem(Item{st, creativeGroups[data.GroupIndex].Name})
+	}
+	registerShellBuildingCreativeItems()
+}
+
+func registerShellBuildingCreativeItems() {
+	const groupName = "itemGroup.name.shellBuildingBlocks"
+
+	registered := map[string]struct{}{}
+	for _, creativeItem := range creativeItemStacks {
+		it := creativeItem.Stack.Item()
+		if it == nil {
+			continue
+		}
+		name, meta := it.EncodeItem()
+		registered[fmt.Sprintf("%s:%d", name, meta)] = struct{}{}
+	}
+	groupRegistered := false
+	for _, it := range block.ShellBuildingCreativeItems() {
+		name, meta := it.EncodeItem()
+		key := fmt.Sprintf("%s:%d", name, meta)
+		if _, ok := registered[key]; ok {
+			continue
+		}
+		registered[key] = struct{}{}
+		st := item.NewStack(it, 1)
+		if !groupRegistered {
+			RegisterGroup(Group{Category: ConstructionCategory(), Name: groupName, Icon: st})
+			groupRegistered = true
+		}
+		RegisterItem(Item{Stack: st, Group: groupName})
 	}
 }
 

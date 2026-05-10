@@ -71,6 +71,13 @@ type Config struct {
 	// If left nil, DefaultBlockRegistry is used. For a non-default registry,
 	// use NewBlockRegistry(), register blocks/states, and call Finalize().
 	Blocks BlockRegistry
+
+	// DisableLighting skips light calculation entirely when chunks are loaded
+	// or modified. This drastically reduces chunk load time (lighting is the
+	// main cost) at the expense of having no real lighting in the world.
+	// Suitable for practice/PvP servers where chunks are pre-built and
+	// realistic lighting is not needed.
+	DisableLighting bool
 }
 
 // New creates a new World using the Config conf. The World returned will start

@@ -84,7 +84,7 @@ func (c *MovementComputer) OnGround() bool {
 var zeroVec3 mgl64.Vec3
 
 // epsilon is the epsilon used for thresholds for change used for change in position and velocity.
-const epsilon = 0.001
+const epsilon = 0.00001 // PM: MOTION_THRESHOLD
 
 // applyVerticalForces applies gravity and drag on the Y axis, based on the Gravity and Drag values set.
 func (c *MovementComputer) applyVerticalForces(vel mgl64.Vec3) mgl64.Vec3 {

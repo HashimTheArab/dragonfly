@@ -83,8 +83,8 @@ type playerData struct {
 
 	lastXPPickup *time.Time
 
-	lastDamage  float64
-	immuneUntil time.Time
+	lastDamage float64
+	attackTime int // PM-style tick counter for attack immunity
 
 	deathPos       *mgl64.Vec3
 	deathDimension world.Dimension
@@ -107,6 +107,25 @@ type playerData struct {
 	once sync.Once
 
 	prevWorld *world.World
+
+	// pendingSprintReset is set to true by game mode handlers (via
+	// SetPendingSprintReset) to request that sprinting be cancelled after
+	// knockback is applied in AttackEntity. This enables the Java W-tap
+	// mechanic only in game modes that opt in.
+	pendingSprintReset bool
+	// sprintCooldownUntil prevents re-sprinting until this time. Set when
+	// pendingSprintReset fires to match Java's ~6 tick sprint cooldown
+	// after a sprint-attack. Without this, Bedrock clients holding sprint
+	// would instantly re-sprint on the next tick.
+	sprintCooldownUntil time.Time
+	// skipStandardKB is set by JavaKnockBack to prevent the standard PM
+	// knockBack() from overriding the Java-computed velocity. Cleared
+	// automatically when checked.
+	skipStandardKB bool
+	// pendingJavaKB stores Java KB parameters set by the game mode handler
+	// in HandleAttackEntity. Applied in AttackEntity AFTER the immunity
+	// check passes, so immune targets don't get knocked back without damage.
+	pendingJavaKB *javaKBParams
 }
 
 // Player is an implementation of a player entity. It has methods that implement the behaviour that players
@@ -379,6 +398,14 @@ func (p *Player) SendCommandOutput(output *cmd.Output) {
 	p.session().SendCommandOutput(output, p.locale)
 }
 
+// RefreshAvailableCommands forces an immediate resend of the available
+// commands list to the client. The session normally re-checks every 5 seconds;
+// call this after changing a player's effective permissions out-of-band so
+// autocomplete and the /help list update without delay.
+func (p *Player) RefreshAvailableCommands() {
+	p.session().RefreshAvailableCommands()
+}
+
 // SendDialogue sends an NPC dialogue to the player, using the entity passed as the entity that the dialogue
 // is shown for. Dialogues can be sent on top of each other without the other closing, making it possible
 // to have non-flashing transitions between menus compared to forms. The player can either press one of the
@@ -587,19 +614,27 @@ func (p *Player) Hurt(dmg float64, src world.DamageSource) (float64, bool) {
 	totalDamage := p.FinalDamageFrom(dmg, src)
 	damageLeft := totalDamage
 
-	immune := time.Now().Before(p.immuneUntil)
-	if immune {
-		if damageLeft -= p.lastDamage; damageLeft <= 0 {
+	// Projectile damage bypasses melee immunity entirely — arrows always
+	// register their hit regardless of existing attack immunity frames.
+	_, isProjectile := src.(entity.ProjectileDamageSource)
+
+	immune := p.attackTime > 0 // PM-style: check tick counter
+	if immune && !isProjectile {
+		if damageLeft = damageLeft - p.lastDamage; damageLeft <= 0 {
 			return 0, false
 		}
 	}
 
 	immunity := time.Second / 2
 	ctx := event.C(p)
-	if p.Handler().HandleHurt(ctx, &damageLeft, immune, &immunity, src); ctx.Cancelled() {
+	if p.Handler().HandleHurt(ctx, &damageLeft, immune && !isProjectile, &immunity, src); ctx.Cancelled() {
 		return 0, false
 	}
-	p.setAttackImmunity(immunity, totalDamage)
+	// Projectile hits should not reset or interfere with existing melee
+	// immunity frames — only melee (and other non-projectile) sources set them.
+	if !isProjectile {
+		p.setAttackImmunity(immunity, totalDamage)
+	}
 
 	if a := p.Absorption(); a > 0 {
 		p.SetAbsorption(a - damageLeft)
@@ -720,22 +755,154 @@ func (p *Player) KnockBack(src mgl64.Vec3, force, height float64) {
 }
 
 // knockBack is an unexported function that is used to knock the player back. This function does not check if the player
-// can take damage or not.
+// can take damage or not. Mirrors PocketMine's Living::knockBack: halve existing motion, add `force` on all three
+// axes, then clamp Y to `height` (PM's $verticalLimit). Resistance is applied as a deterministic (1 - resistance)
+// scale rather than PM's random gate. A horizontal chase clamp is layered on top as a deliberate, named deviation.
 func (p *Player) knockBack(src mgl64.Vec3, force, height float64) {
-	velocity := p.Position().Sub(src)
-	velocity[1] = 0
-
-	if velocity.Len() != 0 {
-		velocity = velocity.Normalize().Mul(force)
+	// JavaKnockBack sets this flag so the standard KB doesn't override
+	// the already-applied Java velocity.
+	if p.skipStandardKB {
+		p.skipStandardKB = false
+		return
 	}
-	velocity[1] = height
 
-	p.SetVelocity(velocity.Mul(1 - p.Armour().KnockBackResistance()))
+	// Direction from attacker/source -> player, horizontal only (like PM's $deltaX, $deltaZ).
+	dir := p.Position().Sub(src)
+	dir[1] = 0
+
+	// PM: $f = sqrt($x * $x + $z * $z); if($f <= 0) return;
+	f := dir.Len()
+	if f <= 0 {
+		return
+	}
+
+	// Deterministic equivalent of PM's `mt_rand() > knockbackResistance` gate.
+	scale := 1 - p.Armour().KnockBackResistance()
+	if scale <= 0 {
+		return
+	}
+
+	// PM: $f = 1 / $f (normalize)
+	f = 1 / f
+
+	v := p.Velocity()
+
+	// PM horizontal formula: halve existing X/Z motion, then add fresh KB.
+	v[0] = v[0]/2 + dir[0]*f*force*scale
+	v[2] = v[2]/2 + dir[2]*f*force*scale
+
+	// Vertical KB must not be eaten by a falling/client-reported downward velocity.
+	// Use the older Velvet/Bedrock combo behaviour: apply the configured upward
+	// height whenever it is stronger than the current Y velocity. The previous
+	// additive Y formula (`vY/2 + force`) made airborne/falling players stick
+	// close to the ground when comboed, especially while Oomph/client movement
+	// fed a negative Y velocity back into p.Velocity().
+	kbY := height * scale
+	if kbY > v[1] {
+		v[1] = kbY
+	}
+
+	// Chase clamp (NOT part of PM). Bounds the post-additive horizontal peak so a
+	// sprinting attacker can stay near the victim instead of being left behind.
+	// Bedrock sprint is ~0.21 b/tick; capping at `force * scale` (≈0.388 at default
+	// force) lands the victim around 1.2× sprint speed — opens a gap slowly without
+	// rocketing out. Drop this block to get bit-for-bit PM output.
+	maxHoriz := force * scale
+	if hLen := math.Sqrt(v[0]*v[0] + v[2]*v[2]); hLen > maxHoriz && hLen != 0 {
+		ratio := maxHoriz / hLen
+		v[0] *= ratio
+		v[2] *= ratio
+	}
+
+	p.SetVelocity(v)
+}
+
+// javaKBParams holds parameters for a deferred JavaKnockBack call.
+type javaKBParams struct {
+	pos     mgl64.Vec3
+	yaw     float64
+	sprint  bool
+	kbLevel int
+}
+
+// SetPendingJavaKB stores Java KB parameters to be applied after the immunity
+// check in AttackEntity. Call this from HandleAttackEntity instead of calling
+// JavaKnockBack directly, so that immune targets don't get knocked back.
+func (p *Player) SetPendingJavaKB(attackerPos mgl64.Vec3, attackerYaw float64, sprinting bool, kbLevel int) {
+	p.pendingJavaKB = &javaKBParams{pos: attackerPos, yaw: attackerYaw, sprint: sprinting, kbLevel: kbLevel}
+}
+
+// JavaKnockBack applies knockback matching Java Edition 1.9+ mechanics.
+// Two-step process matching the actual Java source:
+//  1. Base KB (0.4 strength) in position-based direction (from LivingEntity.hurt)
+//  2. Sprint/KB-enchant bonus in attacker's yaw direction (from Player.attack)
+//
+// Key differences from PM knockBack:
+//   - No horizontal velocity clamp (combos stack properly)
+//   - Vertical: min(0.4, vel.y/2 + strength) on ground, unchanged in air
+//   - Sprint bonus is a separate additive step, not combined into base force
+//
+// Sets skipStandardKB to prevent the PM knockBack from firing afterwards.
+func (p *Player) JavaKnockBack(attackerPos mgl64.Vec3, attackerYaw float64, sprinting bool, kbEnchantLevel int) {
+	scale := 1 - p.Armour().KnockBackResistance()
+	if scale <= 0 {
+		p.skipStandardKB = true
+		return
+	}
+
+	v := p.Velocity()
+
+	// Step 1: Base knockback (strength 0.4, position-based direction).
+	// Java: LivingEntity.knockback(0.4, attackerX - victimX, attackerZ - victimZ)
+	// Direction is FROM victim TO attacker, then subtracted → pushes victim away.
+	dir := p.Position().Sub(attackerPos)
+	dir[1] = 0
+	f := dir.Len()
+	if f > 0 {
+		f = 1 / f // normalize
+		baseForce := 0.4 * scale
+		v[0] = v[0]/2 + dir[0]*f*baseForce
+		v[2] = v[2]/2 + dir[2]*f*baseForce
+
+		// Java vertical: only modify when on ground, cap at 0.4
+		if p.OnGround() {
+			v[1] = math.Min(0.4, v[1]/2+baseForce)
+		}
+	}
+
+	// Step 2: Sprint/KB enchant bonus (yaw-based direction).
+	// Java: Player.attack() calls target.knockback(bonusLevel * 0.5, sin(yaw), -cos(yaw))
+	// Sprint adds +1 to bonus level, KB enchant adds its level.
+	bonusLevel := kbEnchantLevel
+	if sprinting {
+		bonusLevel++
+	}
+	if bonusLevel > 0 {
+		bonusForce := float64(bonusLevel) * 0.5 * scale
+		yawRad := mgl64.DegToRad(attackerYaw)
+		// Java forward direction: (-sin(yaw), 0, cos(yaw))
+		lookX := -math.Sin(yawRad)
+		lookZ := math.Cos(yawRad)
+
+		// Java's second knockback() call: halves velocity again, then adds.
+		v[0] = v[0]/2 + lookX*bonusForce
+		v[2] = v[2]/2 + lookZ*bonusForce
+
+		if p.OnGround() {
+			v[1] = math.Min(0.4, v[1]/2+bonusForce)
+		}
+	}
+
+	// No horizontal clamp — Java doesn't have one. Combo KB stacks naturally.
+	p.SetVelocity(v)
+	p.skipStandardKB = true
 }
 
 // setAttackImmunity sets the duration the player is immune to entity attacks.
+// Converts duration to ticks (PM-style tick counter).
 func (p *Player) setAttackImmunity(d time.Duration, dmg float64) {
-	p.immuneUntil = time.Now().Add(d)
+	// Convert duration to ticks (50ms per tick, 20 TPS)
+	p.attackTime = int(d / (50 * time.Millisecond))
 	p.lastDamage = dmg
 }
 
@@ -999,6 +1166,12 @@ func (p *Player) StartSprinting() {
 	if !p.hunger.canSprint() && p.GameMode().AllowsTakingDamage() || p.crawling || p.sprinting {
 		return
 	}
+	// Block re-sprint during the cooldown window set by pendingSprintReset
+	// (Java W-tap mechanic). Only active for ~300ms after a sprint-attack
+	// in game modes that opt in.
+	if !p.sprintCooldownUntil.IsZero() && time.Now().Before(p.sprintCooldownUntil) {
+		return
+	}
 	ctx := event.C(p)
 	if p.Handler().HandleToggleSprint(ctx, true); ctx.Cancelled() {
 		return
@@ -1026,6 +1199,14 @@ func (p *Player) StopSprinting() {
 	p.sprinting = false
 	p.SetSpeed(p.speed / 1.3)
 	p.updateState()
+}
+
+// SetPendingSprintReset requests that sprinting be cancelled after knockback
+// is applied in the current AttackEntity call. Game mode handlers call this
+// in HandleAttackEntity to enable the Java W-tap mechanic only for modes
+// that opt in. The flag is automatically cleared after it fires.
+func (p *Player) SetPendingSprintReset(v bool) {
+	p.pendingSprintReset = v
 }
 
 // StartSneaking makes a player start sneaking. If the player is already sneaking, StartSneaking will not do
@@ -1762,7 +1943,7 @@ func (p *Player) AttackEntity(e world.Entity) bool {
 	}
 
 	var (
-		force, height  = 0.45, 0.3608
+		force, height  = 0.4, 0.4 // PM defaults: DEFAULT_KNOCKBACK_FORCE, DEFAULT_KNOCKBACK_VERTICAL_LIMIT
 		_, slowFalling = p.Effect(effect.SlowFalling)
 		_, blind       = p.Effect(effect.Blindness)
 		critical       = !p.Sprinting() && !p.Flying() && p.FallDistance() > 0 && !slowFalling && !blind
@@ -1794,9 +1975,6 @@ func (p *Player) AttackEntity(e world.Entity) bool {
 	}
 	if s, ok := i.Enchantment(enchantment.Sharpness); ok {
 		dmg += enchantment.Sharpness.Addend(s.Level())
-		for _, v := range p.tx.Viewers(living.Position()) {
-			v.ViewEntityAction(living, entity.EnchantedHitAction{})
-		}
 	}
 	if critical {
 		dmg *= 1.5
@@ -1805,8 +1983,21 @@ func (p *Player) AttackEntity(e world.Entity) bool {
 	n, vulnerable := living.Hurt(dmg, entity.AttackDamageSource{Attacker: p})
 	i, left := p.HeldItems()
 
+	// Apply per-attack durability damage if the held item is durable
+	// (upstream #1135). Runs regardless of immunity so missed swings
+	// still count, matching upstream behaviour.
 	if durable, ok := i.Item().(item.Durable); ok {
 		p.SetHeldItems(p.damageItem(i, durable.DurabilityInfo().AttackDurability), left)
+		i, left = p.HeldItems()
+	}
+
+	// Consume any pending Java KB params (set by HandleAttackEntity).
+	// Must be consumed here regardless of vulnerability so stale data
+	// doesn't carry over to the next attack.
+	var javaKB *javaKBParams
+	if tp, ok := living.(*Player); ok {
+		javaKB = tp.pendingJavaKB
+		tp.pendingJavaKB = nil
 	}
 
 	p.tx.PlaySound(entity.EyePosition(e), sound.Attack{Damage: !mgl64.FloatEqual(n, 0)})
@@ -1821,7 +2012,34 @@ func (p *Player) AttackEntity(e world.Entity) bool {
 
 	p.Exhaust(0.1)
 
+	// Apply pending Java KB if set (two-step Java formula). This runs
+	// after the immunity check, so immune targets won't be knocked back.
+	// JavaKnockBack sets skipStandardKB to prevent the PM KB below from
+	// overriding it.
+	if javaKB != nil {
+		if tp, ok := living.(*Player); ok {
+			tp.JavaKnockBack(javaKB.pos, javaKB.yaw, javaKB.sprint, javaKB.kbLevel)
+		}
+	}
+
+	// Standard position-based knockback direction (attacker -> victim).
 	living.KnockBack(p.Position(), force, height)
+
+	// Conditional sprint reset (Java W-tap mechanic). Only fires when a
+	// game mode handler has called SetPendingSprintReset(true) during
+	// HandleAttackEntity. KB direction and bonus were already calculated
+	// above while Sprinting() was still true, so resetting now is safe.
+	if p.pendingSprintReset {
+		p.pendingSprintReset = false
+		if p.Sprinting() {
+			p.StopSprinting()
+			// Set a ~300ms sprint cooldown (6 Java ticks) to prevent
+			// Bedrock clients from instantly re-sprinting while holding
+			// the sprint key. The player must wait before sprinting again,
+			// matching Java's W-tap timing.
+			p.sprintCooldownUntil = time.Now().Add(300 * time.Millisecond)
+		}
+	}
 
 	if f, ok := i.Enchantment(enchantment.FireAspect); ok {
 		if flammable, ok := living.(entity.Flammable); ok {
@@ -2495,6 +2713,10 @@ func (p *Player) Tick(tx *world.Tx, current int64) {
 	if p.Dead() {
 		return
 	}
+	// PM-style: decrement attack immunity counter each tick
+	if p.attackTime > 0 {
+		p.attackTime--
+	}
 	if _, ok := p.tx.Liquid(cube.PosFromVec3(p.Position())); !ok {
 		p.StopSwimming()
 		if _, ok := p.Armour().Helmet().Item().(item.TurtleShell); ok {
@@ -2638,19 +2860,23 @@ func (p *Player) tickAirSupply() {
 }
 
 // tickFood ticks food related functionality, such as the depletion of the food bar and regeneration if it
-// is full enough.
+// is full enough. Matches PocketMine-MP behavior: regeneration occurs every 80 ticks (4 seconds) when
+// food >= 18, and always exhausts 6 points.
 func (p *Player) tickFood() {
-	if p.hunger.foodTick%10 == 0 && (p.hunger.canQuicklyRegenerate() || p.tx.World().Difficulty().FoodRegenerates()) {
-		if p.tx.World().Difficulty().FoodRegenerates() {
+	// Peaceful mode: food +1 every 10 ticks, heal every 20 ticks (no exhaustion)
+	if p.tx.World().Difficulty().FoodRegenerates() {
+		if p.hunger.foodTick%10 == 0 {
 			p.AddFood(1)
 		}
 		if p.hunger.foodTick%20 == 0 {
-			p.regenerate(true)
+			p.regenerate(false)
 		}
 	}
+
+	// Survival regeneration: every 80 ticks with exhaustion (PocketMine behavior)
 	if p.hunger.foodTick == 1 {
 		if p.hunger.canRegenerate() {
-			p.regenerate(false)
+			p.regenerate(true)
 		} else if p.hunger.starving() {
 			p.starve()
 		}
@@ -2786,7 +3012,7 @@ func (p *Player) checkBlockCollisions(vel mgl64.Vec3) {
 	}
 
 	// epsilon is the epsilon used for thresholds for change used for change in position and velocity.
-	const epsilon = 0.001
+	const epsilon = 0.00001 // PM: MOTION_THRESHOLD
 
 	if !mgl64.FloatEqualThreshold(deltaY, 0, epsilon) {
 		// First we move the entity BBox on the Y axis.
@@ -3123,11 +3349,34 @@ func (p *Player) addNewItem(ctx *item.UseContext) {
 }
 
 // canReach checks if a player can reach a position with its current range. The range depends on if the player
-// is either survival or creative mode.
+// is either survival or creative mode. Also validates that the target is within the player's field of view
+// using a directional check similar to PocketMine's canInteract method.
 func (p *Player) canReach(pos mgl64.Vec3) bool {
-	dist := entity.EyePosition(p).Sub(pos).Len()
-	return !p.Dead() && p.GameMode().AllowsInteraction() &&
-		(dist <= 8.0 || (dist <= 14.0 && p.GameMode().CreativeInventory()))
+	if p.Dead() || !p.GameMode().AllowsInteraction() {
+		return false
+	}
+
+	eyePos := entity.EyePosition(p)
+	dist := eyePos.Sub(pos).Len()
+
+	// Distance check
+	maxDist := 8.0
+	if p.GameMode().CreativeInventory() {
+		maxDist = 14.0
+	}
+	if dist > maxDist {
+		return false
+	}
+
+	// Directional check (PocketMine-style)
+	// M_SQRT3/2 ≈ 0.866 - requires target to be roughly within 60° of view direction
+	const maxDiff = 0.866 // math.Sqrt(3) / 2
+
+	dirVec := p.Rotation().Vec3()
+	eyeDot := dirVec.Dot(eyePos)
+	targetDot := dirVec.Dot(pos)
+
+	return (targetDot - eyeDot) >= -maxDiff
 }
 
 // Disconnect closes the player and removes it from the world.

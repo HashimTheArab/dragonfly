@@ -1,7 +1,6 @@
 package block
 
 import (
-	"fmt"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
@@ -182,13 +181,24 @@ func (p DecoratedPot) DecodeNBT(data map[string]any) any {
 	p.Decorations = [4]PotDecoration{}
 	if sherds := nbtconv.Slice(data, "sherds"); sherds != nil {
 		for i, name := range sherds {
-			it, ok := world.ItemByName(name.(string), 0)
+			s, ok := name.(string)
 			if !ok {
-				panic(fmt.Errorf("unknown item %s", name))
+				continue
+			}
+			// Empty sherd slots are stored as minecraft:air in vanilla.
+			// Skip them rather than panicking.
+			if s == "" || s == "minecraft:air" {
+				continue
+			}
+			it, ok := world.ItemByName(s, 0)
+			if !ok {
+				// Unknown item — leave the slot empty rather than crash.
+				continue
 			}
 			decoration, ok := it.(PotDecoration)
 			if !ok {
-				panic(fmt.Errorf("item %s is not a pot decoration", name))
+				// Non-decoration item in a decoration slot — leave empty.
+				continue
 			}
 			p.Decorations[i] = decoration
 		}
