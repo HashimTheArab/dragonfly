@@ -29,6 +29,17 @@ type shellBlockState struct {
 
 var shellBuildingBlockHash = NextHash()
 
+// registeredShellBlockStates tracks which shellBlockStates indices were
+// actually registered as shellBuildingBlock blocks (i.e. states that didn't
+// already have a concrete block implementation). Populated by
+// registerShellBuildingBlocks and consulted by registerShellBuildingItems so
+// we don't register a shell-as-item for a state whose block side is owned by
+// a concrete (non-shell) block — registering one anyway would crash
+// BlockRuntimeID at runtime when creative content (or any consumer) tries to
+// resolve the shell's hash, since shellBuildingBlock{State:i} isn't in the
+// hash map for that i.
+var registeredShellBlockStates = map[uint16]struct{}{}
+
 func (s shellBuildingBlock) shellState() shellBlockState { return shellBlockStates[int(s.State)] }
 
 func (s shellBuildingBlock) Hash() (uint64, uint64) { return shellBuildingBlockHash, uint64(s.State) }
@@ -82,6 +93,7 @@ func registerShellBuildingBlocks() {
 			continue
 		}
 		world.RegisterBlock(shellBuildingBlock{State: uint16(i)})
+		registeredShellBlockStates[uint16(i)] = struct{}{}
 	}
 }
 
@@ -92,6 +104,13 @@ func registerShellBuildingItems() {
 			continue
 		}
 		if _, ok := registered[st.Name]; ok {
+			continue
+		}
+		// Skip when the block side at this state is owned by a concrete
+		// (non-shell) block. Registering shellBuildingBlock{State:i} as
+		// the item form would later crash BlockRuntimeID(shell) — the
+		// shell is not in the hash map for state i.
+		if _, isShell := registeredShellBlockStates[uint16(i)]; !isShell {
 			continue
 		}
 		registered[st.Name] = struct{}{}
