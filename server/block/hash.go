@@ -11,6 +11,8 @@ const (
 	hashAndesite
 	hashAnvil
 	hashAzalea
+	hashBamboo
+	hashBambooSapling
 	hashBanner
 	hashBarrel
 	hashBarrier
@@ -253,6 +255,14 @@ func (a Anvil) Hash() (uint64, uint64) {
 
 func (a Azalea) Hash() (uint64, uint64) {
 	return hashAzalea, uint64(boolByte(a.Flowering))
+}
+
+func (b Bamboo) Hash() (uint64, uint64) {
+	return hashBamboo, uint64(boolByte(b.Ready)) | uint64(boolByte(b.Thick))<<1 | uint64(b.LeafSize.Uint8())<<2
+}
+
+func (b BambooSapling) Hash() (uint64, uint64) {
+	return hashBambooSapling, uint64(boolByte(b.Ready))
 }
 
 func (b Banner) Hash() (uint64, uint64) {
