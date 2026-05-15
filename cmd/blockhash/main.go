@@ -244,6 +244,8 @@ func (b *hashBuilder) ftype(structName, s string, expr ast.Expr, directives map[
 			return "uint64(" + s + ".FaceUint8())", 3
 		}
 		return "uint64(" + s + ".Uint8())", 5
+	case "HangingAttachment":
+		return "uint64(" + s + ".Uint8())", 5
 	case "GrindstoneAttachment":
 		return "uint64(" + s + ".Uint8())", 2
 	case "WoodType", "LeavesType", "FlowerType", "DoubleFlowerType", "Colour":
@@ -252,7 +254,8 @@ func (b *hashBuilder) ftype(structName, s string, expr ast.Expr, directives map[
 	case "CoralType", "SkullType":
 		return "uint64(" + s + ".Uint8())", 3
 	case "AnvilType", "SandstoneType", "PrismarineType", "StoneBricksType", "NetherBricksType", "FroglightType",
-		"WallConnectionType", "BlackstoneType", "DeepslateType", "TallGrassType", "CopperType", "OxidationType":
+		"WallConnectionType", "BlackstoneType", "DeepslateType", "TallGrassType", "CopperType", "OxidationType",
+		"MushroomType", "SeagrassType":
 		return "uint64(" + s + ".Uint8())", 2
 	case "OreType", "FireType", "DoubleTallGrassType":
 		return "uint64(" + s + ".Uint8())", 1
@@ -268,6 +271,9 @@ func (b *hashBuilder) ftype(structName, s string, expr ast.Expr, directives map[
 
 func (b *hashBuilder) resolveBlocks() {
 	for bl, fields := range b.fields {
+		if !ast.IsExported(bl) {
+			continue
+		}
 		if _, ok := b.funcs[bl]; ok {
 			b.blockFields[bl] = fields
 		}
