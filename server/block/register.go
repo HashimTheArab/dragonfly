@@ -141,6 +141,8 @@ func init() {
 	}
 
 	registerAll(allAnvils())
+	registerAll(allBamboos())
+	registerAll(allBambooSaplings())
 	registerAll(allAzalea())
 	registerAll(allBanners())
 	registerAll(allBarrels())
@@ -258,6 +260,7 @@ func init() {
 	world.RegisterItem(Andesite{})
 	world.RegisterItem(Azalea{})
 	world.RegisterItem(Azalea{Flowering: true})
+	world.RegisterItem(Bamboo{})
 	world.RegisterItem(Barrel{})
 	world.RegisterItem(Barrier{})
 	world.RegisterItem(Basalt{Polished: true})
