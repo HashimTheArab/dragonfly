@@ -1058,7 +1058,7 @@ func finishDying(_ *world.Tx, e world.Entity) {
 		// position server side so that in the future, the client won't respawn
 		// on the death location when disconnecting. The client should not see
 		// the movement itself yet, though.
-		pos, _, _, _ := p.spawnLocation()
+		pos, _, _, _, _ := p.spawnLocation()
 
 		p.data.Pos = pos.Vec3()
 	}
@@ -1112,7 +1112,7 @@ func (p *Player) respawn(f func(p *Player)) {
 		return
 	}
 
-	blockPos, w, spawnObstructed, _ := p.spawnLocation()
+	blockPos, w, spawnObstructed, _, useSpawn := p.spawnLocation()
 	pos := blockPos.Vec3Middle()
 
 	if spawnObstructed {
@@ -1126,6 +1126,9 @@ func (p *Player) respawn(f func(p *Player)) {
 	p.ResetFallDistance()
 
 	p.Handler().HandleRespawn(p, &pos, &w)
+	if useSpawn != nil {
+		useSpawn(pos, w)
+	}
 
 	handle := p.tx.RemoveEntity(p)
 	w.Exec(func(tx *world.Tx) {
@@ -1140,15 +1143,27 @@ func (p *Player) respawn(f func(p *Player)) {
 }
 
 // spawnLocation designates a players safe spawn location.
-func (p *Player) spawnLocation() (playerSpawn cube.Pos, w *world.World, spawnBlockBroken bool, previousDimension world.Dimension) {
+func (p *Player) spawnLocation() (playerSpawn cube.Pos, w *world.World, spawnBlockBroken bool, previousDimension world.Dimension, useSpawn func(mgl64.Vec3, *world.World)) {
 	tx := p.tx
 	w = tx.World()
 	previousDimension = w.Dimension()
 	playerSpawn = w.PlayerSpawn(p.UUID())
-	if b, ok := tx.Block(playerSpawn).(block.Bed); ok && b.CanRespawnOn() {
+	if b, ok := tx.Block(playerSpawn).(interface {
+		CanRespawnOn() bool
+		SafeSpawn(cube.Pos, *world.Tx) (cube.Pos, bool)
+	}); ok && b.CanRespawnOn() {
 		pos, ok := b.SafeSpawn(playerSpawn, tx)
 		if ok {
-			return pos, w, false, previousDimension
+			if c, ok := b.(interface {
+				ConsumeRespawn(cube.Pos, *world.Tx)
+			}); ok {
+				useSpawn = func(finalPos mgl64.Vec3, finalWorld *world.World) {
+					if finalWorld == w && finalPos == pos.Vec3Middle() {
+						c.ConsumeRespawn(playerSpawn, tx)
+					}
+				}
+			}
+			return pos, w, false, previousDimension, useSpawn
 		}
 	}
 
@@ -1156,7 +1171,7 @@ func (p *Player) spawnLocation() (playerSpawn cube.Pos, w *world.World, spawnBlo
 	// always bring us back to the overworld.
 	w = w.PortalDestination(w.Dimension())
 	worldSpawn := w.Spawn()
-	return worldSpawn, w, playerSpawn != worldSpawn, previousDimension
+	return worldSpawn, w, playerSpawn != worldSpawn, previousDimension, nil
 }
 
 // StartSprinting makes a player start sprinting, increasing the speed of the player by 30% and making
@@ -1963,7 +1978,20 @@ func (p *Player) AttackEntity(e world.Entity) bool {
 	p.SwingArm()
 
 	if !isLiving {
-		return false
+		hurt, ok := behaviourDamageFunc(e)
+		if !ok {
+			return false
+		}
+		n, vulnerable := hurt(i.AttackDamage(), entity.AttackDamageSource{Attacker: p})
+		i, left := p.HeldItems()
+		if durable, ok := i.Item().(item.Durable); ok {
+			p.SetHeldItems(p.damageItem(i, durable.DurabilityInfo().AttackDurability), left)
+		}
+		p.tx.PlaySound(entity.EyePosition(e), sound.Attack{Damage: !mgl64.FloatEqual(n, 0)})
+		if vulnerable {
+			p.Exhaust(0.1)
+		}
+		return true
 	}
 
 	dmg := i.AttackDamage()
@@ -2047,6 +2075,21 @@ func (p *Player) AttackEntity(e world.Entity) bool {
 		}
 	}
 	return true
+}
+
+type behaviourDamageable interface {
+	Hurt(e *entity.Ent, damage float64, src world.DamageSource) (n float64, vulnerable bool)
+}
+
+func behaviourDamageFunc(e world.Entity) (func(float64, world.DamageSource) (float64, bool), bool) {
+	if ent, ok := e.(*entity.Ent); ok {
+		if d, ok := ent.Behaviour().(behaviourDamageable); ok {
+			return func(damage float64, src world.DamageSource) (float64, bool) {
+				return d.Hurt(ent, damage, src)
+			}, true
+		}
+	}
+	return nil, false
 }
 
 // StartBreaking makes the player start breaking the block at the position passed using the item currently

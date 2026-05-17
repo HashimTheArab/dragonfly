@@ -71,6 +71,9 @@ type EntitySpawnOpts struct {
 	ID uuid.UUID
 	// NameTag is the name tag that the entity is spawned with.
 	NameTag string
+	// EndCrystalShowBase specifies if an End crystal should render its base. If
+	// nil, End crystals use their default base visibility.
+	EndCrystalShowBase *bool
 }
 
 // New creates an EntityHandle using an EntityType and EntityConfig passed. The
@@ -368,6 +371,7 @@ type EntityRegistryConfig struct {
 	BottleOfEnchanting func(opts EntitySpawnOpts, owner Entity) *EntityHandle
 	Arrow              func(opts EntitySpawnOpts, damage float64, owner Entity, critical, disallowPickup, obtainArrowOnPickup bool, punchLevel int, tip any) *EntityHandle
 	Egg                func(opts EntitySpawnOpts, owner Entity) *EntityHandle
+	EndCrystal         func(opts EntitySpawnOpts) *EntityHandle
 	EnderPearl         func(opts EntitySpawnOpts, owner Entity) *EntityHandle
 	Firework           func(opts EntitySpawnOpts, firework Item, owner Entity, sidewaysVelocityMultiplier, upwardsAcceleration float64, attached bool) *EntityHandle
 	LingeringPotion    func(opts EntitySpawnOpts, t any, owner Entity) *EntityHandle
