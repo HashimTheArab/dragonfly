@@ -1,11 +1,14 @@
 package player
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/entity"
+	"github.com/df-mc/dragonfly/server/entity/effect"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
@@ -36,6 +39,61 @@ func TestAttackEntityDamagesHeldItemWhenAttackingNonLivingDamageableEntity(t *te
 	if after != before-1 {
 		t.Fatalf("expected held sword durability to decrease by 1, before=%v after=%v", before, after)
 	}
+}
+
+func TestTotemEffectsMatchJavaEdition(t *testing.T) {
+	w := world.Config{Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
+	defer w.Close()
+
+	var testErr error
+	<-w.Exec(func(tx *world.Tx) {
+		p := tx.AddEntity(world.EntitySpawnOpts{Position: mgl64.Vec3{0, 1, 0}}.New(Type, Config{Name: "player", Health: 10, MaxHealth: 20})).(*Player)
+		p.AddEffect(effect.New(effect.Speed, 1, time.Minute))
+
+		p.applyTotemEffects()
+
+		if got := p.Health(); got != 1 {
+			testErr = fmt.Errorf("health after totem = %v, want 1", got)
+			return
+		}
+		if _, ok := p.Effect(effect.Speed); ok {
+			testErr = fmt.Errorf("totem should clear existing effects before applying Java effects")
+			return
+		}
+		if err := assertEffect(p, effect.Regeneration, 2, 45*time.Second); err != nil {
+			testErr = err
+			return
+		}
+		if err := assertEffect(p, effect.FireResistance, 1, 40*time.Second); err != nil {
+			testErr = err
+			return
+		}
+		if err := assertEffect(p, effect.Absorption, 2, 5*time.Second); err != nil {
+			testErr = err
+			return
+		}
+		if got := p.Absorption(); got != 8 {
+			testErr = fmt.Errorf("absorption after totem = %v, want 8", got)
+			return
+		}
+	})
+	if testErr != nil {
+		t.Fatal(testErr)
+	}
+}
+
+func assertEffect(p *Player, typ effect.Type, level int, duration time.Duration) error {
+	eff, ok := p.Effect(typ)
+	if !ok {
+		return fmt.Errorf("missing effect %T", typ)
+	}
+	if eff.Level() != level {
+		return fmt.Errorf("%T level = %d, want %d", typ, eff.Level(), level)
+	}
+	if eff.Duration() != duration {
+		return fmt.Errorf("%T duration = %s, want %s", typ, eff.Duration(), duration)
+	}
+	return nil
 }
 
 type testDamageableEntityType struct{}
