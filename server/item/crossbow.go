@@ -2,7 +2,6 @@ package item
 
 import (
 	"time"
-	_ "unsafe"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
@@ -209,24 +208,55 @@ func (Crossbow) EncodeItem() (name string, meta int16) {
 
 // DecodeNBT ...
 func (c Crossbow) DecodeNBT(data map[string]any) any {
-	c.Item = mapItem(data, "chargedItem")
+	if itemData, ok := data["chargedItem"].(map[string]any); ok {
+		c.Item = crossbowItemFromNBT(itemData)
+	}
 	return c
 }
 
 // EncodeNBT ...
 func (c Crossbow) EncodeNBT() map[string]any {
 	if !c.Item.Empty() {
-		return map[string]any{"chargedItem": writeItem(c.Item, true)}
+		return map[string]any{"chargedItem": crossbowItemToNBT(c.Item)}
 	}
 	return nil
 }
 
-// noinspection ALL
-//
-//go:linkname writeItem github.com/df-mc/dragonfly/server/internal/nbtconv.WriteItem
-func writeItem(s Stack, disk bool) map[string]any
+func crossbowItemToNBT(s Stack) map[string]any {
+	name, meta := s.Item().EncodeItem()
+	return map[string]any{
+		"Name":   name,
+		"Damage": meta,
+		"Count":  byte(s.Count()),
+	}
+}
 
-// noinspection ALL
-//
-//go:linkname mapItem github.com/df-mc/dragonfly/server/internal/nbtconv.MapItem
-func mapItem(x map[string]any, k string) Stack
+func crossbowItemFromNBT(data map[string]any) Stack {
+	name, _ := data["Name"].(string)
+	meta := int16(0)
+	switch v := data["Damage"].(type) {
+	case int16:
+		meta = v
+	case int32:
+		meta = int16(v)
+	case int:
+		meta = int16(v)
+	}
+	count := 1
+	switch v := data["Count"].(type) {
+	case byte:
+		count = int(v)
+	case int8:
+		count = int(v)
+	case int16:
+		count = int(v)
+	case int32:
+		count = int(v)
+	case int:
+		count = v
+	}
+	if item, ok := world.ItemByName(name, meta); ok {
+		return NewStack(item, count)
+	}
+	return Stack{}
+}
