@@ -111,6 +111,55 @@ func TestRespawnAnchorExplosionConsumesOffhandTotem(t *testing.T) {
 	}
 }
 
+func TestExplosionDamageScalesWithJavaDifficulty(t *testing.T) {
+	tests := []struct {
+		name       string
+		difficulty world.Difficulty
+		wantHealth float64
+	}{
+		{name: "peaceful", difficulty: world.DifficultyPeaceful, wantHealth: 200},
+		{name: "easy", difficulty: world.DifficultyEasy, wantHealth: 163.5},
+		{name: "normal", difficulty: world.DifficultyNormal, wantHealth: 129},
+		{name: "hard", difficulty: world.DifficultyHard, wantHealth: 93.5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := world.Config{Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
+			defer w.Close()
+			w.SetDifficulty(tt.difficulty)
+
+			var gotHealth float64
+			<-w.Exec(func(tx *world.Tx) {
+				p := tx.AddEntity(world.EntitySpawnOpts{Position: mgl64.Vec3{1, 1, 0}}.New(Type, Config{Name: "player", Health: 200, MaxHealth: 200})).(*Player)
+				p.Explode(mgl64.Vec3{0, 1, 0}, 1, block.ExplosionConfig{Size: 5})
+				gotHealth = p.Health()
+			})
+
+			if gotHealth != tt.wantHealth {
+				t.Fatalf("health after power 5 full-impact explosion on %s = %v, want %v", tt.name, gotHealth, tt.wantHealth)
+			}
+		})
+	}
+}
+
+func TestExplosionDamageKeepsJavaFractionalDamage(t *testing.T) {
+	w := world.Config{Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
+	defer w.Close()
+	w.SetDifficulty(world.DifficultyNormal)
+
+	var gotHealth float64
+	<-w.Exec(func(tx *world.Tx) {
+		p := tx.AddEntity(world.EntitySpawnOpts{Position: mgl64.Vec3{1, 1, 0}}.New(Type, Config{Name: "player", Health: 200, MaxHealth: 200})).(*Player)
+		p.Explode(mgl64.Vec3{0, 1, 0}, 0.5, block.ExplosionConfig{Size: 5})
+		gotHealth = p.Health()
+	})
+
+	if gotHealth != 172.75 {
+		t.Fatalf("health after power 5 half-impact explosion = %v, want 172.75", gotHealth)
+	}
+}
+
 func assertEffect(p *Player, typ effect.Type, level int, duration time.Duration) error {
 	eff, ok := p.Effect(typ)
 	if !ok {
