@@ -82,6 +82,35 @@ func TestTotemEffectsMatchJavaEdition(t *testing.T) {
 	}
 }
 
+func TestRespawnAnchorExplosionConsumesOffhandTotem(t *testing.T) {
+	w := world.Config{Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
+	defer w.Close()
+
+	var testErr error
+	<-w.Exec(func(tx *world.Tx) {
+		anchorPos := cube.Pos{0, 1, 0}
+		tx.SetBlock(anchorPos, block.RespawnAnchor{Charges: 1}, nil)
+
+		p := tx.AddEntity(world.EntitySpawnOpts{Position: mgl64.Vec3{1.5, 1, 0.5}}.New(Type, Config{Name: "player", Health: 1, MaxHealth: 20})).(*Player)
+		p.SetHeldItems(item.Stack{}, item.NewStack(item.Totem{}, 1))
+
+		p.UseItemOnBlock(anchorPos, cube.FaceUp, mgl64.Vec3{0.5, 1, 0.5})
+
+		_, offHand := p.HeldItems()
+		if !offHand.Empty() {
+			testErr = fmt.Errorf("offhand after lethal respawn anchor explosion = %v, want empty after totem use", offHand)
+			return
+		}
+		if err := assertEffect(p, effect.Regeneration, 2, 45*time.Second); err != nil {
+			testErr = err
+			return
+		}
+	})
+	if testErr != nil {
+		t.Fatal(testErr)
+	}
+}
+
 func assertEffect(p *Player, typ effect.Type, level int, duration time.Duration) error {
 	eff, ok := p.Effect(typ)
 	if !ok {

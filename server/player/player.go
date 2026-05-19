@@ -1880,7 +1880,8 @@ func (p *Player) UseItemOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.Vec
 			// The block was activated: Blocks such as doors must always have precedence over the item being
 			// used.
 			if useCtx := p.useContext(); act.Activate(pos, face, p.tx, p, useCtx) {
-				p.SetHeldItems(p.subtractItem(p.damageItem(i, useCtx.Damage), useCtx.CountSub), left)
+				_, currentLeft := p.HeldItems()
+				p.SetHeldItems(p.subtractItem(p.damageItem(i, useCtx.Damage), useCtx.CountSub), currentLeft)
 				p.addNewItem(useCtx)
 				return
 			}
@@ -1897,7 +1898,8 @@ func (p *Player) UseItemOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.Vec
 			return
 		}
 		p.SwingArm()
-		p.SetHeldItems(p.subtractItem(p.damageItem(i, useCtx.Damage), useCtx.CountSub), left)
+		_, currentLeft := p.HeldItems()
+		p.SetHeldItems(p.subtractItem(p.damageItem(i, useCtx.Damage), useCtx.CountSub), currentLeft)
 		p.addNewItem(useCtx)
 	case world.Block:
 		// The item IS a block, meaning it is being placed.
