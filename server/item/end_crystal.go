@@ -16,16 +16,16 @@ func (e EndCrystal) UseOnBlock(pos cube.Pos, _ cube.Face, _ mgl64.Vec3, tx *worl
 		return false
 	}
 
-	above, twoAbove := pos.Side(cube.FaceUp), pos.Side(cube.FaceUp).Side(cube.FaceUp)
-	if above.OutOfBounds(tx.Range()) || twoAbove.OutOfBounds(tx.Range()) {
+	above := pos.Side(cube.FaceUp)
+	if above.OutOfBounds(tx.Range()) {
 		return false
 	}
-	if blockName(tx.Block(above)) != "minecraft:air" || blockName(tx.Block(twoAbove)) != "minecraft:air" {
+	if blockName(tx.Block(above)) != "minecraft:air" {
 		return false
 	}
 
 	spawnPos := pos.Vec3().Add(mgl64.Vec3{0.5, 1, 0.5})
-	box := cube.Box(-1, 0, -1, 1, 2, 1).Translate(spawnPos)
+	box := cube.Box(0, 1, 0, 1, 3, 1).Translate(pos.Vec3())
 	for entity := range tx.EntitiesWithin(box.Grow(2)) {
 		if entity.H().Type().BBox(entity).Translate(entity.Position()).IntersectsWith(box) {
 			return false
