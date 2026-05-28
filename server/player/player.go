@@ -877,13 +877,11 @@ func (p *Player) kill(src world.DamageSource) {
 
 	// Wait a little before removing the entity. The client displays a death
 	// animation while the player is dying.
-	time.AfterFunc(time.Millisecond*1100, func() {
-		p.H().ExecWorld(finishDying)
-	})
+	p.H().ScheduleAfter(time.Millisecond*1100, finishDying)
 }
 
 // finishDying completes the death of a player, removing it from the world.
-func finishDying(_ *world.Tx, e world.Entity) {
+func finishDying(_ *world.Context, e world.Entity) {
 	p := e.(*Player)
 	if p.session() == session.Nop {
 		_ = p.Close()
@@ -965,8 +963,8 @@ func (p *Player) respawn(f func(p *Player)) {
 	p.Handler().HandleRespawn(p, &pos, &w)
 
 	handle := p.tx.RemoveEntity(p)
-	w.Exec(func(tx *world.Tx) {
-		np := tx.AddEntity(handle).(*Player)
+	w.Schedule(func(ctx *world.Context) {
+		np := ctx.AddEntity(handle).(*Player)
 		np.Teleport(pos)
 		np.session().SendRespawn(pos, p)
 		np.SetVisible()

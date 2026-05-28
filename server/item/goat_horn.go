@@ -28,14 +28,12 @@ func (GoatHorn) Cooldown() time.Duration {
 // Use ...
 func (g GoatHorn) Use(tx *world.Tx, user User, _ *UseContext) bool {
 	tx.PlaySound(user.Position(), sound.GoatHorn{Horn: g.Type})
-	time.AfterFunc(time.Second, func() {
-		user.H().ExecWorld(g.releaseItem)
-	})
+	user.H().ScheduleAfter(time.Second, g.releaseItem)
 	return true
 }
 
 // releaseItem releases the goat horn item if a user is still using it.
-func (g GoatHorn) releaseItem(_ *world.Tx, e world.Entity) {
+func (g GoatHorn) releaseItem(_ *world.Context, e world.Entity) {
 	user := e.(User)
 	if !user.UsingItem() {
 		// We aren't using the goat horn anymore.
