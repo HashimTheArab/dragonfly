@@ -252,6 +252,41 @@ func Call[T any](ctx context.Context, w *World, f func(ctx *Context) (T, error))
 	}
 }
 
+// CallEntity schedules f on the EntityHandle's current world owner and waits
+// for its typed result. CallEntity is intended for advanced off-owner
+// request/response paths. Code that already has a *world.Context or entity
+// callback should use that context directly instead of calling CallEntity.
+func CallEntity[R any](ctx context.Context, h *EntityHandle, f func(ctx *Context, e Entity) (R, error)) (R, error) {
+	var zero R
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return zero, ctx.Err()
+	default:
+	}
+	if h == nil {
+		return zero, ErrEntityClosed
+	}
+	var result R
+	task := h.schedule(func(wctx *Context, e Entity) error {
+		var err error
+		result, err = f(wctx, e)
+		return err
+	})
+	select {
+	case <-task.Done():
+		if err := task.Err(); err != nil {
+			return zero, err
+		}
+		return result, nil
+	case <-ctx.Done():
+		task.Cancel()
+		return zero, ctx.Err()
+	}
+}
+
 func (w *World) scheduleTask(task *Task, f func(ctx *Context) error) *Task {
 	if task == nil {
 		task = newTask()

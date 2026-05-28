@@ -1,6 +1,7 @@
 package world
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -45,5 +46,20 @@ func (r EntityRef[T]) ScheduleAfter(delay time.Duration, f func(ctx *Context, e 
 		}
 		f(ctx, v)
 		return nil
+	})
+}
+
+// CallRef schedules f on the typed EntityRef's current world owner and waits
+// for its typed result. CallRef is intended for advanced off-owner
+// request/response paths. Code that already has a *world.Context or typed
+// entity callback should use that context directly instead of calling CallRef.
+func CallRef[R any, E Entity](ctx context.Context, ref EntityRef[E], f func(ctx *Context, e E) (R, error)) (R, error) {
+	var zero R
+	return CallEntity(ctx, ref.h, func(ctx *Context, e Entity) (R, error) {
+		v, ok := e.(E)
+		if !ok {
+			return zero, fmt.Errorf("%w: got %T", ErrEntityType, e)
+		}
+		return f(ctx, v)
 	})
 }

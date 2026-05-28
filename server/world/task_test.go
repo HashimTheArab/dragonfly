@@ -62,6 +62,83 @@ func TestCallDoesNotScheduleCancelledContext(t *testing.T) {
 	}
 }
 
+func TestCallEntityReturnsTypedResult(t *testing.T) {
+	w := New()
+	defer w.Close()
+
+	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
+	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+
+	got, err := CallEntity(testContext(t), h, func(ctx *Context, e Entity) (mgl64.Vec3, error) {
+		if ctx.Tx() == nil {
+			t.Fatal("entity call context has nil transaction")
+		}
+		return e.Position(), nil
+	})
+	if err != nil {
+		t.Fatalf("CallEntity failed: %v", err)
+	}
+	if got != (mgl64.Vec3{}) {
+		t.Fatalf("CallEntity returned unexpected position: %v", got)
+	}
+}
+
+func TestCallEntityDoesNotScheduleCancelledContext(t *testing.T) {
+	w := New()
+	defer w.Close()
+
+	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
+	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var ran atomic.Bool
+	_, err := CallEntity(ctx, h, func(ctx *Context, e Entity) (int, error) {
+		ran.Store(true)
+		return 1, nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if ran.Load() {
+		t.Fatal("CallEntity scheduled work after context was cancelled")
+	}
+}
+
+func TestCallRefReturnsTypedResult(t *testing.T) {
+	w := New()
+	defer w.Close()
+
+	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
+	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+
+	got, err := CallRef(testContext(t), NewEntityRef[taskTestEntity](h), func(ctx *Context, e taskTestEntity) (bool, error) {
+		return e.H() == h, nil
+	})
+	if err != nil {
+		t.Fatalf("CallRef failed: %v", err)
+	}
+	if !got {
+		t.Fatal("CallRef did not pass typed entity")
+	}
+}
+
+func TestCallRefReportsTypeMismatch(t *testing.T) {
+	w := New()
+	defer w.Close()
+
+	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
+	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+
+	_, err := CallRef(testContext(t), NewEntityRef[markedTaskEntity](h), func(ctx *Context, e markedTaskEntity) (int, error) {
+		t.Fatal("CallRef ran typed callback for mismatched entity")
+		return 0, nil
+	})
+	if !errors.Is(err, ErrEntityType) {
+		t.Fatalf("expected ErrEntityType, got %v", err)
+	}
+}
+
 func TestScheduleAfterCancel(t *testing.T) {
 	w := New()
 	defer w.Close()
@@ -442,6 +519,11 @@ func (taskTestEntityType) EncodeNBT(*EntityData) map[string]any { return nil }
 type taskTestEntity struct {
 	h  *EntityHandle
 	tx *Tx
+}
+
+type markedTaskEntity interface {
+	Entity
+	markedTaskEntity()
 }
 
 func (e taskTestEntity) Close() error {
