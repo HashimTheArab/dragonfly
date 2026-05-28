@@ -1090,6 +1090,7 @@ func (w *World) close() {
 	<-w.Exec(func(tx *Tx) {
 		// Let user code run anything that needs to be finished before closing.
 		w.Handler().HandleClose(tx.Context())
+		tx.runDeferred()
 		w.Handle(NopHandler{})
 
 		w.save(w.closeChunk)(tx)

@@ -402,6 +402,23 @@ func TestScheduleQueuedBeforeCloseDoesNotRunAfterHandleClose(t *testing.T) {
 	}
 }
 
+func TestHandleCloseDrainsDeferredWorkBeforeSave(t *testing.T) {
+	var deferredRan atomic.Bool
+	provider := &closeDeferredProvider{deferredRan: &deferredRan}
+	w := Config{Provider: provider}.New()
+	w.Handle(closeDeferredHandler{deferredRan: &deferredRan})
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close world: %v", err)
+	}
+	if !deferredRan.Load() {
+		t.Fatal("HandleClose deferred work did not run")
+	}
+	if provider.savedBeforeDeferred.Load() {
+		t.Fatal("world saved before HandleClose deferred work ran")
+	}
+}
+
 func TestScheduleAfterEntityCloseFailsPromptly(t *testing.T) {
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
 	task := h.ScheduleAfter(time.Hour, func(*Context, Entity) {
@@ -487,6 +504,27 @@ type closeOrderHandler struct {
 }
 
 func (h closeOrderHandler) HandleClose(*Context) { h.closed.Store(true) }
+
+type closeDeferredHandler struct {
+	NopHandler
+	deferredRan *atomic.Bool
+}
+
+func (h closeDeferredHandler) HandleClose(ctx *Context) {
+	ctx.Defer(func(*Context) { h.deferredRan.Store(true) })
+}
+
+type closeDeferredProvider struct {
+	NopProvider
+	deferredRan         *atomic.Bool
+	savedBeforeDeferred atomic.Bool
+}
+
+func (p *closeDeferredProvider) SaveSettings(*Settings) {
+	if !p.deferredRan.Load() {
+		p.savedBeforeDeferred.Store(true)
+	}
+}
 
 type closeWaitTaskHandler struct {
 	NopHandler
