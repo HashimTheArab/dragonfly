@@ -196,7 +196,7 @@ func (p *Player) Skin() skin.Skin {
 // SetSkin changes the skin of the player. This skin will be visible to other players that the player
 // is shown to.
 func (p *Player) SetSkin(skin skin.Skin) {
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleSkinChange(ctx, &skin); ctx.Cancelled() {
 		p.session().ViewSkin(p)
 		return
@@ -323,7 +323,7 @@ func (p *Player) RemoveBossBar() {
 // player and is formatted following the rules of fmt.Sprintln.
 func (p *Player) Chat(msg ...any) {
 	message := format(msg)
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleChat(ctx, &message); ctx.Cancelled() {
 		return
 	}
@@ -351,11 +351,11 @@ func (p *Player) ExecuteCommand(commandLine string) {
 		p.SendCommandOutput(o)
 		return
 	}
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleCommandExecution(ctx, command, args[1:]); ctx.Cancelled() {
 		return
 	}
-	command.Execute(strings.Join(args[1:], " "), p, p.tx)
+	command.Execute(strings.Join(args[1:], " "), p, p.tx.Context())
 }
 
 // Transfer transfers the player to a server at the address passed. If the address could not be resolved, an
@@ -366,7 +366,7 @@ func (p *Player) Transfer(address string) error {
 		return err
 	}
 
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleTransfer(ctx, addr); ctx.Cancelled() {
 		return nil
 	}
@@ -528,7 +528,7 @@ func (p *Player) Heal(health float64, source world.HealingSource) {
 	if p.Dead() || health < 0 || !p.GameMode().AllowsTakingDamage() {
 		return
 	}
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleHeal(ctx, &health, source); ctx.Cancelled() {
 		return
 	}
@@ -595,7 +595,7 @@ func (p *Player) Hurt(dmg float64, src world.DamageSource) (float64, bool) {
 	}
 
 	immunity := time.Second / 2
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleHurt(ctx, &damageLeft, immune, &immunity, src); ctx.Cancelled() {
 		return 0, false
 	}
@@ -820,7 +820,7 @@ func (p *Player) Exhaust(points float64) {
 		// Temporarily set the food level back so that it hasn't yet changed once the event is handled.
 		p.hunger.SetFood(before)
 
-		ctx := event.C(p)
+		ctx := newContext(p)
 		if p.Handler().HandleFoodLoss(ctx, before, &after); ctx.Cancelled() {
 			// Reset the exhaustion level if the event was cancelled. Because if
 			// we cancel this, and at some point we stop cancelling it, the
@@ -1003,7 +1003,7 @@ func (p *Player) StartSprinting() {
 	if !p.hunger.canSprint() && p.GameMode().AllowsTakingDamage() || p.crawling || p.sprinting {
 		return
 	}
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleToggleSprint(ctx, true); ctx.Cancelled() {
 		return
 	}
@@ -1023,7 +1023,7 @@ func (p *Player) StopSprinting() {
 	if !p.sprinting {
 		return
 	}
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleToggleSprint(ctx, false); ctx.Cancelled() {
 		return
 	}
@@ -1039,7 +1039,7 @@ func (p *Player) StartSneaking() {
 	if p.sneaking {
 		return
 	}
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleToggleSneak(ctx, true); ctx.Cancelled() {
 		return
 	}
@@ -1061,7 +1061,7 @@ func (p *Player) StopSneaking() {
 	if !p.sneaking {
 		return
 	}
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleToggleSneak(ctx, false); ctx.Cancelled() {
 		return
 	}
@@ -1221,7 +1221,7 @@ func (p *Player) Sleep(pos cube.Pos) {
 		return
 	}
 
-	ctx, sendReminder := event.C(p), true
+	ctx, sendReminder := newContext(p), true
 	if p.Handler().HandleSleep(ctx, &sendReminder); ctx.Cancelled() {
 		return
 	}
@@ -1400,7 +1400,7 @@ func (p *Player) SetHeldSlot(to int) error {
 		return nil
 	}
 
-	ctx := event.C(p)
+	ctx := newContext(p)
 	p.Handler().HandleHeldSlotChange(ctx, from, to)
 	if ctx.Cancelled() {
 		// The slot change was cancelled, resend held slot.
@@ -1487,7 +1487,7 @@ func (p *Player) SetCooldown(item world.Item, cooldown time.Duration) {
 // This generally happens for items such as throwable items like snowballs.
 func (p *Player) UseItem() {
 	i, _ := p.HeldItems()
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.HasCooldown(i.Item()) {
 		return
 	}
@@ -1565,7 +1565,7 @@ func (p *Player) UseItem() {
 		}
 		// Reset the duration for the next item to be consumed.
 		p.usingSince = time.Now()
-		ctx := event.C(p)
+		ctx := newContext(p)
 		if p.Handler().HandleItemConsume(ctx, i); ctx.Cancelled() {
 			return
 		}
@@ -1589,7 +1589,7 @@ func (p *Player) ReleaseItem() {
 
 	useCtx, dur := p.useContext(), p.useDuration()
 	i, _ := p.HeldItems()
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleItemRelease(ctx, i, dur); ctx.Cancelled() {
 		return
 	}
@@ -1672,7 +1672,7 @@ func (p *Player) UseItemOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.Vec
 		p.resendNearbyBlocks(pos, face)
 		return
 	}
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleItemUseOnBlock(ctx, pos, face, clickPos); ctx.Cancelled() {
 		p.resendNearbyBlocks(pos, face)
 		return
@@ -1731,7 +1731,7 @@ func (p *Player) UseItemOnEntity(e world.Entity) bool {
 	if !p.canReach(e.Position()) {
 		return false
 	}
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleItemUseOnEntity(ctx, e); ctx.Cancelled() {
 		return false
 	}
@@ -1779,7 +1779,7 @@ func (p *Player) AttackEntity(e world.Entity) bool {
 		height += inc
 	}
 
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleAttackEntity(ctx, e, &force, &height, &critical); ctx.Cancelled() {
 		return false
 	}
@@ -1847,7 +1847,7 @@ func (p *Player) StartBreaking(pos cube.Pos, face cube.Face) {
 		return
 	}
 	if _, ok := p.tx.Block(pos.Side(face)).(block.Fire); ok {
-		ctx := event.C(p)
+		ctx := newContext(p)
 		if p.Handler().HandleFireExtinguish(ctx, pos); ctx.Cancelled() {
 			// Resend the block because on client side that was extinguished
 			p.resendNearbyBlocks(pos, face)
@@ -1868,7 +1868,7 @@ func (p *Player) StartBreaking(pos cube.Pos, face cube.Face) {
 	// can resend the block to the client when it tries to break the block regardless.
 	p.breakingPos = pos
 
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleStartBreak(ctx, pos); ctx.Cancelled() {
 		return
 	}
@@ -1995,7 +1995,7 @@ func (p *Player) placeBlock(pos cube.Pos, b world.Block, ignoreBBox bool) bool {
 		return false
 	}
 
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleBlockPlace(ctx, pos, b); ctx.Cancelled() {
 		p.resendNearbyBlocks(pos, cube.Faces()...)
 		return false
@@ -2062,7 +2062,7 @@ func (p *Player) BreakBlock(pos cube.Pos) {
 		}
 	}
 
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleBlockBreak(ctx, pos, &drops, &xp); ctx.Cancelled() {
 		p.resendNearbyBlocks(pos)
 		return
@@ -2137,7 +2137,7 @@ func (p *Player) PickBlock(pos cube.Pos) {
 		return
 	}
 
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleBlockPick(ctx, pos, b); ctx.Cancelled() {
 		return
 	}
@@ -2169,7 +2169,7 @@ func (p *Player) PickBlock(pos cube.Pos) {
 // Teleport teleports the player to a target position in the world. Unlike Move, it immediately changes the
 // position of the player, rather than showing an animation.
 func (p *Player) Teleport(pos mgl64.Vec3) {
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleTeleport(ctx, pos); ctx.Cancelled() {
 		return
 	}
@@ -2207,7 +2207,7 @@ func (p *Player) Move(deltaPos mgl64.Vec3, deltaYaw, deltaPitch float64) {
 		pos         = p.Position()
 		res, resRot = pos.Add(deltaPos), p.Rotation().Add(cube.Rotation{deltaYaw, deltaPitch})
 	)
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleMove(ctx, res, resRot); ctx.Cancelled() {
 		if p.session() != session.Nop && pos.ApproxEqual(p.Position()) {
 			// The position of the player was changed and the event cancelled. This means we still need to notify the
@@ -2296,7 +2296,7 @@ func (p *Player) Collect(s item.Stack) (int, bool) {
 	if p.Dead() || !p.GameMode().AllowsInteraction() {
 		return 0, false
 	}
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleItemPickup(ctx, &s); ctx.Cancelled() {
 		return 0, false
 	}
@@ -2328,7 +2328,7 @@ func (p *Player) ResetEnchantmentSeed() {
 
 // AddExperience adds experience to the player.
 func (p *Player) AddExperience(amount int) int {
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleExperienceGain(ctx, &amount); ctx.Cancelled() {
 		return 0
 	}
@@ -2449,7 +2449,7 @@ func (p *Player) mendItems(xp int) int {
 // The number of items that was dropped in the end is returned. It is generally the count of the stack passed
 // or 0 if dropping the item.Stack was cancelled.
 func (p *Player) Drop(s item.Stack) int {
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleItemDrop(ctx, s); ctx.Cancelled() {
 		return 0
 	}
@@ -2957,7 +2957,7 @@ func (p *Player) EditSign(pos cube.Pos, frontText, backText string) error {
 		return nil
 	}
 
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if frontText != sign.Front.Text {
 		if p.Handler().HandleSignEdit(ctx, pos, true, sign.Front.Text, frontText); ctx.Cancelled() {
 			p.resendNearbyBlock(pos)
@@ -2985,7 +2985,7 @@ func (p *Player) TurnLecternPage(pos cube.Pos, page int) error {
 		return fmt.Errorf("edit lectern: no lectern at position %v", pos)
 	}
 
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleLecternPageTurn(ctx, pos, lectern.Page, &page); ctx.Cancelled() {
 		return nil
 	}
@@ -3027,7 +3027,7 @@ func (p *Player) PunchAir() {
 	if p.Dead() {
 		return
 	}
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandlePunchAir(ctx); ctx.Cancelled() {
 		return
 	}
@@ -3084,7 +3084,7 @@ func (p *Player) damageItem(s item.Stack, d int) item.Stack {
 	if p.GameMode().CreativeInventory() || d == 0 || s.MaxDurability() == -1 {
 		return s
 	}
-	ctx := event.C(p)
+	ctx := newContext(p)
 	if p.Handler().HandleItemDamage(ctx, s, &d); ctx.Cancelled() || d <= 0 {
 		return s
 	}

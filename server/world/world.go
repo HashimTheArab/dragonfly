@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
-	"github.com/df-mc/dragonfly/server/event"
 	"github.com/df-mc/dragonfly/server/internal/sliceutil"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 	"github.com/df-mc/dragonfly/server/world/redstone"
@@ -34,6 +33,9 @@ type World struct {
 	queue        chan transaction
 	queueClosing chan struct{}
 	queueing     sync.WaitGroup
+	scheduleMu   sync.Mutex
+	scheduling   sync.WaitGroup
+	closed       atomic.Bool
 
 	// advance is a bool that specifies if this World should advance the current
 	// tick, time and weather saved in the Settings struct held by the World.
@@ -46,8 +48,9 @@ type World struct {
 
 	weather
 
-	closing chan struct{}
-	running sync.WaitGroup
+	closeStarted chan struct{}
+	closing      chan struct{}
+	running      sync.WaitGroup
 
 	// chunks holds a cache of chunks currently loaded. These chunks are cleared
 	// from this map after some time of not being used.
@@ -121,15 +124,19 @@ type ExecFunc func(tx *Tx)
 
 // Exec performs a synchronised transaction f on a World. Exec returns a channel
 // that is closed once the transaction is complete.
+//
+// Deprecated: Prefer Schedule for asynchronous owner work or Call for guarded
+// off-owner request/response work. Waiting for Exec from code already running
+// on this World's owner context will deadlock.
 func (w *World) Exec(f ExecFunc) <-chan struct{} {
 	c := make(chan struct{})
 	w.queue <- normalTransaction{c: c, f: f}
 	return c
 }
 
-func (w *World) weakExec(invalid *atomic.Bool, cond *sync.Cond, f ExecFunc) <-chan bool {
+func (w *World) weakExec(valid func() bool, cond *sync.Cond, f ExecFunc) <-chan bool {
 	c := make(chan bool, 1)
-	w.queue <- weakTransaction{c: c, f: f, invalid: invalid, cond: cond}
+	w.queue <- weakTransaction{c: c, f: f, valid: valid, cond: cond}
 	return c
 }
 
@@ -678,7 +685,7 @@ func (w *World) addParticle(pos mgl64.Vec3, p Particle) {
 // playSound plays a sound at a specific position in the World. Viewers of that
 // position will be able to hear the sound if they are close enough.
 func (w *World) playSound(tx *Tx, pos mgl64.Vec3, s Sound) {
-	ctx := event.C(tx)
+	ctx := tx.Context()
 	if w.Handler().HandleSound(ctx, s, pos); ctx.Cancelled() {
 		return
 	}
@@ -706,7 +713,7 @@ func (w *World) addEntity(tx *Tx, handle *EntityHandle) Entity {
 		// Show the entity to all viewers in the chunk of the entity.
 		showEntity(e, v)
 	}
-	w.Handler().HandleEntitySpawn(tx, e)
+	w.Handler().HandleEntitySpawn(tx.Context(), e)
 	return e
 }
 
@@ -721,7 +728,7 @@ func (w *World) removeEntity(e Entity, tx *Tx) *EntityHandle {
 		// The entity currently isn't in this world.
 		return nil
 	}
-	w.Handler().HandleEntityDespawn(tx, e)
+	w.Handler().HandleEntityDespawn(tx.Context(), e)
 
 	c := w.chunk(pos)
 	c.Entities, c.modified = sliceutil.DeleteVal(c.Entities, handle), true
@@ -1074,9 +1081,15 @@ func (w *World) Close() error {
 // close stops the World from ticking, saves all chunks to the Provider and
 // updates the world's settings.
 func (w *World) close() {
+	w.scheduleMu.Lock()
+	w.closed.Store(true)
+	close(w.closeStarted)
+	w.scheduleMu.Unlock()
+
+	w.scheduling.Wait()
 	<-w.Exec(func(tx *Tx) {
 		// Let user code run anything that needs to be finished before closing.
-		w.Handler().HandleClose(tx)
+		w.Handler().HandleClose(tx.Context())
 		w.Handle(NopHandler{})
 
 		w.save(w.closeChunk)(tx)

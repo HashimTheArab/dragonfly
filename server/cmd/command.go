@@ -32,7 +32,7 @@ type Runnable interface {
 	// Run runs the Command, using the arguments passed to the Command. The source is passed to the method,
 	// which is the source of the Command execution, and the output is passed, to which messages may be
 	// added which get sent to the source.
-	Run(src Source, o *Output, tx *world.Tx)
+	Run(src Source, o *Output, ctx *world.Context)
 }
 
 // Allower may be implemented by a type also implementing Runnable to limit the sources that may run the
@@ -123,7 +123,9 @@ func (cmd Command) Aliases() []string {
 // If parsing of all Runnables was unsuccessful, a command output with an error message is sent to the Source
 // passed, and the Run method of the Runnables are not called.
 // The Source passed must not be nil. The method will panic if a nil Source is passed.
-func (cmd Command) Execute(args string, source Source, tx *world.Tx) {
+// ctx may be nil for sources that are not attached to a world, provided the command does not parse target
+// selector parameters or otherwise require owner-scoped world access.
+func (cmd Command) Execute(args string, source Source, ctx *world.Context) {
 	if source == nil {
 		panic("execute: invalid command source: source must not be nil")
 	}
@@ -136,7 +138,7 @@ func (cmd Command) Execute(args string, source Source, tx *world.Tx) {
 	for _, v := range cmd.v {
 		cp := reflect.New(v.Type())
 		cp.Elem().Set(v)
-		line, err := cmd.executeRunnable(cp, args, source, output, tx)
+		line, err := cmd.executeRunnable(cp, args, source, output, ctx)
 		if err == nil {
 			// Command was executed successfully: We won't execute any of the other Runnable values passed, as
 			// we've already found an overload that works.
@@ -229,7 +231,7 @@ func (cmd Command) String() string {
 // executeRunnable executes a Runnable v, by parsing the args passed using the source and output obtained. If
 // parsing was not successful or the Runnable could not be run by this source, an error is returned, and the
 // leftover command line.
-func (cmd Command) executeRunnable(v reflect.Value, args string, source Source, output *Output, tx *world.Tx) (*Line, error) {
+func (cmd Command) executeRunnable(v reflect.Value, args string, source Source, output *Output, ctx *world.Context) (*Line, error) {
 	if a, ok := v.Interface().(Allower); ok && !a.Allow(source) {
 		return nil, MessageUnknown.F(cmd.name)
 	}
@@ -249,6 +251,10 @@ func (cmd Command) executeRunnable(v reflect.Value, args string, source Source, 
 	}
 	parser := parser{}
 	arguments := &Line{args: argFrags, src: source, seen: []string{"/" + cmd.name}, cmd: cmd}
+	var tx *world.Tx
+	if ctx != nil {
+		tx = ctx.Tx()
+	}
 
 	// We iterate over all the fields of the struct: Each of the fields will have an argument parsed to
 	// produce its value.
@@ -277,7 +283,7 @@ func (cmd Command) executeRunnable(v reflect.Value, args string, source Source, 
 		return arguments, arguments.UsageError()
 	}
 
-	v.Interface().(Runnable).Run(source, output, tx)
+	v.Interface().(Runnable).Run(source, output, ctx)
 	return arguments, nil
 }
 

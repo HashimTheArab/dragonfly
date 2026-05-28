@@ -117,7 +117,8 @@ func (srv *Server) Listen() {
 // yields players that join the server while blocking otherwise. The iterator
 // returned ends when the Server is closed using a call to Close. Players
 // returned are only valid within the block of the for loop used to iterate over
-// them:
+// them. Use Player.H(), player.NewRef, or Player.Schedule when a player must
+// be referenced after the iterator callback returns:
 //
 //	for p := range srv.Accept() {
 //	  // p is valid here
@@ -204,7 +205,8 @@ func (srv *Server) PlayerCount() int {
 //
 // Collecting all values from the iterator using a function such as
 // slices.Collect immediately invalidates the players because their transactions
-// will be finished.
+// will be finished. Use Player.H(), player.NewRef, or Player.Schedule when a
+// player must be referenced after the iterator callback returns.
 func (srv *Server) Players(tx *world.Tx) iter.Seq[*player.Player] {
 	srv.pmu.RLock()
 	handles := make([]*world.EntityHandle, 0, len(srv.p))

@@ -3,7 +3,6 @@ package world
 import (
 	"iter"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -16,8 +15,9 @@ import (
 // operations on a World can only be called through a transaction. Tx is not
 // safe for use by multiple goroutines concurrently.
 type Tx struct {
-	w      *World
-	closed bool
+	w        *World
+	closed   bool
+	deferred []scheduledTransaction
 }
 
 // Range returns the lower and upper bounds of the World that the Tx is
@@ -316,6 +316,22 @@ func (tx *Tx) RedstonePower(pos cube.Pos, face cube.Face, accountForDust bool) (
 	return power
 }
 
+// Context returns an owner-scoped Context backed by tx. The returned context
+// is valid only while tx is valid.
+func (tx *Tx) Context() *Context {
+	return newContext(tx)
+}
+
+func (tx *Tx) deferTask(f func(ctx *Context) error) *Task {
+	task := newTask()
+	if tx.closed {
+		task.failIfPending(ErrWorldClosed)
+		return task
+	}
+	tx.deferred = append(tx.deferred, scheduledTransaction{task: task, f: f})
+	return task
+}
+
 // World returns the World of the Tx. It panics if the transaction was already
 // marked complete.
 func (tx *Tx) World() *World {
@@ -343,6 +359,16 @@ func (tx *Tx) close() {
 	tx.closed = true
 }
 
+func (tx *Tx) runDeferred() {
+	for len(tx.deferred) > 0 {
+		deferred := tx.deferred
+		tx.deferred = nil
+		for _, st := range deferred {
+			st.Run(tx.w)
+		}
+	}
+}
+
 // normalTransaction is added to the transaction queue for transactions created
 // using World.Exec().
 type normalTransaction struct {
@@ -356,27 +382,29 @@ func (ntx normalTransaction) Run(w *World) {
 	tx := &Tx{w: w}
 	ntx.f(tx)
 	tx.close()
+	tx.runDeferred()
 	close(ntx.c)
 }
 
-// weakTransaction is a transaction that may be cancelled by setting its invalid
-// bool to false before the transaction is run.
+// weakTransaction is a transaction that may be cancelled by its validity
+// predicate before the transaction is run.
 type weakTransaction struct {
-	c       chan bool
-	f       func(tx *Tx)
-	invalid *atomic.Bool
-	cond    *sync.Cond
+	c     chan bool
+	f     func(tx *Tx)
+	valid func() bool
+	cond  *sync.Cond
 }
 
-// Run runs the transaction, first checking if its invalid bool is false and
-// creating a *Tx if so. Afterwards, a bool indicating if the transaction was
-// run is added to wtx.c. Finally, wtx.cond.Broadcast() is called.
+// Run runs the transaction, first checking if it is still valid and creating a
+// *Tx if so. Afterwards, a bool indicating if the transaction was run is added
+// to wtx.c. Finally, wtx.cond.Broadcast() is called.
 func (wtx weakTransaction) Run(w *World) {
-	valid := !wtx.invalid.Load()
+	valid := wtx.valid == nil || wtx.valid()
 	if valid {
 		tx := &Tx{w: w}
 		wtx.f(tx)
 		tx.close()
+		tx.runDeferred()
 	}
 	// We have to acquire a lock on wtx.cond.L here to make sure cond.Wait()
 	// has been called before we call cond.Broadcast(). If not, we might

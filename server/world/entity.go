@@ -2,6 +2,7 @@ package world
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"maps"
 	"slices"
@@ -49,8 +50,12 @@ type EntityHandle struct {
 
 	cond         *sync.Cond
 	worldless    *atomic.Bool
+	worldVersion atomic.Uint64
 	weakTxActive bool
 	w            *World
+	closed       chan struct{}
+	worldChanged chan struct{}
+	closeOnce    sync.Once
 
 	data EntityData
 
@@ -83,7 +88,7 @@ func (opts EntitySpawnOpts) New(t EntityType, conf EntityConfig) *EntityHandle {
 		opts.ID = uuid.New()
 		clear(opts.ID[:8])
 	}
-	handle := &EntityHandle{id: opts.ID, t: t, cond: sync.NewCond(&sync.Mutex{}), worldless: &atomic.Bool{}}
+	handle := &EntityHandle{id: opts.ID, t: t, cond: sync.NewCond(&sync.Mutex{}), worldless: &atomic.Bool{}, closed: make(chan struct{}), worldChanged: make(chan struct{})}
 	handle.worldless.Store(true)
 	handle.data.Pos, handle.data.Rot, handle.data.Vel = opts.Position, opts.Rotation, opts.Velocity
 	handle.data.Name = opts.NameTag
@@ -102,7 +107,7 @@ func NewEntity(t EntityType, conf EntityConfig) *EntityHandle {
 // entityFromData reads an entity from the decoded NBT data passed and returns
 // an EntityHandle.
 func entityFromData(t EntityType, id int64, data map[string]any) *EntityHandle {
-	handle := &EntityHandle{t: t, cond: sync.NewCond(&sync.Mutex{}), worldless: &atomic.Bool{}}
+	handle := &EntityHandle{t: t, cond: sync.NewCond(&sync.Mutex{}), worldless: &atomic.Bool{}, closed: make(chan struct{}), worldChanged: make(chan struct{})}
 	binary.LittleEndian.PutUint64(handle.id[8:], uint64(id))
 	handle.decodeNBT(data)
 	t.DecodeNBT(data, &handle.data)
@@ -141,7 +146,10 @@ func (e *EntityHandle) UUID() uuid.UUID {
 // immediately without the transaction function being called. Close always
 // returns nil.
 func (e *EntityHandle) Close() error {
-	e.setAndUnlockWorld(closeWorld)
+	e.closeOnce.Do(func() {
+		e.setAndUnlockWorld(closeWorld)
+		close(e.closed)
+	})
 	return nil
 }
 
@@ -151,22 +159,188 @@ func (e *EntityHandle) Close() error {
 // run the transaction function once it is. If the Entity is closed before
 // ExecWorld is called, ExecWorld will return false immediately without running
 // the transaction function.
+//
+// Deprecated: Prefer Schedule or ScheduleAfter for user-facing owner work.
+// Blocking in ExecWorld from code already running on the same owner context can
+// deadlock.
 func (e *EntityHandle) ExecWorld(f func(tx *Tx, e Entity)) bool {
-	return e.execWorld(f, false)
+	return e.execWorld(f, false, nil)
+}
+
+// Schedule schedules f to run with the EntityHandle's entity on its current world owner.
+// Schedule returns immediately; if the entity is not currently in a world, the task waits
+// until it enters one or the entity closes. The entity value passed to f is only valid
+// for the duration of f.
+func (e *EntityHandle) Schedule(f func(ctx *Context, e Entity)) *Task {
+	return e.schedule(func(ctx *Context, e Entity) error {
+		f(ctx, e)
+		return nil
+	})
+}
+
+// ScheduleAfter schedules f to run with the EntityHandle's entity after delay.
+func (e *EntityHandle) ScheduleAfter(delay time.Duration, f func(ctx *Context, e Entity)) *Task {
+	return e.scheduleAfter(delay, func(ctx *Context, e Entity) error {
+		f(ctx, e)
+		return nil
+	})
+}
+
+func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
+	task := newTask()
+	if e == nil {
+		task.failIfPending(ErrEntityClosed)
+		return task
+	}
+	task.setCancel(func() {
+		e.cond.L.Lock()
+		e.cond.Broadcast()
+		e.cond.L.Unlock()
+	})
+	go e.runScheduled(task, f)
+	return task
+}
+
+func (e *EntityHandle) scheduleAfter(delay time.Duration, f func(ctx *Context, e Entity) error) *Task {
+	task := newTask()
+	if e == nil {
+		task.failIfPending(ErrEntityClosed)
+		return task
+	}
+	task.setCancel(func() {
+		e.cond.L.Lock()
+		e.cond.Broadcast()
+		e.cond.L.Unlock()
+	})
+	go func() {
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+			for {
+				closeStarted, worldChanged := e.currentWorldSignals()
+				select {
+				case <-timer.C:
+					if e.currentWorldClosing() {
+						task.failIfPending(ErrWorldClosed)
+						return
+					}
+					e.runScheduled(task, f)
+					return
+				case <-task.Done():
+					return
+				case <-closeStarted:
+					if e.currentWorldCloseStarted() == closeStarted {
+						task.failIfPending(ErrWorldClosed)
+						return
+					}
+				case <-worldChanged:
+				case <-e.closed:
+					task.failIfPending(ErrEntityClosed)
+					return
+				}
+			}
+		}
+		e.runScheduled(task, f)
+	}()
+	return task
+}
+
+func (e *EntityHandle) currentWorldSignals() (<-chan struct{}, <-chan struct{}) {
+	e.cond.L.Lock()
+	defer e.cond.L.Unlock()
+	if e.w == nil || e.w == closeWorld {
+		return nil, e.worldChanged
+	}
+	return e.w.closeStarted, e.worldChanged
+}
+
+func (e *EntityHandle) currentWorldCloseStarted() <-chan struct{} {
+	e.cond.L.Lock()
+	defer e.cond.L.Unlock()
+	if e.w == nil || e.w == closeWorld {
+		return nil
+	}
+	return e.w.closeStarted
+}
+
+func (e *EntityHandle) currentWorldClosing() bool {
+	closeStarted := e.currentWorldCloseStarted()
+	if closeStarted == nil {
+		return false
+	}
+	select {
+	case <-closeStarted:
+		return true
+	default:
+		return false
+	}
+}
+
+func (e *EntityHandle) runScheduled(task *Task, f func(ctx *Context, e Entity) error) {
+	run := e.execWorld(func(tx *Tx, ent Entity) {
+		if tx.World().closed.Load() {
+			task.failIfPending(ErrWorldClosed)
+			return
+		}
+		if !task.begin() {
+			return
+		}
+		ctx := newContext(tx)
+		var err error
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("%w: %v", ErrTaskPanicked, r)
+			}
+			tx.deferTask(func(*Context) error {
+				task.finish(err)
+				return nil
+			})
+		}()
+		err = f(ctx, ent)
+	}, false, task.Done())
+	if !run || task.pending() {
+		task.failIfPending(ErrEntityClosed)
+	}
+}
+
+func cancelled(c <-chan struct{}) bool {
+	if c == nil {
+		return false
+	}
+	select {
+	case <-c:
+		return true
+	default:
+		return false
+	}
 }
 
 // execWorld uses a sync.Cond to synchronise access to the handler's world. We
 // are dealing with a rather complicated synchronisation pattern here. The goal
 // for ExecWorld is to block until e.w becomes accessible. Meanwhile, World.Exec
 // may also affect e.w, which execWorld needs to deal with.
-func (e *EntityHandle) execWorld(f func(tx *Tx, e Entity), weak bool) bool {
+func (e *EntityHandle) execWorld(f func(tx *Tx, e Entity), weak bool, cancel <-chan struct{}) bool {
 	e.cond.L.Lock()
 	for e.w == nil || (!weak && e.weakTxActive) {
+		if cancelled(cancel) {
+			if weak {
+				e.clearWeakTxActiveLocked()
+			}
+			e.cond.L.Unlock()
+			return false
+		}
 		// Wait suspends the current goroutine and unlocks e.cond.L, until
 		// e.cond.Broadcast() is called. After this, one of the goroutines
 		// waiting will acquire a lock of e.cond.L again. This means that only
 		// one goroutine will run the code after this simultaneously.
 		e.cond.Wait()
+	}
+	if cancelled(cancel) {
+		if weak {
+			e.clearWeakTxActiveLocked()
+		}
+		e.cond.L.Unlock()
+		return false
 	}
 	// If a goroutine manages to exit the for loop, it will have acquired a lock
 	// on e.cond.L. This also means that e.w can be assumed to not be nil here.
@@ -176,6 +350,9 @@ func (e *EntityHandle) execWorld(f func(tx *Tx, e Entity), weak bool) bool {
 	e.worldless.Store(false)
 	if e.w == closeWorld {
 		// EntityHandle was closed. No need to continue.
+		if weak {
+			e.clearWeakTxActiveLocked()
+		}
 		e.cond.L.Unlock()
 		return false
 	}
@@ -190,14 +367,22 @@ func (e *EntityHandle) execWorld(f func(tx *Tx, e Entity), weak bool) bool {
 	// transaction turns out to be invalidated (ret == false), we simply try
 	// again, this time with e.execWorld(f, true) to make this goroutine bypass
 	// any goroutines still awaiting e.cond.
-	ret := e.weakExec(func(tx *Tx) { f(tx, e.mustEntity(tx)) })
+	var ran atomic.Bool
+	ret := e.weakExec(func(tx *Tx) {
+		ent := e.mustEntity(tx)
+		ran.Store(true)
+		f(tx, ent)
+	})
 	e.cond.L.Unlock()
 
+	if ran.Load() {
+		return true
+	}
 	if !ret {
 		// Our weak transaction was suspended. We try again, this time with
 		// e.execWorld(f, true) to make this goroutine bypass any goroutines
 		// still awaiting e.cond.
-		return e.execWorld(f, true)
+		return e.execWorld(f, true, cancel)
 	}
 	return true
 }
@@ -210,12 +395,15 @@ func (e *EntityHandle) execWorld(f func(tx *Tx, e Entity), weak bool) bool {
 // waiting for previous transactions to finish.
 func (e *EntityHandle) weakExec(f ExecFunc) bool {
 	e.weakTxActive = true
+	w, version := e.w, e.worldVersion.Load()
 
 	// We create a weak transaction and start a for loop to listen for the
 	// length of the channel. This might look weird, but the crucial part here
 	// is the call to e.cond.Wait(), which unlocks e.cond.L. This is required
 	// to prevent a deadlock if an earlier transaction tries to change e.w.
-	c := e.w.weakExec(e.worldless, e.cond, f)
+	c := w.weakExec(func() bool {
+		return e.worldVersion.Load() == version && !e.worldless.Load()
+	}, e.cond, f)
 	for len(c) == 0 && e.w != closeWorld {
 		// Calling e.cond.Wait() here will free the lock on e.cond.L until our
 		// transaction finishes. e.w.weakExec() ensures that e.cond.Broadcast()
@@ -223,8 +411,6 @@ func (e *EntityHandle) weakExec(f ExecFunc) bool {
 		// continue after that.
 		e.cond.Wait()
 	}
-	// If the EntityHandle was closed (e.w == closeWorld), we treat the
-	// transaction as successful, because all transactions must be cancelled.
 	if e.w != closeWorld && !<-c {
 		// Weak transaction was suspended. Return false and try again.
 		return false
@@ -232,9 +418,17 @@ func (e *EntityHandle) weakExec(f ExecFunc) bool {
 	// After setting e.weakTxActive back to false, we must Broadcast to make
 	// sure any goroutines waiting in e.execWorld as a result of the
 	// e.weakTxActive condition can continue.
+	closed := e.w == closeWorld
 	e.weakTxActive = false
 	e.cond.Broadcast()
-	return true
+	return !closed
+}
+
+func (e *EntityHandle) clearWeakTxActiveLocked() {
+	if e.weakTxActive {
+		e.weakTxActive = false
+		e.cond.Broadcast()
+	}
 }
 
 var closeWorld = &World{}
@@ -247,6 +441,8 @@ func (e *EntityHandle) unsetAndLockWorld() {
 
 	e.worldless.Store(true)
 	e.w = nil
+	e.worldVersion.Add(1)
+	e.notifyWorldChangedLocked()
 }
 
 // setAndUnlockWorld sets e.w to a World passed and broadcasts e.cond, so that
@@ -259,6 +455,13 @@ func (e *EntityHandle) setAndUnlockWorld(w *World) {
 		panic("cannot add entity to new world before removing from old world")
 	}
 	e.w = w
+	e.worldVersion.Add(1)
+	e.notifyWorldChangedLocked()
+}
+
+func (e *EntityHandle) notifyWorldChangedLocked() {
+	close(e.worldChanged)
+	e.worldChanged = make(chan struct{})
 	e.cond.Broadcast()
 }
 
