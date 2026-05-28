@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"iter"
 	"maps"
@@ -138,12 +139,20 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 			srv.p[inc.p.handle.UUID()] = inc.p
 			srv.pmu.Unlock()
 
-			ret := false
-			<-inc.w.Exec(func(tx *world.Tx) {
-				p := tx.AddEntity(inc.p.handle).(*player.Player)
-				inc.s.Spawn(p, tx)
-				ret = !yield(p)
+			ret, err := world.Call(context.Background(), inc.w, func(ctx *world.Context) (bool, error) {
+				p := ctx.AddEntity(inc.p.handle).(*player.Player)
+				inc.s.Spawn(p, ctx.Tx())
+				return !yield(p), nil
 			})
+			if err != nil {
+				if errors.Is(err, world.ErrTaskPanicked) {
+					panic(err)
+				}
+				srv.pmu.Lock()
+				delete(srv.p, inc.p.handle.UUID())
+				srv.pmu.Unlock()
+				continue
+			}
 			if ret {
 				return
 			}
@@ -225,10 +234,15 @@ func (srv *Server) Players(tx *world.Tx) iter.Seq[*player.Player] {
 					continue
 				}
 			}
-			ret := false
-			handle.ExecWorld(func(tx *world.Tx, e world.Entity) {
-				ret = !yield(e.(*player.Player))
+			ret, err := world.CallRef(context.Background(), player.NewRef(handle), func(ctx *world.Context, p *player.Player) (bool, error) {
+				return !yield(p), nil
 			})
+			if err != nil {
+				if errors.Is(err, world.ErrTaskPanicked) {
+					panic(err)
+				}
+				continue
+			}
 			if ret {
 				break
 			}

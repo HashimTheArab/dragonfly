@@ -348,6 +348,20 @@ func (s *Session) Latency() time.Duration {
 	return s.conn.Latency()
 }
 
+// withControllable runs f with the current Controllable on its world owner.
+// It is for off-owner session goroutines; callbacks that already have a
+// *world.Context or *world.Tx should use it directly instead.
+func (s *Session) withControllable(ctx context.Context, f func(tx *world.Tx, c Controllable) error) error {
+	_, err := world.CallRef[struct{}, Controllable](ctx, world.NewEntityRef[Controllable](s.ent), func(ctx *world.Context, c Controllable) (struct{}, error) {
+		return struct{}{}, f(ctx.Tx(), c)
+	})
+	return err
+}
+
+func sessionOwnerStopped(err error) bool {
+	return errors.Is(err, world.ErrEntityClosed) || errors.Is(err, world.ErrWorldClosed) || errors.Is(err, world.ErrTaskCancelled)
+}
+
 // ClientData returns the login.ClientData of the underlying *minecraft.Conn.
 func (s *Session) ClientData() login.ClientData {
 	return s.conn.ClientData()
@@ -360,24 +374,33 @@ func (s *Session) handlePackets() {
 		// First close the Controllable. This might lead to a world change
 		// (player might be dead while disconnecting, in which case it will
 		// respawn first).
-		s.ent.ExecWorld(func(tx *world.Tx, e world.Entity) {
-			_ = e.(Controllable).Close()
-		})
+		if err := s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
+			_ = c.Close()
+			return nil
+		}); err != nil && !sessionOwnerStopped(err) {
+			s.conf.Log.Debug("close controllable: " + err.Error())
+		}
 		// Because the player might no longer be in the same world after
 		// closing, we create a new transaction
-		s.ent.ExecWorld(func(tx *world.Tx, e world.Entity) {
-			s.Close(tx, e.(Controllable))
-		})
+		if err := s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
+			s.Close(tx, c)
+			return nil
+		}); err != nil && !sessionOwnerStopped(err) {
+			s.conf.Log.Debug("close session: " + err.Error())
+		}
 	}()
 	for {
 		pk, err := s.conn.ReadPacket()
 		if err != nil {
 			return
 		}
-		s.ent.ExecWorld(func(tx *world.Tx, e world.Entity) {
-			err = s.handlePacket(pk, tx, e.(Controllable))
+		err = s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
+			return s.handlePacket(pk, tx, c)
 		})
 		if err != nil {
+			if sessionOwnerStopped(err) {
+				return
+			}
 			s.conf.Log.Debug("process packet: " + err.Error())
 			return
 		}
@@ -396,20 +419,23 @@ func (s *Session) background() {
 		i          int
 	)
 
-	s.ent.ExecWorld(func(tx *world.Tx, e world.Entity) {
-		co := e.(Controllable)
-		r = s.sendAvailableCommands(co, softEnums)
-		enums, enumValues = s.enums(co)
-	})
+	if err := s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
+		r = s.sendAvailableCommands(c, softEnums)
+		enums, enumValues = s.enums(c)
+		return nil
+	}); err != nil {
+		if !sessionOwnerStopped(err) {
+			s.conf.Log.Debug("prepare command updates: " + err.Error())
+		}
+		return
+	}
 
 	t := time.NewTicker(time.Second / 20)
 	defer t.Stop()
 	for {
 		select {
 		case <-t.C:
-			s.ent.ExecWorld(func(tx *world.Tx, e world.Entity) {
-				c := e.(Controllable)
-
+			if err := s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
 				if i++; i%20 == 0 {
 					// Enum resending happens relatively often and frequent updates are more important than with full
 					// command changes. Those are generally only related to permission changes, which doesn't happen often.
@@ -422,7 +448,13 @@ func (s *Session) background() {
 					}
 				}
 				s.sendChunks(tx, c)
-			})
+				return nil
+			}); err != nil {
+				if !sessionOwnerStopped(err) {
+					s.conf.Log.Debug("update session background: " + err.Error())
+				}
+				return
+			}
 		case <-s.closeBackground:
 			return
 		}
