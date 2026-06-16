@@ -58,6 +58,26 @@ func New(br BlockRegistry, r cube.Range) *Chunk {
 	}
 }
 
+// Clone returns an independent copy of the Chunk.
+func (chunk *Chunk) Clone() *Chunk {
+	clone := &Chunk{
+		r:                    chunk.r,
+		br:                   chunk.br,
+		air:                  chunk.air,
+		recalculateHeightMap: chunk.recalculateHeightMap,
+		heightMap:            slices.Clone(chunk.heightMap),
+		sub:                  make([]*SubChunk, len(chunk.sub)),
+		biomes:               make([]*PalettedStorage, len(chunk.biomes)),
+	}
+	for i, sub := range chunk.sub {
+		clone.sub[i] = sub.Clone()
+	}
+	for i, biomes := range chunk.biomes {
+		clone.biomes[i] = biomes.Clone()
+	}
+	return clone
+}
+
 // BlockEntityData returns the raw block entity NBT at the position passed, if present.
 func (chunk *Chunk) BlockEntityData(pos cube.Pos) (map[string]any, bool) {
 	chunk.blockEntitiesMu.RLock()
@@ -277,14 +297,14 @@ func (chunk *Chunk) SubY(index int16) int16 {
 	return (index << 4) + int16(chunk.r[0])
 }
 
-// HighestFilledSubChunk returns the index of the highest sub chunk in the chunk
-// that has any blocks in it. 0 is returned if no subchunks have any blocks.
+// HighestFilledSubChunk returns the number of sub chunks up to and including the
+// highest sub chunk in the chunk that has any blocks in it. 0 is returned if no
+// subchunks have any blocks.
 func (chunk *Chunk) HighestFilledSubChunk() uint16 {
-	highest := uint16(0)
-	for highest = uint16(len(chunk.sub) - 1); highest > 0; highest-- {
-		if !chunk.sub[highest].Empty() {
-			break
+	for i, sub := range slices.Backward(chunk.sub) {
+		if !sub.Empty() {
+			return uint16(i + 1)
 		}
 	}
-	return highest
+	return 0
 }
