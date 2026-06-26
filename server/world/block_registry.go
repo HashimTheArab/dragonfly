@@ -535,17 +535,13 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 // a concrete implementation. It returns false for states that exist in the vanilla palette but are still
 // backed by an unknownBlock placeholder.
 //
-// Safe to call before Finalize: unknownBlock placeholders are only inserted during finalization, so
-// anything already in stateRuntimeIDs pre-finalize is by definition concretely registered. This lets
-// init-time helpers (e.g. registerShellBuildingBlocks) check for prior registrations without forcing
-// callers to finalize the registry first.
+// Safe to call before Finalize: RegisterBlockState inserts unknownBlock
+// placeholders immediately, so this can distinguish palette-only states from
+// states already claimed by a concrete block during init-time registration.
 func (br *BasicBlockRegistry) BlockImplemented(name string, properties map[string]any) bool {
 	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]
 	if !ok {
 		return false
-	}
-	if !br.finalized {
-		return true
 	}
 	_, unknown := br.blocks[rid].(unknownBlock)
 	return !unknown
