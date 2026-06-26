@@ -205,12 +205,7 @@ func (h HangingSign) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 	if !h.Attach.ceiling {
 		// Wall-mounted signs may chain side-to-side, but the chain must eventually
 		// connect to a real wall support. A segment with only signs is invalid.
-		fd := h.Attach.facing.Face()
-		perp1, perp2, ok := wallSupportFaces(fd)
-		if !ok {
-			return
-		}
-		if !hasWallAnchor(tx, pos, perp1, perp2, map[cube.Pos]struct{}{}) {
+		if !wallMountedHangingSignSupported(tx, pos, h.Attach, map[cube.Pos]struct{}{}) {
 			breakBlock(h, pos, tx)
 		}
 		return
@@ -247,6 +242,37 @@ func (h HangingSign) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 	}
 }
 
+// wallMountedHangingSignSupported reports whether the wall-mounted hanging sign
+// at pos has a direct wall support or a side-connected path to one.
+func wallMountedHangingSignSupported(tx *world.Tx, pos cube.Pos, attach HangingAttachment, visited map[cube.Pos]struct{}) bool {
+	if attach.ceiling {
+		return false
+	}
+	if _, ok := visited[pos]; ok {
+		return false
+	}
+	visited[pos] = struct{}{}
+
+	facing := attach.facing.Face()
+	if canWallHangFrom(tx.Block(pos.Side(facing.Opposite()))) {
+		return true
+	}
+
+	perp1, perp2, ok := wallSupportFaces(facing)
+	if !ok {
+		return false
+	}
+	for _, side := range []cube.Face{perp1, perp2} {
+		nPos := pos.Side(side)
+		if hs, ok := tx.Block(nPos).(HangingSign); ok && !hs.Attach.ceiling && hs.Attach.facing == attach.facing {
+			if wallMountedHangingSignSupported(tx, nPos, hs.Attach, visited) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // wallSupportFaces returns the two faces that may support a wall-mounted hanging
 // sign for a given panel-facing direction.
 func wallSupportFaces(fd cube.Face) (cube.Face, cube.Face, bool) {
@@ -258,41 +284,6 @@ func wallSupportFaces(fd cube.Face) (cube.Face, cube.Face, bool) {
 	default:
 		return 0, 0, false
 	}
-}
-
-// hasWallAnchor reports whether the wall-mounted hanging sign at pos has a path
-// through side-connected wall-mounted signs to at least one real wall support.
-func hasWallAnchor(tx *world.Tx, pos cube.Pos, perp1, perp2 cube.Face, visited map[cube.Pos]struct{}) bool {
-	if _, ok := visited[pos]; ok {
-		return false
-	}
-	visited[pos] = struct{}{}
-
-	for _, side := range []cube.Face{perp1, perp2} {
-		nPos := pos.Side(side)
-		nb := tx.Block(nPos)
-
-		if _, ok := nb.(Air); ok {
-			continue
-		}
-		// Any non-narrow block is a real wall anchor.
-		if !isNarrowHangingBlock(nb) {
-			return true
-		}
-		// Continue through wall-mounted hanging signs on the same support axis.
-		if hs, ok := nb.(HangingSign); ok && !hs.Attach.ceiling {
-			np1, np2, valid := wallSupportFaces(hs.Attach.facing.Face())
-			if !valid {
-				continue
-			}
-			if (np1 == perp1 && np2 == perp2) || (np1 == perp2 && np2 == perp1) {
-				if hasWallAnchor(tx, nPos, perp1, perp2, visited) {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
 
 // EncodeBlock ...

@@ -4,6 +4,7 @@ import (
 	"math/rand/v2"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/sound"
@@ -19,6 +20,11 @@ type BambooSapling struct {
 }
 
 var _ item.BoneMealAffected = BambooSapling{}
+
+// Model returns the model used for client interaction targeting.
+func (BambooSapling) Model() world.BlockModel {
+	return model.Bamboo{}
+}
 
 // UseOnBlock places a bamboo sapling on valid soil.
 func (b BambooSapling) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx, user item.User, ctx *item.UseContext) bool {

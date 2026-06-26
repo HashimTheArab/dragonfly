@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/item"
+	"github.com/df-mc/dragonfly/server/world"
+	"github.com/go-gl/mathgl/mgl64"
 )
 
 func TestHangingSignEncodeBlock(t *testing.T) {
@@ -65,6 +68,54 @@ func TestWallHangingSignFacingMatchesClickedFace(t *testing.T) {
 		if got := wallHangingSignFacing(face); got != face.Direction() {
 			t.Fatalf("wallHangingSignFacing(%v) = %v, want %v", face, got, face.Direction())
 		}
+	}
+}
+
+func TestWallMountedHangingSignSurvivesWithDirectWallSupport(t *testing.T) {
+	w := world.Config{DisableLighting: true}.New()
+	defer w.Close()
+
+	var testErr error
+	<-w.Exec(func(tx *world.Tx) {
+		signPos := cube.Pos{1, 1, 0}
+		supportPos := signPos.Side(cube.FaceWest)
+		sign := HangingSign{Wood: OakWood(), Attach: WallHangingAttachment(cube.East)}
+		tx.SetBlock(supportPos, Dirt{}, nil)
+		tx.SetBlock(signPos, sign, nil)
+
+		sign.NeighbourUpdateTick(signPos, supportPos, tx)
+		if _, ok := tx.Block(signPos).(HangingSign); !ok {
+			testErr = errString("wall-mounted hanging sign broke despite direct wall support")
+		}
+	})
+	if testErr != nil {
+		t.Fatal(testErr)
+	}
+}
+
+func TestHangingSignUseOnBlockPlacesWallSignOnClickedFace(t *testing.T) {
+	w := world.Config{DisableLighting: true}.New()
+	defer w.Close()
+
+	var testErr error
+	<-w.Exec(func(tx *world.Tx) {
+		supportPos := cube.Pos{0, 1, 0}
+		signPos := supportPos.Side(cube.FaceEast)
+		tx.SetBlock(supportPos, Dirt{}, nil)
+
+		ctx := &item.UseContext{}
+		_ = (HangingSign{Wood: OakWood()}).UseOnBlock(supportPos, cube.FaceEast, mgl64.Vec3{}, tx, nil, ctx)
+		sign, ok := tx.Block(signPos).(HangingSign)
+		if !ok {
+			testErr = errString("hanging sign was not placed on clicked east face")
+			return
+		}
+		if sign.Attach != WallHangingAttachment(cube.East) {
+			testErr = errString("wall hanging sign attachment did not face the clicked face")
+		}
+	})
+	if testErr != nil {
+		t.Fatal(testErr)
 	}
 }
 
