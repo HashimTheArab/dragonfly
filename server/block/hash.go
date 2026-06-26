@@ -963,6 +963,9 @@ func (s Seagrass) Hash() (uint64, uint64) {
 }
 
 func (s Shelf) Hash() (uint64, uint64) {
+	if s.Bamboo {
+		return hashShelf, uint64(boolByte(true))<<4 | uint64(s.Facing)<<5 | uint64(boolByte(s.Powered))<<7 | uint64(s.PoweredType)<<8
+	}
 	return hashShelf, uint64(s.Wood.Uint8()) | uint64(boolByte(s.Bamboo))<<4 | uint64(s.Facing)<<5 | uint64(boolByte(s.Powered))<<7 | uint64(s.PoweredType)<<8
 }
 
