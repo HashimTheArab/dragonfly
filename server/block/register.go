@@ -220,6 +220,7 @@ func init() {
 	registerAll(allSandstones())
 	registerAll(allSeaPickles())
 	registerAll(allSeagrass())
+	registerAll(allShelves())
 	registerAll(allSigns())
 	registerAll(allSkulls())
 	registerAll(allSlabs())
@@ -485,6 +486,7 @@ func init() {
 		}
 		world.RegisterItem(HangingSign{Wood: w})
 		world.RegisterItem(Planks{Wood: w})
+		world.RegisterItem(Shelf{Wood: w, Bamboo: w == BambooWood()})
 		world.RegisterItem(Sign{Wood: w})
 		world.RegisterItem(WoodDoor{Wood: w})
 		world.RegisterItem(WoodFenceGate{Wood: w})
