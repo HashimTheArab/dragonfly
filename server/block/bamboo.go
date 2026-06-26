@@ -11,7 +11,7 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 )
 
-// Bamboo is a non-solid plant block that can be placed on vegetation-supporting blocks.
+// Bamboo is a non-solid plant block.
 type Bamboo struct {
 	empty
 	transparent
@@ -36,10 +36,8 @@ func (b Bamboo) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world
 		return false
 	}
 	below := pos.Side(cube.FaceDown)
-	if _, ok := tx.Block(below).(Bamboo); !ok {
-		if _, ok := tx.Block(below).(BambooSapling); !ok && !supportsVegetation(b, tx.Block(below)) {
-			return false
-		}
+	if !canSupportBamboo(tx.Block(below)) {
+		return false
 	}
 
 	if _, ok := tx.Block(below).(Bamboo); ok {
@@ -214,7 +212,14 @@ func canSurviveBamboo(pos cube.Pos, tx *world.Tx) bool {
 	if _, ok := tx.Block(below).(Bamboo); ok {
 		return canSurviveBamboo(below, tx)
 	}
-	return supportsVegetation(Bamboo{}, tx.Block(below))
+	return canSupportBamboo(tx.Block(below))
+}
+
+func canSupportBamboo(b world.Block) bool {
+	if _, ok := b.(Air); ok {
+		return false
+	}
+	return b != nil
 }
 
 func bambooTop(pos cube.Pos, tx *world.Tx) (cube.Pos, bool) {

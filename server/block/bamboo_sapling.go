@@ -26,14 +26,14 @@ func (BambooSapling) Model() world.BlockModel {
 	return model.Bamboo{}
 }
 
-// UseOnBlock places a bamboo sapling on valid soil.
+// UseOnBlock places a bamboo sapling on any non-air support.
 func (b BambooSapling) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx, user item.User, ctx *item.UseContext) bool {
 	pos, _, used := firstReplaceable(tx, pos, face, b)
 	if !used {
 		return false
 	}
 	below := pos.Side(cube.FaceDown)
-	if !supportsVegetation(Bamboo{}, tx.Block(below)) && !isBambooSupport(tx.Block(below)) {
+	if !canSupportBamboo(tx.Block(below)) {
 		return false
 	}
 	place(tx, pos, b, user, ctx)
@@ -43,7 +43,7 @@ func (b BambooSapling) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx
 // NeighbourUpdateTick breaks the sapling if it loses support.
 func (b BambooSapling) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 	below := pos.Side(cube.FaceDown)
-	if !supportsVegetation(Bamboo{}, tx.Block(below)) && !isBambooSupport(tx.Block(below)) {
+	if !canSupportBamboo(tx.Block(below)) {
 		breakBlock(b, pos, tx)
 		tx.PlaySound(pos.Vec3(), sound.BlockBreaking{Block: b})
 	}
@@ -119,13 +119,4 @@ func allBambooSapling() (blocks []world.Block) {
 		blocks = append(blocks, BambooSapling{Age: age})
 	}
 	return
-}
-
-// isBambooSupport checks if a block can support bamboo or bamboo sapling.
-func isBambooSupport(b world.Block) bool {
-	switch b.(type) {
-	case Bamboo, BambooSapling:
-		return true
-	}
-	return false
 }

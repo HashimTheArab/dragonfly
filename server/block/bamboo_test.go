@@ -48,6 +48,46 @@ func TestUsingBambooOnExistingBambooDoesNotReplaceClickedStalk(t *testing.T) {
 	}
 }
 
+func TestUsingBambooOnMossPlacesSapling(t *testing.T) {
+	w := world.Config{DisableLighting: true}.New()
+	defer w.Close()
+
+	var testErr error
+	<-w.Exec(func(tx *world.Tx) {
+		support := cube.Pos{0, 0, 0}
+		pos := support.Side(cube.FaceUp)
+		tx.SetBlock(support, Moss{}, nil)
+
+		ctx := &item.UseContext{}
+		_ = (Bamboo{}).UseOnBlock(support, cube.FaceUp, mgl64.Vec3{}, tx, nil, ctx)
+		if _, ok := tx.Block(pos).(BambooSapling); !ok {
+			testErr = errString("using bamboo on moss placed " + blockType(tx.Block(pos)) + ", want bamboo sapling")
+		}
+	})
+	if testErr != nil {
+		t.Fatal(testErr)
+	}
+}
+
+func TestBambooCanSurviveOnAnyNonAirSupport(t *testing.T) {
+	w := world.Config{DisableLighting: true}.New()
+	defer w.Close()
+
+	var testErr error
+	<-w.Exec(func(tx *world.Tx) {
+		pos := cube.Pos{0, 1, 0}
+		tx.SetBlock(pos.Side(cube.FaceDown), Stone{}, nil)
+		tx.SetBlock(pos, Bamboo{Age: false, LeafSize: bambooNoLeaves, Thick: false}, nil)
+
+		if !canSurviveBamboo(pos, tx) {
+			testErr = errString("bamboo could not survive on stone support")
+		}
+	})
+	if testErr != nil {
+		t.Fatal(testErr)
+	}
+}
+
 func TestUsingBambooOnBambooSaplingConvertsSaplingToStalk(t *testing.T) {
 	w := world.Config{DisableLighting: true}.New()
 	defer w.Close()
