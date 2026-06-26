@@ -2,14 +2,15 @@ package session
 
 import (
 	"fmt"
+	"strings"
+	"unicode/utf8"
+
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/entity"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
-	"strings"
-	"unicode/utf8"
 )
 
 // BlockActorDataHandler handles an incoming BlockActorData packet from the client, sent for some block entities like

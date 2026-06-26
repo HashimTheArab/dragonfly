@@ -92,35 +92,26 @@ func (t ticker) tick(tx *Tx) {
 	w.scheduledUpdates.tick(tx, tick)
 	t.tickBlocksRandomly(tx, loaders, tick)
 	t.performNeighbourUpdates(tx)
-
-	// Note: an automatic world-tick Flush call against every Flushable
-	// viewer used to live here. It was removed because it stacked
-	// against per-player flushers wrapping the connection (e.g. an
-	// anti-cheat tick that flushes the same conn every 50ms): every
-	// (*minecraft.Conn).Flush serialises on encMu, so two flushers per
-	// connection produced exactly the kind of contention the hook was
-	// supposed to remove, and during heavy combat that contention
-	// surfaced as packet desync and connection timeouts. The
-	// Flushable interface and Session.Flush are kept in place so a
-	// future caller can drive flushing deliberately at a chosen
-	// cadence without re-introducing the unconditional automatic
-	// path.
 }
 
 // performNeighbourUpdates performs all block updates that came as a result of a neighbouring block being changed.
+// Updates are processed in waves so that cascading effects (e.g. a chain of hanging signs breaking)
+// resolve immediately within the same tick.
 func (t ticker) performNeighbourUpdates(tx *Tx) {
-	updates := slices.Clone(tx.World().neighbourUpdates)
-	clear(tx.World().neighbourUpdates)
-	tx.World().neighbourUpdates = tx.World().neighbourUpdates[:0]
+	for len(tx.World().neighbourUpdates) > 0 {
+		updates := slices.Clone(tx.World().neighbourUpdates)
+		clear(tx.World().neighbourUpdates)
+		tx.World().neighbourUpdates = tx.World().neighbourUpdates[:0]
 
-	for _, update := range updates {
-		pos, changedNeighbour := update.pos, update.neighbour
-		if ticker, ok := tx.Block(pos).(NeighbourUpdateTicker); ok {
-			ticker.NeighbourUpdateTick(pos, changedNeighbour, tx)
-		}
-		if liquid, ok := tx.World().additionalLiquid(pos); ok {
-			if ticker, ok := liquid.(NeighbourUpdateTicker); ok {
+		for _, update := range updates {
+			pos, changedNeighbour := update.pos, update.neighbour
+			if ticker, ok := tx.Block(pos).(NeighbourUpdateTicker); ok {
 				ticker.NeighbourUpdateTick(pos, changedNeighbour, tx)
+			}
+			if liquid, ok := tx.World().additionalLiquid(pos); ok {
+				if ticker, ok := liquid.(NeighbourUpdateTicker); ok {
+					ticker.NeighbourUpdateTick(pos, changedNeighbour, tx)
+				}
 			}
 		}
 	}

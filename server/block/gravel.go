@@ -16,9 +16,9 @@ type Gravel struct {
 }
 
 // SoilFor ...
-func (g Gravel) SoilFor(block world.Block) bool {
+func (Gravel) SoilFor(block world.Block) bool {
 	switch block.(type) {
-	case BambooSapling, Bamboo:
+	case Bamboo, BambooSapling:
 		return true
 	}
 	return false

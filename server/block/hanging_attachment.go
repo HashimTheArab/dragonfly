@@ -28,12 +28,13 @@ func AttachedCeilingHangingAttachment(o cube.Orientation) HangingAttachment {
 }
 
 // Uint8 returns the HangingAttachment as a uint8.
+// Wall: 0-3, Ceiling (non-attached): 4-7, Ceiling (attached): 8-23.
 func (a HangingAttachment) Uint8() uint8 {
 	if !a.ceiling {
 		return uint8(a.facing)
 	}
 	if !a.attached {
-		return 4 | uint8(a.facing)
+		return 4 + uint8(a.facing)
 	}
 	return 8 + uint8(a.o)
 }
