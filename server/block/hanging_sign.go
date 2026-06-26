@@ -167,20 +167,17 @@ func (h HangingSign) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *
 				return false
 			}
 		}
-		// The sign panel is perpendicular to the wall attachment axis.
-		// Facing = RotateRight from the direction toward the wall.
-		wallFacing := face.Direction().RotateRight()
-		// Orient the text toward the player when possible, so the front is readable.
-		if wallFacing == user.Rotation().Direction() {
-			wallFacing = wallFacing.Opposite()
-		}
-		h.Attach = WallHangingAttachment(wallFacing)
+		h.Attach = WallHangingAttachment(wallHangingSignFacing(face))
 	}
 	place(tx, pos, h, user, ctx)
 	if editor, ok := user.(SignEditor); ok {
 		editor.OpenSign(pos, true)
 	}
 	return placed(ctx)
+}
+
+func wallHangingSignFacing(face cube.Face) cube.Direction {
+	return face.Direction()
 }
 
 // Activate opens the sign editor on right-click if the sign is not waxed.

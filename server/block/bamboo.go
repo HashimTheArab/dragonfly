@@ -4,6 +4,7 @@ import (
 	"math/rand/v2"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/sound"
@@ -20,6 +21,12 @@ type Bamboo struct {
 }
 
 var _ item.BoneMealAffected = Bamboo{}
+
+// Model returns the bamboo collision/selection model. Without this, bamboo is
+// treated as an empty block server-side and interactions target through it.
+func (b Bamboo) Model() world.BlockModel {
+	return model.Bamboo{Thick: b.Thick}
+}
 
 // UseOnBlock places bamboo. When placed on soil it starts as a thin Bamboo Shoot (no leaves).
 // When placed on top of an existing bamboo stalk it extends it and updates the whole stalk shape.

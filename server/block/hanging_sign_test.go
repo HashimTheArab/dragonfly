@@ -60,6 +60,14 @@ func TestHangingSignEncodeBlock(t *testing.T) {
 	}
 }
 
+func TestWallHangingSignFacingMatchesClickedFace(t *testing.T) {
+	for _, face := range cube.HorizontalFaces() {
+		if got := wallHangingSignFacing(face); got != face.Direction() {
+			t.Fatalf("wallHangingSignFacing(%v) = %v, want %v", face, got, face.Direction())
+		}
+	}
+}
+
 func TestHangingSignNBTUsesHangingSignIDAndSignText(t *testing.T) {
 	sign := HangingSign{
 		Wood:  OakWood(),
