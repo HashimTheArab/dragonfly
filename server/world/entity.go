@@ -142,9 +142,9 @@ func (e *EntityHandle) UUID() uuid.UUID {
 	return e.id
 }
 
-// Close closes the EntityHandle. Any subsequent call to ExecWorld will return
-// immediately without the transaction function being called. Close always
-// returns nil.
+// Close closes the EntityHandle. Any subsequently scheduled work will fail
+// with ErrEntityClosed without the transaction function being called. Close
+// always returns nil.
 func (e *EntityHandle) Close() error {
 	e.closeOnce.Do(func() {
 		e.setAndUnlockWorld(closeWorld)
@@ -153,33 +153,19 @@ func (e *EntityHandle) Close() error {
 	return nil
 }
 
-// ExecWorld obtains the EntityHandle's World in a thread-safe way and opens a
-// transaction in it when it does. If the EntityHandle has not been added to a
-// world, ExecWorld will block until the EntityHandle is added to a World and
-// run the transaction function once it is. If the Entity is closed before
-// ExecWorld is called, ExecWorld will return false immediately without running
-// the transaction function.
-//
-// Deprecated: Prefer Schedule or ScheduleAfter for user-facing owner work.
-// Blocking in ExecWorld from code already running on the same owner context can
-// deadlock.
-func (e *EntityHandle) ExecWorld(f func(tx *Tx, e Entity)) bool {
-	return e.execWorld(f, false, nil)
-}
-
-// Schedule schedules f to run with the EntityHandle's entity on its current world owner.
-// Schedule returns immediately; if the entity is not currently in a world, the task waits
+// Do schedules f to run with the EntityHandle's entity on its current world owner.
+// Do returns immediately; if the entity is not currently in a world, the task waits
 // until it enters one or the entity closes. The entity value passed to f is only valid
 // for the duration of f.
-func (e *EntityHandle) Schedule(f func(ctx *Context, e Entity)) *Task {
+func (e *EntityHandle) Do(f func(ctx *Context, e Entity)) *Task {
 	return e.schedule(func(ctx *Context, e Entity) error {
 		f(ctx, e)
 		return nil
 	})
 }
 
-// ScheduleAfter schedules f to run with the EntityHandle's entity after delay.
-func (e *EntityHandle) ScheduleAfter(delay time.Duration, f func(ctx *Context, e Entity)) *Task {
+// DoAfter schedules f to run with the EntityHandle's entity after delay.
+func (e *EntityHandle) DoAfter(delay time.Duration, f func(ctx *Context, e Entity)) *Task {
 	return e.scheduleAfter(delay, func(ctx *Context, e Entity) error {
 		f(ctx, e)
 		return nil
@@ -317,7 +303,7 @@ func cancelled(c <-chan struct{}) bool {
 
 // execWorld uses a sync.Cond to synchronise access to the handler's world. We
 // are dealing with a rather complicated synchronisation pattern here. The goal
-// for ExecWorld is to block until e.w becomes accessible. Meanwhile, World.Exec
+// for execWorld is to block until e.w becomes accessible. Meanwhile, World.exec
 // may also affect e.w, which execWorld needs to deal with.
 func (e *EntityHandle) execWorld(f func(tx *Tx, e Entity), weak bool, cancel <-chan struct{}) bool {
 	e.cond.L.Lock()
@@ -356,7 +342,7 @@ func (e *EntityHandle) execWorld(f func(tx *Tx, e Entity), weak bool, cancel <-c
 		e.cond.L.Unlock()
 		return false
 	}
-	// We now arrive at the more complicated part. When we call e.w.Exec(), our
+	// We now arrive at the more complicated part. When we call e.w.exec(), our
 	// transaction must await earlier transactions in the world. If one of those
 	// earlier transactions tries to change e.w (through e.unsetAndLockWorld()
 	// or e.setAndUnlockWorld()), it must lock e.cond.L. This would lead to a
@@ -390,10 +376,10 @@ func (e *EntityHandle) execWorld(f func(tx *Tx, e Entity), weak bool, cancel <-c
 // weakExec performs a "weak transaction". It adds a transaction to the world
 // that is invalidated when e.worldless is set to true. In this case, weakExec
 // returns false. If the weak transaction is successfully executed, it returns
-// true, and any calls to ExecWorld waiting on e.cond are awakened. The goal of
+// true, and any calls to execWorld waiting on e.cond are awakened. The goal of
 // weakExec is to suspend the current goroutine and unlock e.cond.L while
 // waiting for previous transactions to finish.
-func (e *EntityHandle) weakExec(f ExecFunc) bool {
+func (e *EntityHandle) weakExec(f execFunc) bool {
 	e.weakTxActive = true
 	w, version := e.w, e.worldVersion.Load()
 
@@ -433,7 +419,7 @@ func (e *EntityHandle) clearWeakTxActiveLocked() {
 
 var closeWorld = &World{}
 
-// unsetAndLockWorld sets e.w to nil, causing any subsequent calls to ExecWorld
+// unsetAndLockWorld sets e.w to nil, causing any subsequent calls to execWorld
 // to block until e.w is set to a non-nil value.
 func (e *EntityHandle) unsetAndLockWorld() {
 	e.cond.L.Lock()

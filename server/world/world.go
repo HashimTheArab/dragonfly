@@ -119,22 +119,23 @@ func (w *World) BlockRegistry() BlockRegistry {
 	return w.conf.Blocks
 }
 
-// ExecFunc is a function that performs a synchronised transaction on a World.
-type ExecFunc func(tx *Tx)
+// execFunc is a function that performs a synchronised transaction on a World.
+type execFunc func(tx *Tx)
 
-// Exec performs a synchronised transaction f on a World. Exec returns a channel
-// that is closed once the transaction is complete.
-//
-// Deprecated: Prefer Schedule for asynchronous owner work or Call for guarded
-// off-owner request/response work. Waiting for Exec from code already running
-// on this World's owner context will deadlock.
-func (w *World) Exec(f ExecFunc) <-chan struct{} {
+// exec performs a synchronised transaction f on a World, bypassing the closed
+// check that Do/DoAfter/Call apply. It is reserved for the World's own
+// machinery (initial/periodic ticking, saving, chunk unloading and the final
+// transaction run during close) which must still be able to queue work after
+// closing has started. exec returns a channel that is closed once the
+// transaction is complete. Waiting for exec from code already running on this
+// World's owner context will deadlock.
+func (w *World) exec(f execFunc) <-chan struct{} {
 	c := make(chan struct{})
 	w.queue <- normalTransaction{c: c, f: f}
 	return c
 }
 
-func (w *World) weakExec(valid func() bool, cond *sync.Cond, f ExecFunc) <-chan bool {
+func (w *World) weakExec(valid func() bool, cond *sync.Cond, f execFunc) <-chan bool {
 	c := make(chan bool, 1)
 	w.queue <- weakTransaction{c: c, f: f, valid: valid, cond: cond}
 	return c
@@ -1028,11 +1029,11 @@ func (w *World) PortalDestination(dim Dimension) *World {
 
 // Save saves the World to the provider.
 func (w *World) Save() {
-	<-w.Exec(w.save(w.saveChunk))
+	<-w.exec(w.save(w.saveChunk))
 }
 
 // save saves all loaded chunks to the World's provider.
-func (w *World) save(f func(*Tx, ChunkPos, *Column)) ExecFunc {
+func (w *World) save(f func(*Tx, ChunkPos, *Column)) execFunc {
 	return func(tx *Tx) {
 		if w.conf.ReadOnly {
 			return
@@ -1087,7 +1088,7 @@ func (w *World) close() {
 	w.scheduleMu.Unlock()
 
 	w.scheduling.Wait()
-	<-w.Exec(func(tx *Tx) {
+	<-w.exec(func(tx *Tx) {
 		// Let user code run anything that needs to be finished before closing.
 		w.Handler().HandleClose(tx.Context())
 		tx.runDeferred()
@@ -1285,7 +1286,7 @@ func (w *World) autoSave() {
 	for {
 		select {
 		case <-closeUnused.C:
-			<-w.Exec(w.closeUnusedChunks)
+			<-w.exec(w.closeUnusedChunks)
 		case <-save.C:
 			w.Save()
 		case <-w.closing:

@@ -11,11 +11,11 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 )
 
-func TestScheduleRunsOnWorldContext(t *testing.T) {
+func TestDoRunsOnWorldContext(t *testing.T) {
 	w := New()
 	defer w.Close()
 
-	task := w.Schedule(func(ctx *Context) {
+	task := w.Do(func(ctx *Context) {
 		if ctx.Tx() == nil {
 			t.Fatal("scheduled context has nil transaction")
 		}
@@ -43,7 +43,7 @@ func TestCallReturnsTypedResult(t *testing.T) {
 	}
 }
 
-func TestCallDoesNotScheduleCancelledContext(t *testing.T) {
+func TestCallDoesNotRunCancelledContext(t *testing.T) {
 	w := New()
 	defer w.Close()
 
@@ -67,7 +67,7 @@ func TestCallEntityReturnsTypedResult(t *testing.T) {
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
 
 	got, err := CallEntity(testContext(t), h, func(ctx *Context, e Entity) (mgl64.Vec3, error) {
 		if ctx.Tx() == nil {
@@ -83,12 +83,12 @@ func TestCallEntityReturnsTypedResult(t *testing.T) {
 	}
 }
 
-func TestCallEntityDoesNotScheduleCancelledContext(t *testing.T) {
+func TestCallEntityDoesNotRunCancelledContext(t *testing.T) {
 	w := New()
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -110,7 +110,7 @@ func TestCallRefReturnsTypedResult(t *testing.T) {
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
 
 	got, err := CallRef(testContext(t), NewEntityRef[taskTestEntity](h), func(ctx *Context, e taskTestEntity) (bool, error) {
 		return e.H() == h, nil
@@ -128,7 +128,7 @@ func TestCallRefReportsTypeMismatch(t *testing.T) {
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
 
 	_, err := CallRef(testContext(t), NewEntityRef[markedTaskEntity](h), func(ctx *Context, e markedTaskEntity) (int, error) {
 		t.Fatal("CallRef ran typed callback for mismatched entity")
@@ -139,12 +139,12 @@ func TestCallRefReportsTypeMismatch(t *testing.T) {
 	}
 }
 
-func TestScheduleAfterCancel(t *testing.T) {
+func TestDoAfterCancel(t *testing.T) {
 	w := New()
 	defer w.Close()
 
 	ran := make(chan struct{})
-	task := w.ScheduleAfter(time.Hour, func(ctx *Context) { close(ran) })
+	task := w.DoAfter(time.Hour, func(ctx *Context) { close(ran) })
 	if !task.Cancel() {
 		t.Fatal("expected pending delayed task to cancel")
 	}
@@ -158,10 +158,10 @@ func TestScheduleAfterCancel(t *testing.T) {
 	}
 }
 
-func TestScheduleAfterFailsWhenWorldCloseStarts(t *testing.T) {
+func TestDoAfterFailsWhenWorldCloseStarts(t *testing.T) {
 	w := New()
 
-	task := w.ScheduleAfter(time.Hour, func(*Context) {
+	task := w.DoAfter(time.Hour, func(*Context) {
 		t.Fatal("delayed task ran after world close started")
 	})
 	errc := make(chan error, 1)
@@ -175,13 +175,13 @@ func TestScheduleAfterFailsWhenWorldCloseStarts(t *testing.T) {
 	}
 }
 
-func TestEntityScheduleAfterFailsWhenWorldCloseStarts(t *testing.T) {
+func TestEntityDoAfterFailsWhenWorldCloseStarts(t *testing.T) {
 	w := New()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
 
-	task := h.ScheduleAfter(time.Hour, func(*Context, Entity) {
+	task := h.DoAfter(time.Hour, func(*Context, Entity) {
 		t.Fatal("delayed entity task ran after world close started")
 	})
 	errc := make(chan error, 1)
@@ -195,27 +195,27 @@ func TestEntityScheduleAfterFailsWhenWorldCloseStarts(t *testing.T) {
 	}
 }
 
-func TestEntityScheduleAfterFollowsMovedEntity(t *testing.T) {
+func TestEntityDoAfterFollowsMovedEntity(t *testing.T) {
 	w1 := New()
 	w2 := New()
 	defer w2.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w1.Exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w1.exec(func(tx *Tx) { tx.AddEntity(h) })
 
-	task := h.ScheduleAfter(50*time.Millisecond, func(ctx *Context, _ Entity) {
+	task := h.DoAfter(50*time.Millisecond, func(ctx *Context, _ Entity) {
 		if ctx.Tx().World() != w2 {
 			t.Fatal("delayed entity task did not follow moved entity")
 		}
 	})
-	<-w1.Exec(func(tx *Tx) {
+	<-w1.exec(func(tx *Tx) {
 		e, ok := h.Entity(tx)
 		if !ok {
 			t.Fatal("entity missing before move")
 		}
 		tx.RemoveEntity(e)
 	})
-	<-w2.Exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w2.exec(func(tx *Tx) { tx.AddEntity(h) })
 	if err := w1.Close(); err != nil {
 		t.Fatalf("close old world: %v", err)
 	}
@@ -224,23 +224,23 @@ func TestEntityScheduleAfterFollowsMovedEntity(t *testing.T) {
 	}
 }
 
-func TestScheduleRecordsPanic(t *testing.T) {
+func TestDoRecordsPanic(t *testing.T) {
 	w := New()
 	defer w.Close()
 
-	task := w.Schedule(func(ctx *Context) { panic("boom") })
+	task := w.Do(func(ctx *Context) { panic("boom") })
 	if err := task.Wait(testContext(t)); !errors.Is(err, ErrTaskPanicked) {
 		t.Fatalf("expected ErrTaskPanicked, got %v", err)
 	}
 }
 
-func TestScheduleRunsDeferredWork(t *testing.T) {
+func TestDoRunsDeferredWork(t *testing.T) {
 	w := New()
 	defer w.Close()
 
 	ran := make(chan struct{})
 	var nested *Task
-	task := w.Schedule(func(ctx *Context) {
+	task := w.Do(func(ctx *Context) {
 		ctx.Defer(func(ctx *Context) {
 			nested = ctx.Defer(func(*Context) { close(ran) })
 		})
@@ -261,16 +261,16 @@ func TestScheduleRunsDeferredWork(t *testing.T) {
 	}
 }
 
-func TestEntityScheduleWaitsForDeferredWork(t *testing.T) {
+func TestEntityDoWaitsForDeferredWork(t *testing.T) {
 	w := New()
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
 
 	release := make(chan struct{})
 	var deferredRan atomic.Bool
-	task := h.Schedule(func(ctx *Context, _ Entity) {
+	task := h.Do(func(ctx *Context, _ Entity) {
 		ctx.Defer(func(*Context) {
 			<-release
 			deferredRan.Store(true)
@@ -293,29 +293,29 @@ func TestEntityScheduleWaitsForDeferredWork(t *testing.T) {
 	}
 }
 
-func TestEntityScheduleCancelAfterInvalidatedWeakTransactionDoesNotPoisonHandle(t *testing.T) {
+func TestEntityDoCancelAfterInvalidatedWeakTransactionDoesNotPoisonHandle(t *testing.T) {
 	w := New()
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	w.Exec(func(*Tx) {
+	w.exec(func(*Tx) {
 		close(started)
 		<-release
 	})
 	<-started
 
-	removeDone := w.Exec(func(tx *Tx) {
+	removeDone := w.exec(func(tx *Tx) {
 		e, ok := h.Entity(tx)
 		if !ok {
 			t.Fatal("entity missing before remove")
 		}
 		tx.RemoveEntity(e)
 	})
-	task := h.Schedule(func(*Context, Entity) {
+	task := h.Do(func(*Context, Entity) {
 		t.Fatal("cancelled task ran")
 	})
 	waitEntityWeakTxActive(t, h)
@@ -328,23 +328,23 @@ func TestEntityScheduleCancelAfterInvalidatedWeakTransactionDoesNotPoisonHandle(
 		t.Fatalf("expected ErrTaskCancelled, got %v", err)
 	}
 
-	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
-	task = h.Schedule(func(*Context, Entity) {})
+	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
+	task = h.Do(func(*Context, Entity) {})
 	if err := task.Wait(testContext(t)); err != nil {
 		t.Fatalf("handle poisoned after cancelling invalidated weak transaction: %v", err)
 	}
 }
 
-func TestScheduleDoesNotBlockOwnerWhenQueueFull(t *testing.T) {
+func TestDoDoesNotBlockOwnerWhenQueueFull(t *testing.T) {
 	w := New()
 	defer w.Close()
 
 	done := make(chan struct{})
 	go func() {
-		<-w.Exec(func(tx *Tx) {
+		<-w.exec(func(tx *Tx) {
 			ctx := tx.Context()
 			for i := 0; i < cap(w.queue)+32; i++ {
-				w.Schedule(func(*Context) {})
+				w.Do(func(*Context) {})
 				ctx.Defer(func(*Context) {})
 			}
 		})
@@ -354,11 +354,11 @@ func TestScheduleDoesNotBlockOwnerWhenQueueFull(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("Schedule or Context.Defer blocked the world owner")
+		t.Fatal("Do or Context.Defer blocked the world owner")
 	}
 }
 
-func TestScheduleQueuedBeforeCloseDoesNotRunAfterHandleClose(t *testing.T) {
+func TestDoQueuedBeforeCloseDoesNotRunAfterHandleClose(t *testing.T) {
 	w := New()
 
 	var closeHandled atomic.Bool
@@ -367,16 +367,16 @@ func TestScheduleQueuedBeforeCloseDoesNotRunAfterHandleClose(t *testing.T) {
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	w.Exec(func(*Tx) {
+	w.exec(func(*Tx) {
 		close(started)
 		<-release
 	})
 	<-started
 
 	for i := 0; i < cap(w.queue); i++ {
-		w.Exec(func(*Tx) {})
+		w.exec(func(*Tx) {})
 	}
-	task := w.Schedule(func(*Context) {
+	task := w.Do(func(*Context) {
 		if closeHandled.Load() {
 			ranAfterClose.Store(true)
 		}
@@ -419,9 +419,9 @@ func TestHandleCloseDrainsDeferredWorkBeforeSave(t *testing.T) {
 	}
 }
 
-func TestScheduleAfterEntityCloseFailsPromptly(t *testing.T) {
+func TestDoAfterEntityCloseFailsPromptly(t *testing.T) {
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	task := h.ScheduleAfter(time.Hour, func(*Context, Entity) {
+	task := h.DoAfter(time.Hour, func(*Context, Entity) {
 		t.Fatal("delayed task ran after entity closed")
 	})
 	if err := h.Close(); err != nil {
@@ -432,16 +432,16 @@ func TestScheduleAfterEntityCloseFailsPromptly(t *testing.T) {
 	}
 }
 
-func TestEntityScheduleCompletesWhenEntityClosesBeforeQueuedTask(t *testing.T) {
+func TestEntityDoCompletesWhenEntityClosesBeforeQueuedTask(t *testing.T) {
 	w := New()
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	done := w.Exec(func(tx *Tx) {
+	done := w.exec(func(tx *Tx) {
 		close(started)
 		<-release
 		e, ok := h.Entity(tx)
@@ -453,7 +453,7 @@ func TestEntityScheduleCompletesWhenEntityClosesBeforeQueuedTask(t *testing.T) {
 	})
 	<-started
 
-	task := h.Schedule(func(*Context, Entity) { t.Fatal("closed entity task ran") })
+	task := h.Do(func(*Context, Entity) { t.Fatal("closed entity task ran") })
 	time.Sleep(50 * time.Millisecond)
 	close(release)
 	<-done
@@ -468,29 +468,29 @@ func TestExecWorldReturnsTrueWhenCallbackClosesEntity(t *testing.T) {
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.Exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
 
 	ran := false
-	ok := h.ExecWorld(func(tx *Tx, e Entity) {
+	ok := h.execWorld(func(tx *Tx, e Entity) {
 		ran = true
 		tx.RemoveEntity(e)
 		_ = h.Close()
-	})
+	}, false, nil)
 	if !ran {
-		t.Fatal("ExecWorld callback did not run")
+		t.Fatal("execWorld callback did not run")
 	}
 	if !ok {
-		t.Fatal("ExecWorld returned false after callback ran")
+		t.Fatal("execWorld returned false after callback ran")
 	}
 }
 
-func TestScheduleAfterWorldCloseFails(t *testing.T) {
+func TestDoAfterWorldCloseFails(t *testing.T) {
 	w := New()
 	if err := w.Close(); err != nil {
 		t.Fatalf("close world: %v", err)
 	}
 
-	task := w.Schedule(func(ctx *Context) { t.Fatal("task ran on closed world") })
+	task := w.Do(func(ctx *Context) { t.Fatal("task ran on closed world") })
 	if err := task.Wait(testContext(t)); !errors.Is(err, ErrWorldClosed) {
 		t.Fatalf("expected ErrWorldClosed, got %v", err)
 	}

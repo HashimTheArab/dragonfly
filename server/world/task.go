@@ -92,7 +92,7 @@ func (t *Task) Err() error {
 
 // Wait waits for the task to finish or for ctx to be cancelled. Wait should
 // not be called from a callback that is already running on the same world or
-// entity owner; doing so would recreate the blocking pattern Schedule is meant
+// entity owner; doing so would recreate the blocking pattern Do is meant
 // to avoid.
 func (t *Task) Wait(ctx context.Context) error {
 	if ctx == nil {
@@ -173,21 +173,21 @@ func (t *Task) runCancel() {
 	}
 }
 
-// Schedule schedules f to run on the world's owner context. Schedule does not
-// wait for f to run and is safe to use from goroutines outside the world owner.
-// Scheduled work runs FIFO with other world transactions once queued. If the
-// owner queue is saturated, Schedule still returns without blocking the caller
-// and queues the task from a helper goroutine.
-func (w *World) Schedule(f func(ctx *Context)) *Task {
+// Do schedules f to run on the world's owner context. Do does not wait for f
+// to run and is safe to use from goroutines outside the world owner. Scheduled
+// work runs FIFO with other world transactions once queued. If the owner queue
+// is saturated, Do still returns without blocking the caller and queues the
+// task from a helper goroutine.
+func (w *World) Do(f func(ctx *Context)) *Task {
 	return w.scheduleTask(newTask(), func(ctx *Context) error {
 		f(ctx)
 		return nil
 	})
 }
 
-// ScheduleAfter schedules f to run on the world's owner context after delay.
+// DoAfter schedules f to run on the world's owner context after delay.
 // If the task is cancelled before delay elapses, f is not queued.
-func (w *World) ScheduleAfter(delay time.Duration, f func(ctx *Context)) *Task {
+func (w *World) DoAfter(delay time.Duration, f func(ctx *Context)) *Task {
 	t := newTask()
 	if delay <= 0 {
 		return w.scheduleTask(t, func(ctx *Context) error {

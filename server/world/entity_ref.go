@@ -18,9 +18,9 @@ func NewEntityRef[T Entity](h *EntityHandle) EntityRef[T] { return EntityRef[T]{
 // Handle returns the underlying stable entity handle.
 func (r EntityRef[T]) Handle() *EntityHandle { return r.h }
 
-// Schedule schedules f on the referenced entity's current owner. If the entity
+// Do schedules f on the referenced entity's current owner. If the entity
 // despawns or closes before the task runs, the returned Task records an error.
-func (r EntityRef[T]) Schedule(f func(ctx *Context, e T)) *Task {
+func (r EntityRef[T]) Do(f func(ctx *Context, e T)) *Task {
 	if r.h == nil {
 		return newFinishedTask(ErrEntityClosed)
 	}
@@ -34,8 +34,8 @@ func (r EntityRef[T]) Schedule(f func(ctx *Context, e T)) *Task {
 	})
 }
 
-// ScheduleAfter schedules f on the referenced entity's owner after delay.
-func (r EntityRef[T]) ScheduleAfter(delay time.Duration, f func(ctx *Context, e T)) *Task {
+// DoAfter schedules f on the referenced entity's owner after delay.
+func (r EntityRef[T]) DoAfter(delay time.Duration, f func(ctx *Context, e T)) *Task {
 	if r.h == nil {
 		return newFinishedTask(ErrEntityClosed)
 	}

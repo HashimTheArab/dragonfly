@@ -13,24 +13,24 @@ type Ref = world.EntityRef[*Player]
 // NewRef creates a typed player reference from an entity handle.
 func NewRef(h *world.EntityHandle) Ref { return world.NewEntityRef[*Player](h) }
 
-// Schedule schedules f on the player's current world owner. The receiver may
+// Do schedules f on the player's current world owner. The receiver may
 // be a transaction-scoped Player; the scheduled callback receives the current
 // Player value for the owner context in which it runs.
-func (p *Player) Schedule(f func(p *Player, ctx *world.Context)) *world.Task {
+func (p *Player) Do(f func(p *Player, ctx *world.Context)) *world.Task {
 	if p == nil {
-		return world.NewEntityRef[*Player](nil).Schedule(func(*world.Context, *Player) {})
+		return world.NewEntityRef[*Player](nil).Do(func(*world.Context, *Player) {})
 	}
-	return NewRef(p.handle).Schedule(func(ctx *world.Context, current *Player) {
+	return NewRef(p.handle).Do(func(ctx *world.Context, current *Player) {
 		f(current, ctx)
 	})
 }
 
-// ScheduleAfter schedules f on the player's current world owner after delay.
-func (p *Player) ScheduleAfter(delay time.Duration, f func(p *Player, ctx *world.Context)) *world.Task {
+// DoAfter schedules f on the player's current world owner after delay.
+func (p *Player) DoAfter(delay time.Duration, f func(p *Player, ctx *world.Context)) *world.Task {
 	if p == nil {
-		return world.NewEntityRef[*Player](nil).Schedule(func(*world.Context, *Player) {})
+		return world.NewEntityRef[*Player](nil).Do(func(*world.Context, *Player) {})
 	}
-	return NewRef(p.handle).ScheduleAfter(delay, func(ctx *world.Context, current *Player) {
+	return NewRef(p.handle).DoAfter(delay, func(ctx *world.Context, current *Player) {
 		f(current, ctx)
 	})
 }

@@ -28,7 +28,7 @@ func (ctx *Context) Tx() *Tx { return ctx.Val() }
 
 // World returns the owner-scoped world access for the context. It returns the
 // current transaction rather than the raw *World, so callers can use world
-// operations without re-entering World.Exec.
+// operations without re-entering World.Do.
 func (ctx *Context) World() *Tx { return ctx.Tx() }
 
 // Defer schedules f to run after the current owner callback completes.

@@ -28,7 +28,7 @@ func (ctx *Context) Tx() *world.Tx { return ctx.Player().tx }
 
 // World returns the owner-scoped world access for this player callback. It
 // returns the current transaction rather than the raw *world.World, so callers
-// can use world operations without re-entering World.Exec.
+// can use world operations without re-entering World.Do.
 func (ctx *Context) World() *world.Tx { return ctx.Tx() }
 
 // Defer schedules f to run after the current owner callback completes.

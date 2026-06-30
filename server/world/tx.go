@@ -370,7 +370,7 @@ func (tx *Tx) runDeferred() {
 }
 
 // normalTransaction is added to the transaction queue for transactions created
-// using World.Exec().
+// using World.exec().
 type normalTransaction struct {
 	c chan struct{}
 	f func(tx *Tx)

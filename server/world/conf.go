@@ -144,6 +144,6 @@ func (conf Config) New() *World {
 	go w.autoSave()
 	go w.handleTransactions()
 
-	<-w.Exec(t.tick)
+	<-w.exec(t.tick)
 	return w
 }
