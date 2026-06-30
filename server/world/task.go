@@ -31,7 +31,9 @@ type PanicError struct {
 	Value any
 }
 
-func (e *PanicError) Error() string { return fmt.Sprintf("world: scheduled task panicked: %v", e.Value) }
+func (e *PanicError) Error() string {
+	return fmt.Sprintf("world: scheduled task panicked: %v", e.Value)
+}
 func (e *PanicError) Unwrap() error { return ErrTaskPanicked }
 
 // executeWithRecovery runs f, recovering any panic into a *PanicError.
