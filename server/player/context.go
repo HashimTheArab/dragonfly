@@ -26,11 +26,6 @@ func (ctx *Context) Player() *Player { return ctx.Val() }
 // transaction is only valid for the duration of the callback.
 func (ctx *Context) Tx() *world.Tx { return ctx.Player().tx }
 
-// World returns the owner-scoped world access for this player callback. It
-// returns the current transaction rather than the raw *world.World, so callers
-// can use world operations without re-entering World.Do.
-func (ctx *Context) World() *world.Tx { return ctx.Tx() }
-
 // Defer schedules f to run after the current owner callback completes.
 func (ctx *Context) Defer(f func(ctx *world.Context)) *world.Task {
 	return ctx.Tx().Context().Defer(f)
@@ -38,8 +33,8 @@ func (ctx *Context) Defer(f func(ctx *world.Context)) *world.Task {
 
 // SetBlock writes a block through the player's current owner context.
 func (ctx *Context) SetBlock(pos cube.Pos, b world.Block, opts *world.SetOpts) {
-	ctx.World().SetBlock(pos, b, opts)
+	ctx.Tx().SetBlock(pos, b, opts)
 }
 
 // Block reads a block through the player's current owner context.
-func (ctx *Context) Block(pos cube.Pos) world.Block { return ctx.World().Block(pos) }
+func (ctx *Context) Block(pos cube.Pos) world.Block { return ctx.Tx().Block(pos) }

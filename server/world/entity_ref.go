@@ -22,12 +22,12 @@ func (r EntityRef[T]) Handle() *EntityHandle { return r.h }
 // despawns or closes before the task runs, the returned Task records an error.
 func (r EntityRef[T]) Do(f func(ctx *Context, e T)) *Task {
 	if r.h == nil {
-		return newFinishedTask(ErrEntityClosed)
+		return NewFinishedTask(ErrEntityClosed)
 	}
 	return r.h.schedule(func(ctx *Context, e Entity) error {
-		v, ok := e.(T)
-		if !ok {
-			return fmt.Errorf("%w: got %T", ErrEntityType, e)
+		v, err := assertEntity[T](e)
+		if err != nil {
+			return err
 		}
 		f(ctx, v)
 		return nil
@@ -37,12 +37,12 @@ func (r EntityRef[T]) Do(f func(ctx *Context, e T)) *Task {
 // DoAfter schedules f on the referenced entity's owner after delay.
 func (r EntityRef[T]) DoAfter(delay time.Duration, f func(ctx *Context, e T)) *Task {
 	if r.h == nil {
-		return newFinishedTask(ErrEntityClosed)
+		return NewFinishedTask(ErrEntityClosed)
 	}
 	return r.h.scheduleAfter(delay, func(ctx *Context, e Entity) error {
-		v, ok := e.(T)
-		if !ok {
-			return fmt.Errorf("%w: got %T", ErrEntityType, e)
+		v, err := assertEntity[T](e)
+		if err != nil {
+			return err
 		}
 		f(ctx, v)
 		return nil
@@ -54,12 +54,22 @@ func (r EntityRef[T]) DoAfter(delay time.Duration, f func(ctx *Context, e T)) *T
 // request/response paths. Code that already has a *world.Context or typed
 // entity callback should use that context directly instead of calling CallRef.
 func CallRef[R any, E Entity](ctx context.Context, ref EntityRef[E], f func(ctx *Context, e E) (R, error)) (R, error) {
-	var zero R
 	return CallEntity(ctx, ref.h, func(ctx *Context, e Entity) (R, error) {
-		v, ok := e.(E)
-		if !ok {
-			return zero, fmt.Errorf("%w: got %T", ErrEntityType, e)
+		v, err := assertEntity[E](e)
+		if err != nil {
+			var zero R
+			return zero, err
 		}
 		return f(ctx, v)
 	})
+}
+
+// assertEntity asserts that e is of type T, returning ErrEntityType if not.
+func assertEntity[T Entity](e Entity) (T, error) {
+	v, ok := e.(T)
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("%w: got %T", ErrEntityType, e)
+	}
+	return v, nil
 }

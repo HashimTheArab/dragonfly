@@ -145,8 +145,7 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 				return !yield(p), nil
 			})
 			if err != nil {
-				var pe *world.PanicError
-				if errors.As(err, &pe) {
+				if pe, ok := errors.AsType[*world.PanicError](err); ok {
 					panic(pe.Value)
 				}
 				srv.pmu.Lock()
@@ -241,8 +240,7 @@ func (srv *Server) Players(tx *world.Tx) iter.Seq[*player.Player] {
 				return !yield(p), nil
 			})
 			if err != nil {
-				var pe *world.PanicError
-				if errors.As(err, &pe) {
+				if pe, ok := errors.AsType[*world.PanicError](err); ok {
 					panic(pe.Value)
 				}
 				continue

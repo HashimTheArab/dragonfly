@@ -19,8 +19,8 @@ func TestDoRunsOnWorldContext(t *testing.T) {
 		if ctx.Tx() == nil {
 			t.Fatal("scheduled context has nil transaction")
 		}
-		if ctx.World() != ctx.Tx() {
-			t.Fatal("Context.World does not return owner-scoped transaction")
+		if ctx.Tx() == nil {
+			t.Fatal("Context.Tx returned nil")
 		}
 	})
 	if err := task.Wait(testContext(t)); err != nil {

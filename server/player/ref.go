@@ -16,21 +16,21 @@ func NewRef(h *world.EntityHandle) Ref { return world.NewEntityRef[*Player](h) }
 // Do schedules f on the player's current world owner. The receiver may
 // be a transaction-scoped Player; the scheduled callback receives the current
 // Player value for the owner context in which it runs.
-func (p *Player) Do(f func(p *Player, ctx *world.Context)) *world.Task {
+func (p *Player) Do(f func(ctx *world.Context, p *Player)) *world.Task {
 	if p == nil {
-		return world.NewEntityRef[*Player](nil).Do(func(*world.Context, *Player) {})
+		return world.NewFinishedTask(world.ErrEntityClosed)
 	}
 	return NewRef(p.handle).Do(func(ctx *world.Context, current *Player) {
-		f(current, ctx)
+		f(ctx, current)
 	})
 }
 
 // DoAfter schedules f on the player's current world owner after delay.
-func (p *Player) DoAfter(delay time.Duration, f func(p *Player, ctx *world.Context)) *world.Task {
+func (p *Player) DoAfter(delay time.Duration, f func(ctx *world.Context, p *Player)) *world.Task {
 	if p == nil {
-		return world.NewEntityRef[*Player](nil).DoAfter(delay, func(*world.Context, *Player) {})
+		return world.NewFinishedTask(world.ErrEntityClosed)
 	}
 	return NewRef(p.handle).DoAfter(delay, func(ctx *world.Context, current *Player) {
-		f(current, ctx)
+		f(ctx, current)
 	})
 }

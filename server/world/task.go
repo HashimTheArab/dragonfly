@@ -34,6 +34,32 @@ type PanicError struct {
 func (e *PanicError) Error() string { return fmt.Sprintf("world: scheduled task panicked: %v", e.Value) }
 func (e *PanicError) Unwrap() error { return ErrTaskPanicked }
 
+// executeWithRecovery runs f, recovering any panic into a *PanicError.
+func executeWithRecovery(f func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = &PanicError{Value: r}
+		}
+	}()
+	return f()
+}
+
+// awaitTask waits for a task to complete or the context to cancel, returning
+// the result stored by the callback through the result pointer.
+func awaitTask[T any](ctx context.Context, task *Task, result *T) (T, error) {
+	var zero T
+	select {
+	case <-task.Done():
+		if err := task.Err(); err != nil {
+			return zero, err
+		}
+		return *result, nil
+	case <-ctx.Done():
+		task.Cancel()
+		return zero, ctx.Err()
+	}
+}
+
 const (
 	taskPending int32 = iota
 	taskRunning
@@ -60,7 +86,9 @@ func newTask() *Task {
 	return &Task{done: make(chan struct{})}
 }
 
-func newFinishedTask(err error) *Task {
+// NewFinishedTask returns a Task that is already completed with the given
+// error.
+func NewFinishedTask(err error) *Task {
 	t := newTask()
 	t.failIfPending(err)
 	return t
@@ -249,16 +277,7 @@ func Call[T any](ctx context.Context, w *World, f func(ctx *Context) (T, error))
 		result, err = f(wctx)
 		return err
 	})
-	select {
-	case <-task.Done():
-		if err := task.Err(); err != nil {
-			return zero, err
-		}
-		return result, nil
-	case <-ctx.Done():
-		task.Cancel()
-		return zero, ctx.Err()
-	}
+	return awaitTask(ctx, task, &result)
 }
 
 // CallEntity schedules f on the EntityHandle's current world owner and waits
@@ -284,16 +303,7 @@ func CallEntity[R any](ctx context.Context, h *EntityHandle, f func(ctx *Context
 		result, err = f(wctx, e)
 		return err
 	})
-	select {
-	case <-task.Done():
-		if err := task.Err(); err != nil {
-			return zero, err
-		}
-		return result, nil
-	case <-ctx.Done():
-		task.Cancel()
-		return zero, ctx.Err()
-	}
+	return awaitTask(ctx, task, &result)
 }
 
 func (w *World) scheduleTask(task *Task, f func(ctx *Context) error) *Task {
@@ -354,14 +364,8 @@ func (st scheduledTransaction) Run(w *World) {
 	}
 	tx := &Tx{w: w}
 	ctx := newContext(tx)
-	var err error
-	defer func() {
-		if r := recover(); r != nil {
-			err = &PanicError{Value: r}
-		}
-		tx.close()
-		tx.runDeferred()
-		st.task.finish(err)
-	}()
-	err = st.f(ctx)
+	err := executeWithRecovery(func() error { return st.f(ctx) })
+	tx.close()
+	tx.runDeferred()
+	st.task.finish(err)
 }
