@@ -33,7 +33,7 @@ func TestCallReturnsTypedResult(t *testing.T) {
 	defer w.Close()
 
 	got, err := Call(testContext(t), w, func(ctx *Context) (int64, error) {
-		return ctx.CurrentTick(), nil
+		return ctx.Tx().CurrentTick(), nil
 	})
 	if err != nil {
 		t.Fatalf("Call failed: %v", err)

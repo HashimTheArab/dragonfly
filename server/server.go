@@ -140,7 +140,7 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 			srv.pmu.Unlock()
 
 			ret, err := world.Call(context.Background(), inc.w, func(ctx *world.Context) (bool, error) {
-				p := ctx.AddEntity(inc.p.handle).(*player.Player)
+				p := ctx.Tx().AddEntity(inc.p.handle).(*player.Player)
 				inc.s.Spawn(p, ctx.Tx())
 				return !yield(p), nil
 			})

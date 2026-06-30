@@ -966,7 +966,7 @@ func (p *Player) respawn(f func(p *Player)) {
 	handle := p.tx.RemoveEntity(p)
 	sess := p.session()
 	task := w.Do(func(ctx *world.Context) {
-		np := ctx.AddEntity(handle).(*Player)
+		np := ctx.Tx().AddEntity(handle).(*Player)
 		np.Teleport(pos)
 		np.session().SendRespawn(pos, p)
 		np.SetVisible()
