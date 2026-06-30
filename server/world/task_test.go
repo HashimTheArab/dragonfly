@@ -490,7 +490,7 @@ func TestDoAfterWorldCloseFails(t *testing.T) {
 		t.Fatalf("close world: %v", err)
 	}
 
-	task := w.Do(func(ctx *Context) { t.Fatal("task ran on closed world") })
+	task := w.DoAfter(time.Hour, func(ctx *Context) { t.Fatal("task ran on closed world") })
 	if err := task.Wait(testContext(t)); !errors.Is(err, ErrWorldClosed) {
 		t.Fatalf("expected ErrWorldClosed, got %v", err)
 	}

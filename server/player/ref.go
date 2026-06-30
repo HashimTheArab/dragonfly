@@ -28,7 +28,7 @@ func (p *Player) Do(f func(p *Player, ctx *world.Context)) *world.Task {
 // DoAfter schedules f on the player's current world owner after delay.
 func (p *Player) DoAfter(delay time.Duration, f func(p *Player, ctx *world.Context)) *world.Task {
 	if p == nil {
-		return world.NewEntityRef[*Player](nil).Do(func(*world.Context, *Player) {})
+		return world.NewEntityRef[*Player](nil).DoAfter(delay, func(*world.Context, *Player) {})
 	}
 	return NewRef(p.handle).DoAfter(delay, func(ctx *world.Context, current *Player) {
 		f(current, ctx)

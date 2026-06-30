@@ -25,6 +25,15 @@ var (
 	ErrEntityType = errors.New("world: unexpected entity type")
 )
 
+// PanicError wraps a recovered panic value, preserving it for re-panicking
+// with the original value while supporting errors.Is(err, ErrTaskPanicked).
+type PanicError struct {
+	Value any
+}
+
+func (e *PanicError) Error() string { return fmt.Sprintf("world: scheduled task panicked: %v", e.Value) }
+func (e *PanicError) Unwrap() error { return ErrTaskPanicked }
+
 const (
 	taskPending int32 = iota
 	taskRunning
@@ -348,7 +357,7 @@ func (st scheduledTransaction) Run(w *World) {
 	var err error
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("%w: %v", ErrTaskPanicked, r)
+			err = &PanicError{Value: r}
 		}
 		tx.close()
 		tx.runDeferred()

@@ -145,12 +145,15 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 				return !yield(p), nil
 			})
 			if err != nil {
-				if errors.Is(err, world.ErrTaskPanicked) {
-					panic(err)
+				var pe *world.PanicError
+				if errors.As(err, &pe) {
+					panic(pe.Value)
 				}
 				srv.pmu.Lock()
 				delete(srv.p, inc.p.handle.UUID())
 				srv.pmu.Unlock()
+				srv.pwg.Done()
+				inc.s.Disconnect("join failed")
 				continue
 			}
 			if ret {
@@ -238,8 +241,9 @@ func (srv *Server) Players(tx *world.Tx) iter.Seq[*player.Player] {
 				return !yield(p), nil
 			})
 			if err != nil {
-				if errors.Is(err, world.ErrTaskPanicked) {
-					panic(err)
+				var pe *world.PanicError
+				if errors.As(err, &pe) {
+					panic(pe.Value)
 				}
 				continue
 			}

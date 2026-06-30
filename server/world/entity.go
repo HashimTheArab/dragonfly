@@ -2,7 +2,6 @@ package world
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"maps"
 	"slices"
@@ -250,12 +249,13 @@ func (e *EntityHandle) currentWorldCloseStarted() <-chan struct{} {
 }
 
 func (e *EntityHandle) currentWorldClosing() bool {
-	closeStarted := e.currentWorldCloseStarted()
-	if closeStarted == nil {
+	e.cond.L.Lock()
+	defer e.cond.L.Unlock()
+	if e.w == nil || e.w == closeWorld {
 		return false
 	}
 	select {
-	case <-closeStarted:
+	case <-e.w.closeStarted:
 		return true
 	default:
 		return false
@@ -275,7 +275,7 @@ func (e *EntityHandle) runScheduled(task *Task, f func(ctx *Context, e Entity) e
 		var err error
 		defer func() {
 			if r := recover(); r != nil {
-				err = fmt.Errorf("%w: %v", ErrTaskPanicked, r)
+				err = &PanicError{Value: r}
 			}
 			tx.deferTask(func(*Context) error {
 				task.finish(err)
