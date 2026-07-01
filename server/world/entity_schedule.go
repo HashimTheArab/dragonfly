@@ -21,6 +21,18 @@ func (e *EntityHandle) DoAfter(delay time.Duration, f func(ctx *Context, e Entit
 	})
 }
 
+// schedule enqueues f to run on the entity's current world owner. A goroutine
+// waits (via execWorld) for the entity to be world-bound if it is not already,
+// and follows the entity if it migrates between worlds before f runs.
+//
+// A tempting optimisation is to skip the goroutine and queue directly on the
+// entity's current world when it is already world-bound. That does not work:
+// the transaction is committed to one specific world, so if the entity
+// migrates (death→respawn, portal) between scheduling and execution the task
+// fails instead of following the entity. Blocking consumers such as
+// session.withControllable treat that failure as terminal and would disconnect
+// a live player or permanently stop a background loop. Correctness requires the
+// migration-following execWorld path, so schedule always uses it.
 func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
 	task := newTask()
 	if e == nil {
@@ -85,6 +97,7 @@ func (e *EntityHandle) scheduleAfter(delay time.Duration, f func(ctx *Context, e
 	return task
 }
 
+// currentWorldSignals returns the close and world-change channels under lock.
 func (e *EntityHandle) currentWorldSignals() (<-chan struct{}, <-chan struct{}) {
 	e.cond.L.Lock()
 	defer e.cond.L.Unlock()
@@ -94,6 +107,8 @@ func (e *EntityHandle) currentWorldSignals() (<-chan struct{}, <-chan struct{}) 
 	return e.w.closeStarted, e.worldChanged
 }
 
+// currentWorldCloseStarted returns the closeStarted channel of the entity's
+// current world, or nil if the entity is not in a world.
 func (e *EntityHandle) currentWorldCloseStarted() <-chan struct{} {
 	e.cond.L.Lock()
 	defer e.cond.L.Unlock()
@@ -103,6 +118,8 @@ func (e *EntityHandle) currentWorldCloseStarted() <-chan struct{} {
 	return e.w.closeStarted
 }
 
+// currentWorldClosing checks under lock whether the entity's current world
+// has started closing.
 func (e *EntityHandle) currentWorldClosing() bool {
 	e.cond.L.Lock()
 	defer e.cond.L.Unlock()
@@ -117,6 +134,9 @@ func (e *EntityHandle) currentWorldClosing() bool {
 	}
 }
 
+// runScheduled executes the scheduled entity callback via execWorld, using
+// the same completion model as scheduledTransaction: run -> drain deferred ->
+// finish task.
 func (e *EntityHandle) runScheduled(task *Task, f func(ctx *Context, e Entity) error) {
 	run := e.execWorld(func(tx *Tx, ent Entity) {
 		if tx.World().closed.Load() {

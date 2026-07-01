@@ -10,6 +10,7 @@ type Context struct {
 	*event.Context[*Tx]
 }
 
+// newContext wraps a transaction in a cancellable owner context.
 func newContext(tx *Tx) *Context {
 	return &Context{Context: event.C(tx)}
 }

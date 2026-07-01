@@ -1,6 +1,7 @@
 package player
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -974,9 +975,18 @@ func (p *Player) respawn(f func(p *Player)) {
 			f(np)
 		}
 	}).OnDone(func(err error) {
-		if err != nil {
+		// Only ErrWorldClosed means the entity was never re-added: the
+		// destination world closed after the player was removed from its
+		// previous world, leaving the handle orphaned. Close it and tear the
+		// session down so its connection and background goroutines are freed.
+		//
+		// A callback panic (recovered into a PanicError) is deliberately not
+		// handled here: the entity was already added and is live, so closing
+		// the handle would panic and turn a recovered panic into a crash.
+		if errors.Is(err, world.ErrWorldClosed) {
 			_ = handle.Close()
 			sess.Disconnect("respawn failed")
+			sess.CloseConnection()
 		}
 	})
 }

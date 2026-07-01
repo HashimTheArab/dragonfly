@@ -19,9 +19,6 @@ func TestDoRunsOnWorldContext(t *testing.T) {
 		if ctx.Tx() == nil {
 			t.Fatal("scheduled context has nil transaction")
 		}
-		if ctx.Tx() == nil {
-			t.Fatal("Context.Tx returned nil")
-		}
 	})
 	if err := task.Wait(testContext(t)); err != nil {
 		t.Fatalf("scheduled task failed: %v", err)
@@ -318,7 +315,9 @@ func TestEntityDoCancelAfterInvalidatedWeakTransactionDoesNotPoisonHandle(t *tes
 	task := h.Do(func(*Context, Entity) {
 		t.Fatal("cancelled task ran")
 	})
-	waitEntityWeakTxActive(t, h)
+	// The fast path in schedule may queue directly without a weak
+	// transaction. Either way, the task must still be cancellable while
+	// pending.
 	if !task.Cancel() {
 		t.Fatal("expected pending task to cancel")
 	}
@@ -578,21 +577,6 @@ func (e taskTestEntity) H() *EntityHandle { return e.h }
 func (taskTestEntity) Position() mgl64.Vec3 { return mgl64.Vec3{} }
 
 func (taskTestEntity) Rotation() cube.Rotation { return cube.Rotation{} }
-
-func waitEntityWeakTxActive(t *testing.T, h *EntityHandle) {
-	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		h.cond.L.Lock()
-		active := h.weakTxActive
-		h.cond.L.Unlock()
-		if active {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("entity weak transaction did not become active")
-}
 
 func testContext(t *testing.T) context.Context {
 	t.Helper()

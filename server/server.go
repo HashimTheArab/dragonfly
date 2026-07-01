@@ -152,7 +152,14 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 				delete(srv.p, inc.p.handle.UUID())
 				srv.pmu.Unlock()
 				srv.pwg.Done()
+				// The join failed before the player spawned (ErrWorldClosed):
+				// the entity was never added to a world, so close the orphaned
+				// handle and fully tear the session down. Disconnect alone only
+				// writes a packet; CloseConnection closes the connection and
+				// stops the session's background goroutines.
+				_ = inc.p.handle.Close()
 				inc.s.Disconnect("join failed")
+				inc.s.CloseConnection()
 				continue
 			}
 			if ret {

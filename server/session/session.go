@@ -351,9 +351,9 @@ func (s *Session) Latency() time.Duration {
 // withControllable runs f with the current Controllable on its world owner.
 // It is for off-owner session goroutines; callbacks that already have a
 // *world.Context or *world.Tx should use it directly instead.
-func (s *Session) withControllable(ctx context.Context, f func(tx *world.Tx, c Controllable) error) error {
+func (s *Session) withControllable(ctx context.Context, f func(ctx *world.Context, c Controllable) error) error {
 	_, err := world.CallRef[struct{}, Controllable](ctx, world.NewEntityRef[Controllable](s.ent), func(ctx *world.Context, c Controllable) (struct{}, error) {
-		return struct{}{}, f(ctx.Tx(), c)
+		return struct{}{}, f(ctx, c)
 	})
 	return err
 }
@@ -374,7 +374,7 @@ func (s *Session) handlePackets() {
 		// First close the Controllable. This might lead to a world change
 		// (player might be dead while disconnecting, in which case it will
 		// respawn first).
-		if err := s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
+		if err := s.withControllable(context.Background(), func(_ *world.Context, c Controllable) error {
 			_ = c.Close()
 			return nil
 		}); err != nil && !sessionOwnerStopped(err) {
@@ -382,8 +382,8 @@ func (s *Session) handlePackets() {
 		}
 		// Because the player might no longer be in the same world after
 		// closing, we create a new transaction
-		if err := s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
-			s.Close(tx, c)
+		if err := s.withControllable(context.Background(), func(ctx *world.Context, c Controllable) error {
+			s.Close(ctx.Tx(), c)
 			return nil
 		}); err != nil && !sessionOwnerStopped(err) {
 			s.conf.Log.Debug("close session: " + err.Error())
@@ -394,8 +394,8 @@ func (s *Session) handlePackets() {
 		if err != nil {
 			return
 		}
-		err = s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
-			return s.handlePacket(pk, tx, c)
+		err = s.withControllable(context.Background(), func(ctx *world.Context, c Controllable) error {
+			return s.handlePacket(pk, ctx.Tx(), c)
 		})
 		if err != nil {
 			if sessionOwnerStopped(err) {
@@ -419,7 +419,7 @@ func (s *Session) background() {
 		i          int
 	)
 
-	if err := s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
+	if err := s.withControllable(context.Background(), func(_ *world.Context, c Controllable) error {
 		r = s.sendAvailableCommands(c, softEnums)
 		enums, enumValues = s.enums(c)
 		return nil
@@ -435,7 +435,7 @@ func (s *Session) background() {
 	for {
 		select {
 		case <-t.C:
-			if err := s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
+			if err := s.withControllable(context.Background(), func(ctx *world.Context, c Controllable) error {
 				if i++; i%20 == 0 {
 					// Enum resending happens relatively often and frequent updates are more important than with full
 					// command changes. Those are generally only related to permission changes, which doesn't happen often.
@@ -447,7 +447,7 @@ func (s *Session) background() {
 						enums, enumValues = s.enums(c)
 					}
 				}
-				s.sendChunks(tx, c)
+				s.sendChunks(ctx.Tx(), c)
 				return nil
 			}); err != nil {
 				if !sessionOwnerStopped(err) {

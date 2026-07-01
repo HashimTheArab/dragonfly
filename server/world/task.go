@@ -31,9 +31,12 @@ type PanicError struct {
 	Value any
 }
 
+// Error implements the error interface.
 func (e *PanicError) Error() string {
 	return fmt.Sprintf("world: scheduled task panicked: %v", e.Value)
 }
+
+// Unwrap returns ErrTaskPanicked so errors.Is works.
 func (e *PanicError) Unwrap() error { return ErrTaskPanicked }
 
 // executeWithRecovery runs f, recovering any panic into a *PanicError.
@@ -84,6 +87,7 @@ type Task struct {
 	onCancel func()
 }
 
+// newTask returns a pending Task with an open done channel.
 func newTask() *Task {
 	return &Task{done: make(chan struct{})}
 }
@@ -174,10 +178,14 @@ func (t *Task) Cancel() bool {
 	return true
 }
 
+// begin transitions the task from pending to running. Returns false if the
+// task was already started or cancelled.
 func (t *Task) begin() bool {
 	return t != nil && t.state.CompareAndSwap(taskPending, taskRunning)
 }
 
+// failIfPending transitions the task from pending to done with the given
+// error. Returns false if the task was no longer pending.
 func (t *Task) failIfPending(err error) bool {
 	if t == nil || !t.state.CompareAndSwap(taskPending, taskRunning) {
 		return false
@@ -186,6 +194,7 @@ func (t *Task) failIfPending(err error) bool {
 	return true
 }
 
+// finish completes the task, storing err and closing the done channel.
 func (t *Task) finish(err error) {
 	t.setErr(err)
 	t.state.Store(taskDone)
@@ -202,6 +211,8 @@ func (t *Task) pending() bool {
 	return t != nil && t.state.Load() == taskPending
 }
 
+// setCancel registers a function to run if the task is cancelled. If the
+// task is already cancelled when setCancel is called, f runs immediately.
 func (t *Task) setCancel(f func()) {
 	if t == nil || f == nil {
 		return
@@ -217,6 +228,7 @@ func (t *Task) setCancel(f func()) {
 	}
 }
 
+// runCancel invokes the registered cancel function, if any.
 func (t *Task) runCancel() {
 	t.cancelMu.Lock()
 	f := t.onCancel
@@ -302,6 +314,8 @@ func CallEntity[R any](ctx context.Context, h *EntityHandle, f func(ctx *Context
 	return CallRef(ctx, NewEntityRef[Entity](h), f)
 }
 
+// scheduleTask enqueues a scheduledTransaction on the world's owner queue.
+// If the queue is full, a helper goroutine is spawned to avoid blocking.
 func (w *World) scheduleTask(task *Task, f func(ctx *Context) error) *Task {
 	if task == nil {
 		task = newTask()
@@ -333,6 +347,8 @@ func (w *World) scheduleTask(task *Task, f func(ctx *Context) error) *Task {
 	return task
 }
 
+// queueScheduled is a helper goroutine that retries enqueuing a transaction
+// when the world queue was full at the time of scheduling.
 func (w *World) queueScheduled(st scheduledTransaction) {
 	defer w.scheduling.Done()
 	if w.closed.Load() {
@@ -349,11 +365,15 @@ func (w *World) queueScheduled(st scheduledTransaction) {
 	}
 }
 
+// scheduledTransaction is a task-aware transaction queued via Do, DoAfter,
+// or Context.Defer. It creates its own Tx, runs the callback with panic
+// recovery, drains deferred work, then finishes the task.
 type scheduledTransaction struct {
 	task *Task
 	f    func(ctx *Context) error
 }
 
+// Run executes the scheduled callback on the world goroutine.
 func (st scheduledTransaction) Run(w *World) {
 	if !st.task.begin() {
 		return
