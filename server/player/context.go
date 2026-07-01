@@ -28,7 +28,7 @@ func (ctx *Context) Player() *Player { return ctx.p }
 // left the world, the returned task fails with world.ErrEntityClosed.
 func (ctx *Context) Defer(f func(ctx *Context)) *world.Task {
 	h := ctx.p.H()
-	return ctx.Context.DeferErr(func(wctx *world.Context) error {
+	return ctx.DeferErr(func(wctx *world.Context) error {
 		if e, ok := h.Entity(wctx); ok {
 			f(newContext(e.(*Player)))
 			return nil
