@@ -71,7 +71,7 @@ func (ctx *Context) Defer(f func(ctx *Context)) *Task {
 // Range returns the lower and upper bounds of the World that the Context is
 // operating on.
 func (ctx *Context) Range() cube.Range {
-	return ctx.w.ra
+	return ctx.World().ra
 }
 
 // SetBlock writes a block to the position passed. If a chunk is not yet loaded
