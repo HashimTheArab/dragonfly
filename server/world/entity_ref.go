@@ -18,8 +18,9 @@ func NewEntityRef[T Entity](h *EntityHandle) EntityRef[T] { return EntityRef[T]{
 // Handle returns the underlying stable entity handle.
 func (r EntityRef[T]) Handle() *EntityHandle { return r.h }
 
-// Do schedules f on the referenced entity's current owner. If the entity
-// despawns or closes before the task runs, the returned Task records an error.
+// Do schedules f on the referenced entity's current owner. If the entity is
+// not currently in a world, the task waits until it enters one or the handle
+// closes. Closing the handle before the task runs records ErrEntityClosed.
 func (r EntityRef[T]) Do(f func(ctx *Context, e T)) *Task {
 	if r.h == nil {
 		return NewFinishedTask(ErrEntityClosed)

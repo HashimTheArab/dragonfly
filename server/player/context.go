@@ -24,13 +24,15 @@ func (ctx *Context) Player() *Player { return ctx.p }
 
 // Defer schedules f after the current callback completes, handing it a
 // player.Context. The player is re-resolved from its handle against the fresh
-// deferred transaction (the current one is closed by then); if the player has
-// left the world, f is not run.
+// deferred transaction (the current one is closed by then). If the player has
+// left the world, the returned task fails with world.ErrEntityClosed.
 func (ctx *Context) Defer(f func(ctx *Context)) *world.Task {
 	h := ctx.p.H()
-	return ctx.Context.Defer(func(wctx *world.Context) {
+	return ctx.Context.DeferErr(func(wctx *world.Context) error {
 		if e, ok := h.Entity(wctx); ok {
 			f(newContext(e.(*Player)))
+			return nil
 		}
+		return world.ErrEntityClosed
 	})
 }

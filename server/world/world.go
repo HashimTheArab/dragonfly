@@ -30,12 +30,13 @@ type World struct {
 	conf Config
 	ra   cube.Range
 
-	queue        chan transaction
-	queueClosing chan struct{}
-	queueing     sync.WaitGroup
-	scheduleMu   sync.Mutex
-	scheduling   sync.WaitGroup
-	closed       atomic.Bool
+	queue                     chan transaction
+	queueClosing              chan struct{}
+	queueing                  sync.WaitGroup
+	scheduleMu                sync.Mutex
+	scheduling                sync.WaitGroup
+	closed                    atomic.Bool
+	closeAcceptingEntityTasks atomic.Bool
 
 	// advance is a bool that specifies if this World should advance the current
 	// tick, time and weather saved in the Settings struct held by the World.
@@ -1085,6 +1086,9 @@ func (w *World) close() {
 	w.scheduleMu.Unlock()
 
 	w.scheduling.Wait()
+	w.scheduleMu.Lock()
+	w.closeAcceptingEntityTasks.Store(true)
+	w.scheduleMu.Unlock()
 	<-w.exec(func(tx *Context) {
 		// Let user code run anything that needs to be finished before closing.
 		w.Handler().HandleClose(tx)
@@ -1093,6 +1097,10 @@ func (w *World) close() {
 
 		w.save(w.closeChunk)(tx)
 	})
+	w.scheduleMu.Lock()
+	w.closeAcceptingEntityTasks.Store(false)
+	w.scheduleMu.Unlock()
+	w.scheduling.Wait()
 
 	close(w.closing)
 	w.running.Wait()

@@ -258,6 +258,26 @@ func TestDoRunsDeferredWork(t *testing.T) {
 	}
 }
 
+func TestDeferErrRecordsCallbackError(t *testing.T) {
+	w := New()
+	defer w.Close()
+
+	errDeferred := errors.New("deferred error")
+	var deferred *Task
+	task := w.Do(func(ctx *Context) {
+		deferred = ctx.DeferErr(func(*Context) error { return errDeferred })
+	})
+	if err := task.Wait(testContext(t)); err != nil {
+		t.Fatalf("scheduled task failed: %v", err)
+	}
+	if deferred == nil {
+		t.Fatal("deferred task was not created")
+	}
+	if err := deferred.Wait(testContext(t)); !errors.Is(err, errDeferred) {
+		t.Fatalf("expected deferred error, got %v", err)
+	}
+}
+
 func TestEntityDoWaitsForDeferredWork(t *testing.T) {
 	w := New()
 	defer w.Close()
@@ -494,6 +514,41 @@ func TestDoAfterWorldCloseFails(t *testing.T) {
 	}
 }
 
+func TestEntityDoScheduledDuringWorldCloseRunsBeforeQueueShutdown(t *testing.T) {
+	var task *Task
+	w := New()
+	h := NewEntity(closeSchedulingEntityType{}, closeSchedulingEntityConfig{onClose: func(h *EntityHandle) {
+		task = h.Do(func(*Context, Entity) {})
+	}})
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close world: %v", err)
+	}
+	if task == nil {
+		t.Fatal("entity close did not schedule cleanup task")
+	}
+	if err := task.Wait(testContext(t)); err != nil {
+		t.Fatalf("close-time entity task failed: %v", err)
+	}
+}
+
+func TestEntityDoAfterWorldCloseFails(t *testing.T) {
+	w := New()
+	h := NewEntity(closeSchedulingEntityType{}, closeSchedulingEntityConfig{})
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
+	if err := w.Close(); err != nil {
+		t.Fatalf("close world: %v", err)
+	}
+
+	task := h.Do(func(*Context, Entity) {
+		t.Fatal("entity task ran after world close")
+	})
+	if err := task.Wait(testContext(t)); !errors.Is(err, ErrWorldClosed) {
+		t.Fatalf("expected ErrWorldClosed, got %v", err)
+	}
+}
+
 // TestEventCancellationIsolated verifies that Context.Event produces
 // independent cancellation scopes: cancelling one dispatched event must not
 // leak to another event or to the owning transaction, even though they all
@@ -566,6 +621,45 @@ func (h closeWaitTaskHandler) HandleClose(*Context) {
 	defer cancel()
 	h.errc <- h.task.Wait(ctx)
 }
+
+type closeSchedulingEntityConfig struct {
+	onClose func(*EntityHandle)
+}
+
+func (c closeSchedulingEntityConfig) Apply(data *EntityData) { data.Data = c.onClose }
+
+type closeSchedulingEntityType struct{}
+
+func (closeSchedulingEntityType) Open(_ *Context, handle *EntityHandle, data *EntityData) Entity {
+	onClose, _ := data.Data.(func(*EntityHandle))
+	return closeSchedulingEntity{h: handle, onClose: onClose}
+}
+
+func (closeSchedulingEntityType) EncodeEntity() string { return "dragonfly:close_scheduling_entity" }
+
+func (closeSchedulingEntityType) BBox(Entity) cube.BBox { return cube.BBox{} }
+
+func (closeSchedulingEntityType) DecodeNBT(map[string]any, *EntityData) {}
+
+func (closeSchedulingEntityType) EncodeNBT(*EntityData) map[string]any { return nil }
+
+type closeSchedulingEntity struct {
+	h       *EntityHandle
+	onClose func(*EntityHandle)
+}
+
+func (e closeSchedulingEntity) Close() error {
+	if e.onClose != nil {
+		e.onClose(e.h)
+	}
+	return nil
+}
+
+func (e closeSchedulingEntity) H() *EntityHandle { return e.h }
+
+func (closeSchedulingEntity) Position() mgl64.Vec3 { return mgl64.Vec3{} }
+
+func (closeSchedulingEntity) Rotation() cube.Rotation { return cube.Rotation{} }
 
 func (taskTestEntityConfig) Apply(*EntityData) {}
 

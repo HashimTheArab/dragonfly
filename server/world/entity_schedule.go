@@ -36,7 +36,16 @@ func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
 		e.cond.Broadcast()
 		e.cond.L.Unlock()
 	})
-	go e.runScheduled(task, f)
+	closeWorld := e.trackCloseSchedule(task)
+	if !task.pending() {
+		return task
+	}
+	go func() {
+		if closeWorld != nil {
+			defer closeWorld.scheduling.Done()
+		}
+		e.runScheduled(task, f)
+	}()
 	return task
 }
 
@@ -44,6 +53,9 @@ func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
 // timer loop (not World.DoAfter) because the entity may change worlds during
 // the delay, so it re-acquires world signals each iteration.
 func (e *EntityHandle) scheduleAfter(delay time.Duration, f func(ctx *Context, e Entity) error) *Task {
+	if delay <= 0 {
+		return e.schedule(f)
+	}
 	task := newTask()
 	if e == nil {
 		task.failIfPending(ErrEntityClosed)
@@ -55,36 +67,58 @@ func (e *EntityHandle) scheduleAfter(delay time.Duration, f func(ctx *Context, e
 		e.cond.L.Unlock()
 	})
 	go func() {
-		if delay > 0 {
-			timer := time.NewTimer(delay)
-			defer timer.Stop()
-			for {
-				closeStarted, worldChanged := e.currentWorldSignals()
-				select {
-				case <-timer.C:
-					if e.currentWorldClosing() {
-						task.failIfPending(ErrWorldClosed)
-						return
-					}
-					e.runScheduled(task, f)
-					return
-				case <-task.Done():
-					return
-				case <-closeStarted:
-					if e.currentWorldCloseStarted() == closeStarted {
-						task.failIfPending(ErrWorldClosed)
-						return
-					}
-				case <-worldChanged:
-				case <-e.closed:
-					task.failIfPending(ErrEntityClosed)
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		for {
+			closeStarted, worldChanged := e.currentWorldSignals()
+			select {
+			case <-timer.C:
+				if e.currentWorldClosing() {
+					task.failIfPending(ErrWorldClosed)
 					return
 				}
+				e.runScheduled(task, f)
+				return
+			case <-task.Done():
+				return
+			case <-closeStarted:
+				if e.currentWorldCloseStarted() == closeStarted {
+					task.failIfPending(ErrWorldClosed)
+					return
+				}
+			case <-worldChanged:
+			case <-e.closed:
+				task.failIfPending(ErrEntityClosed)
+				return
 			}
 		}
-		e.runScheduled(task, f)
 	}()
 	return task
+}
+
+// trackCloseSchedule marks immediate entity work created during the world's
+// close transaction so World.close drains it before shutting the queue down.
+func (e *EntityHandle) trackCloseSchedule(task *Task) *World {
+	e.cond.L.Lock()
+	defer e.cond.L.Unlock()
+	w := e.w
+	if w == nil || w == closeWorld || !w.closed.Load() {
+		return nil
+	}
+	w.scheduleMu.Lock()
+	defer w.scheduleMu.Unlock()
+	if !w.closeAcceptingEntityTasks.Load() {
+		task.failIfPending(ErrWorldClosed)
+		return nil
+	}
+	select {
+	case <-w.queueClosing:
+		task.failIfPending(ErrWorldClosed)
+		return nil
+	default:
+		w.scheduling.Add(1)
+		return w
+	}
 }
 
 // currentWorldSignals returns the close and world-change channels under lock.
@@ -129,10 +163,6 @@ func (e *EntityHandle) currentWorldClosing() bool {
 // finish task.
 func (e *EntityHandle) runScheduled(task *Task, f func(ctx *Context, e Entity) error) {
 	run := e.execWorld(func(ctx *Context, ent Entity) {
-		if ctx.World().closed.Load() {
-			task.failIfPending(ErrWorldClosed)
-			return
-		}
 		if !task.begin() {
 			return
 		}

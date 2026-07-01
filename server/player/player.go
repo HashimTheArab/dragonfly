@@ -964,9 +964,11 @@ func (p *Player) respawn(f func(p *Player)) {
 
 	p.Handler().HandleRespawn(p, &pos, &w)
 
-	handle := p.tx.RemoveEntity(p)
 	sess := p.session()
-	w.Do(func(tx *world.Tx) {
+	handle := p.handle
+	removed := make(chan struct{})
+	task := w.Do(func(tx *world.Tx) {
+		<-removed
 		np := tx.AddEntity(handle).(*Player)
 		np.Teleport(pos)
 		np.session().SendRespawn(pos, p)
@@ -974,7 +976,15 @@ func (p *Player) respawn(f func(p *Player)) {
 		if f != nil {
 			f(np)
 		}
-	}).OnDone(func(err error) {
+	})
+	if errors.Is(task.Err(), world.ErrWorldClosed) {
+		sess.Disconnect("respawn failed")
+		sess.CloseConnection()
+		return
+	}
+	handle = p.tx.RemoveEntity(p)
+	close(removed)
+	task.OnDone(func(err error) {
 		// Only on ErrWorldClosed was the entity never re-added (destination
 		// world closed) — the handle is orphaned, so close it and tear the
 		// session down. A recovered callback panic is left alone: the entity is
@@ -3184,6 +3194,7 @@ func (p *Player) quit(msg string) {
 
 	if s := p.s; s != nil {
 		s.Disconnect(msg)
+		s.Close(p.tx, p)
 		s.CloseConnection()
 		return
 	}

@@ -76,3 +76,21 @@ func TestExecuteAllowsNilContextTargetSelectorError(t *testing.T) {
 		}
 	}
 }
+
+func TestExecuteRejectsSelfSelectorWithoutWorldContext(t *testing.T) {
+	ran := false
+	source := &testSource{}
+	command := New("nilctx-target", "", nil, &nilContextTargetCommand{ran: &ran})
+
+	command.Execute("@s", source, nil)
+
+	if ran {
+		t.Fatal("command ran despite missing world context for self target selector")
+	}
+	if source.output == nil {
+		t.Fatal("source did not receive command output")
+	}
+	if source.output.ErrorCount() == 0 {
+		t.Fatal("expected command error for self target selector without world context")
+	}
+}

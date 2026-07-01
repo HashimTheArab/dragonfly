@@ -54,10 +54,16 @@ func (ctx *Context) Cancel() { ctx.cancel = true }
 
 // Defer schedules f to run on the owner after the current callback completes.
 func (ctx *Context) Defer(f func(ctx *Context)) *Task {
-	return ctx.deferTask(func(ctx *Context) error {
+	return ctx.DeferErr(func(ctx *Context) error {
 		f(ctx)
 		return nil
 	})
+}
+
+// DeferErr schedules f to run on the owner after the current callback
+// completes, recording any returned error on the Task.
+func (ctx *Context) DeferErr(f func(ctx *Context) error) *Task {
+	return ctx.deferTask(f)
 }
 
 // Range returns the lower and upper bounds of the World that the Context is
