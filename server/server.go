@@ -139,9 +139,9 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 			srv.p[inc.p.handle.UUID()] = inc.p
 			srv.pmu.Unlock()
 
-			ret, err := world.Call(context.Background(), inc.w, func(ctx *world.Tx) (bool, error) {
-				p := ctx.AddEntity(inc.p.handle).(*player.Player)
-				inc.s.Spawn(p, ctx)
+			ret, err := world.Call(context.Background(), inc.w, func(tx *world.Tx) (bool, error) {
+				p := tx.AddEntity(inc.p.handle).(*player.Player)
+				inc.s.Spawn(p, tx)
 				return !yield(p), nil
 			})
 			if err != nil {
@@ -243,7 +243,7 @@ func (srv *Server) Players(tx *world.Tx) iter.Seq[*player.Player] {
 					continue
 				}
 			}
-			ret, err := world.CallRef(context.Background(), player.NewRef(handle), func(ctx *world.Tx, p *player.Player) (bool, error) {
+			ret, err := world.CallRef(context.Background(), player.NewRef(handle), func(_ *world.Tx, p *player.Player) (bool, error) {
 				return !yield(p), nil
 			})
 			if err != nil {

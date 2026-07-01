@@ -341,10 +341,9 @@ func TestDoDoesNotBlockOwnerWhenQueueFull(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		<-w.exec(func(tx *Context) {
-			ctx := tx
 			for i := 0; i < cap(w.queue)+32; i++ {
 				w.Do(func(*Context) {})
-				ctx.Defer(func(*Context) {})
+				tx.Defer(func(*Context) {})
 			}
 		})
 		close(done)
