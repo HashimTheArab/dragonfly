@@ -11,28 +11,22 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 )
 
-// Tx is a transitional alias for Context. World callbacks now receive a
-// *Context, but the many signatures written as *world.Tx keep compiling
-// against the new type. A follow-up change migrates those signatures to
-// *world.Context and removes this alias. New code should use Context.
+// Tx is a transitional alias for Context that keeps existing *world.Tx
+// signatures compiling. New code should use Context; a follow-up removes it.
 type Tx = Context
 
-// Context is the owner-scoped handle passed to world callbacks and scheduled
-// world work. It proves the callback is running on the World's owner goroutine
-// and is the only way to perform world operations. A Context is valid only for
-// the duration of the callback it is passed to and is not safe for use by
-// multiple goroutines concurrently. Off-owner code obtains one by scheduling
-// work with World.Do, World.DoAfter, world.Call, EntityRef.Do, or player.Ref.
+// Context is the owner-scoped handle passed to world callbacks; it is the only
+// way to perform world operations and is valid only during its callback.
+// Off-owner code obtains one via World.Do, world.Call, EntityRef.Do, or player.Ref.
 type Context struct {
 	*tx
 
-	// cancel records whether an event Context has been cancelled by a handler.
+	// cancel records whether an event Context was cancelled by a handler.
 	cancel bool
 }
 
-// tx holds the owner-serialised transaction state shared by every Context
-// derived from it within a single owner callback. It is never exposed: world
-// operations are only reachable through a *Context.
+// tx is the unexported transaction state shared by every Context derived from
+// it (via Event) within one owner callback.
 type tx struct {
 	w        *World
 	closed   bool
@@ -44,11 +38,9 @@ func newContext(w *World) *Context {
 	return &Context{tx: &tx{w: w}}
 }
 
-// Event returns a Context that shares ctx's transaction but has its own event
-// cancellation state. It is used to dispatch a single cancellable Handler event
-// so that cancelling one event does not affect others run within the same owner
-// transaction. Most code does not need Event; it is for code that fires world
-// or player Handler events.
+// Event returns a Context sharing ctx's transaction but with its own cancel
+// state, so dispatching one Handler event can't cancel another in the same
+// transaction. Only code that fires world/player Handler events needs it.
 func (ctx *Context) Event() *Context {
 	return &Context{tx: ctx.tx}
 }
@@ -374,15 +366,11 @@ func (ctx *Context) deferTask(f func(ctx *Context) error) *Task {
 	return task
 }
 
-// World returns the World of the Context. It panics if the transaction was
-// already marked complete.
+// World returns the Context's World. It panics if the callback has completed.
 //
-// The returned *World is a general, goroutine-safe handle — the same one held
-// off-owner. Its non-blocking methods (reads, the mutex-guarded Set* settings,
-// and the Do/DoAfter schedulers) are safe to call from within the callback, but
-// its blocking lifecycle methods (Save, Close) must not be: they queue work to
-// this same owner and wait for it, which deadlocks. Perform world/block/entity
-// operations through the Context itself, not through World().
+// The returned *World is the off-owner handle: its blocking Save and Close must
+// not be called from within the callback (they deadlock on this owner). Do
+// world operations through the Context, not through World().
 func (ctx *Context) World() *World {
 	if ctx.closed {
 		panic("world.Context: use of transaction after transaction finishes is not permitted")

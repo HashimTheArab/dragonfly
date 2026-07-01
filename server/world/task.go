@@ -285,17 +285,10 @@ func (w *World) DoAfter(delay time.Duration, f func(ctx *Context)) *Task {
 	return t
 }
 
-// Call schedules f on the world's owner context and waits for its typed result.
-// Call is intended for off-owner request/response paths such as tests,
-// startup/shutdown, and background goroutines. Code that already has a
-// *world.Context should call the context methods directly instead of Call.
-//
-// Call must not be used from the world's owner goroutine — in particular from
-// inside a scheduled callback or Handler event running on w. Doing so blocks
-// the owner while it waits for work only the owner can run, which deadlocks (or
-// blocks until ctx is cancelled). Go exposes no reliable way to detect this at
-// runtime, so it is a caller contract rather than an enforced check: on the
-// owner, use the *Context you already hold, or World.Do for fire-and-forget.
+// Call schedules f on w's owner and waits for its typed result. It is for
+// off-owner code (tests, startup, background goroutines); if you already have a
+// *world.Context, use it directly. Never call it from the owner goroutine (a
+// scheduled callback or Handler event) — it deadlocks waiting on that owner.
 func Call[T any](ctx context.Context, w *World, f func(ctx *Context) (T, error)) (T, error) {
 	var zero T
 	if ctx == nil {

@@ -21,18 +21,10 @@ func (e *EntityHandle) DoAfter(delay time.Duration, f func(ctx *Context, e Entit
 	})
 }
 
-// schedule enqueues f to run on the entity's current world owner. A goroutine
-// waits (via execWorld) for the entity to be world-bound if it is not already,
-// and follows the entity if it migrates between worlds before f runs.
-//
-// A tempting optimisation is to skip the goroutine and queue directly on the
-// entity's current world when it is already world-bound. That does not work:
-// the transaction is committed to one specific world, so if the entity
-// migrates (death→respawn, portal) between scheduling and execution the task
-// fails instead of following the entity. Blocking consumers such as
-// session.withControllable treat that failure as terminal and would disconnect
-// a live player or permanently stop a background loop. Correctness requires the
-// migration-following execWorld path, so schedule always uses it.
+// schedule runs f on the entity's current world owner via a goroutine that
+// waits for the entity to be world-bound and follows it across world changes.
+// It deliberately does not fast-path onto the current world's queue — that
+// commits to one world and would fail instead of follow the entity on migration.
 func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
 	task := newTask()
 	if e == nil {
@@ -48,11 +40,9 @@ func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
 	return task
 }
 
-// scheduleAfter is the entity counterpart to World.DoAfter. It manages its
-// own timer loop rather than delegating to DoAfter because entities can move
-// between worlds during the delay — the loop re-acquires world signals on
-// each iteration via worldChanged. World.DoAfter does not need this because
-// worlds don't migrate.
+// scheduleAfter is the entity counterpart to World.DoAfter. It runs its own
+// timer loop (not World.DoAfter) because the entity may change worlds during
+// the delay, so it re-acquires world signals each iteration.
 func (e *EntityHandle) scheduleAfter(delay time.Duration, f func(ctx *Context, e Entity) error) *Task {
 	task := newTask()
 	if e == nil {

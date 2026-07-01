@@ -975,14 +975,10 @@ func (p *Player) respawn(f func(p *Player)) {
 			f(np)
 		}
 	}).OnDone(func(err error) {
-		// Only ErrWorldClosed means the entity was never re-added: the
-		// destination world closed after the player was removed from its
-		// previous world, leaving the handle orphaned. Close it and tear the
-		// session down so its connection and background goroutines are freed.
-		//
-		// A callback panic (recovered into a PanicError) is deliberately not
-		// handled here: the entity was already added and is live, so closing
-		// the handle would panic and turn a recovered panic into a crash.
+		// Only on ErrWorldClosed was the entity never re-added (destination
+		// world closed) — the handle is orphaned, so close it and tear the
+		// session down. A recovered callback panic is left alone: the entity is
+		// live and closing it would panic.
 		if errors.Is(err, world.ErrWorldClosed) {
 			_ = handle.Close()
 			sess.Disconnect("respawn failed")

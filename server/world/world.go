@@ -122,13 +122,10 @@ func (w *World) BlockRegistry() BlockRegistry {
 // execFunc is a function that performs a synchronised transaction on a World.
 type execFunc func(tx *Context)
 
-// exec performs a synchronised transaction f on a World, bypassing the closed
-// check that Do/DoAfter/Call apply. It is reserved for the World's own
-// machinery (initial/periodic ticking, saving, chunk unloading and the final
-// transaction run during close) which must still be able to queue work after
-// closing has started. exec returns a channel that is closed once the
-// transaction is complete. Waiting for exec from code already running on this
-// World's owner context will deadlock.
+// exec runs f on the World, bypassing the closed check that Do/DoAfter/Call
+// apply — reserved for the World's own machinery (ticking, saving, chunk
+// unload, the close transaction), which must queue work after close begins.
+// The returned channel closes when done; waiting on it from the owner deadlocks.
 func (w *World) exec(f execFunc) <-chan struct{} {
 	c := make(chan struct{})
 	w.queue <- normalTransaction{c: c, f: f}
