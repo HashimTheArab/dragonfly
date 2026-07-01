@@ -148,6 +148,20 @@ func (t *Task) Wait(ctx context.Context) error {
 	}
 }
 
+// OnDone spawns a goroutine that calls f with the task's error once it
+// completes. If the task is nil, f is called immediately with
+// ErrTaskCancelled.
+func (t *Task) OnDone(f func(err error)) {
+	if t == nil {
+		f(ErrTaskCancelled)
+		return
+	}
+	go func() {
+		<-t.done
+		f(t.Err())
+	}()
+}
+
 // Cancel attempts to cancel the task before it starts. It returns true if the
 // task was still pending and will not run.
 func (t *Task) Cancel() bool {

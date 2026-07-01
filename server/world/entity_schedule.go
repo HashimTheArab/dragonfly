@@ -36,6 +36,11 @@ func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
 	return task
 }
 
+// scheduleAfter is the entity counterpart to World.DoAfter. It manages its
+// own timer loop rather than delegating to DoAfter because entities can move
+// between worlds during the delay — the loop re-acquires world signals on
+// each iteration via worldChanged. World.DoAfter does not need this because
+// worlds don't migrate.
 func (e *EntityHandle) scheduleAfter(delay time.Duration, f func(ctx *Context, e Entity) error) *Task {
 	task := newTask()
 	if e == nil {
@@ -123,10 +128,8 @@ func (e *EntityHandle) runScheduled(task *Task, f func(ctx *Context, e Entity) e
 		}
 		ctx := newContext(tx)
 		err := executeWithRecovery(func() error { return f(ctx, ent) })
-		tx.deferTask(func(*Context) error {
-			task.finish(err)
-			return nil
-		})
+		tx.runDeferred()
+		task.finish(err)
 	}, false, task.Done())
 	if !run || task.pending() {
 		task.failIfPending(ErrEntityClosed)

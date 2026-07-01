@@ -965,7 +965,7 @@ func (p *Player) respawn(f func(p *Player)) {
 
 	handle := p.tx.RemoveEntity(p)
 	sess := p.session()
-	task := w.Do(func(ctx *world.Context) {
+	w.Do(func(ctx *world.Context) {
 		np := ctx.Tx().AddEntity(handle).(*Player)
 		np.Teleport(pos)
 		np.session().SendRespawn(pos, p)
@@ -973,14 +973,12 @@ func (p *Player) respawn(f func(p *Player)) {
 		if f != nil {
 			f(np)
 		}
-	})
-	go func() {
-		<-task.Done()
-		if task.Err() != nil {
+	}).OnDone(func(err error) {
+		if err != nil {
 			_ = handle.Close()
 			sess.Disconnect("respawn failed")
 		}
-	}()
+	})
 }
 
 // spawnLocation designates a players safe spawn location.
