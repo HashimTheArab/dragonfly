@@ -374,8 +374,15 @@ func (ctx *Context) deferTask(f func(ctx *Context) error) *Task {
 	return task
 }
 
-// World returns the World of the Context. It panics if the transaction was already
-// marked complete.
+// World returns the World of the Context. It panics if the transaction was
+// already marked complete.
+//
+// The returned *World is a general, goroutine-safe handle — the same one held
+// off-owner. Its non-blocking methods (reads, the mutex-guarded Set* settings,
+// and the Do/DoAfter schedulers) are safe to call from within the callback, but
+// its blocking lifecycle methods (Save, Close) must not be: they queue work to
+// this same owner and wait for it, which deadlocks. Perform world/block/entity
+// operations through the Context itself, not through World().
 func (ctx *Context) World() *World {
 	if ctx.closed {
 		panic("world.Context: use of transaction after transaction finishes is not permitted")
