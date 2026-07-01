@@ -52,7 +52,8 @@ func (r EntityRef[T]) DoAfter(delay time.Duration, f func(ctx *Context, e T)) *T
 // CallRef schedules f on the typed EntityRef's current world owner and waits
 // for its typed result. CallRef is intended for off-owner request/response
 // paths. Code that already has a *world.Context or typed entity callback
-// should use that context directly.
+// should use that context directly. Like Call, it must not be used from the
+// owner goroutine (see Call).
 func CallRef[R any, E Entity](ctx context.Context, ref EntityRef[E], f func(ctx *Context, e E) (R, error)) (R, error) {
 	var zero R
 	if ctx == nil {

@@ -495,6 +495,37 @@ func TestDoAfterWorldCloseFails(t *testing.T) {
 	}
 }
 
+// TestEventCancellationIsolated verifies that Context.Event produces
+// independent cancellation scopes: cancelling one dispatched event must not
+// leak to another event or to the owning transaction, even though they all
+// share the same transaction. This is what lets many block handlers fire and
+// cancel their own world events within a single tick transaction without
+// interfering with one another.
+func TestEventCancellationIsolated(t *testing.T) {
+	w := New()
+	defer w.Close()
+
+	<-w.exec(func(tx *Context) {
+		first, second := tx.Event(), tx.Event()
+		first.Cancel()
+
+		if !first.Cancelled() {
+			t.Fatal("cancelled event does not report Cancelled")
+		}
+		if second.Cancelled() {
+			t.Fatal("cancelling one event leaked into another event of the same transaction")
+		}
+		if tx.Cancelled() {
+			t.Fatal("cancelling an event leaked into the owning transaction")
+		}
+		// The events must still share the underlying transaction so world
+		// operations from a handler reach the same world.
+		if first.World() != tx.World() || second.World() != tx.World() {
+			t.Fatal("event contexts do not share the transaction's world")
+		}
+	})
+}
+
 type taskTestEntityConfig struct{}
 
 type closeOrderHandler struct {

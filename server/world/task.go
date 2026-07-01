@@ -289,6 +289,13 @@ func (w *World) DoAfter(delay time.Duration, f func(ctx *Context)) *Task {
 // Call is intended for off-owner request/response paths such as tests,
 // startup/shutdown, and background goroutines. Code that already has a
 // *world.Context should call the context methods directly instead of Call.
+//
+// Call must not be used from the world's owner goroutine — in particular from
+// inside a scheduled callback or Handler event running on w. Doing so blocks
+// the owner while it waits for work only the owner can run, which deadlocks (or
+// blocks until ctx is cancelled). Go exposes no reliable way to detect this at
+// runtime, so it is a caller contract rather than an enforced check: on the
+// owner, use the *Context you already hold, or World.Do for fire-and-forget.
 func Call[T any](ctx context.Context, w *World, f func(ctx *Context) (T, error)) (T, error) {
 	var zero T
 	if ctx == nil {
@@ -310,6 +317,7 @@ func Call[T any](ctx context.Context, w *World, f func(ctx *Context) (T, error))
 
 // CallEntity schedules f on the EntityHandle's current world owner and waits
 // for its typed result. It is shorthand for CallRef with Entity as the type.
+// Like Call, it must not be used from the owner goroutine (see Call).
 func CallEntity[R any](ctx context.Context, h *EntityHandle, f func(ctx *Context, e Entity) (R, error)) (R, error) {
 	return CallRef(ctx, NewEntityRef[Entity](h), f)
 }
