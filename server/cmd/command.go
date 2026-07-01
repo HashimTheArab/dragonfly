@@ -251,10 +251,7 @@ func (cmd Command) executeRunnable(v reflect.Value, args string, source Source, 
 	}
 	parser := parser{}
 	arguments := &Line{args: argFrags, src: source, seen: []string{"/" + cmd.name}, cmd: cmd}
-	var tx *world.Tx
-	if ctx != nil {
-		tx = ctx
-	}
+	tx := ctx
 
 	// We iterate over all the fields of the struct: Each of the fields will have an argument parsed to
 	// produce its value.
