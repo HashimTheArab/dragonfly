@@ -14,9 +14,7 @@ import (
 // Tx is a transitional alias for Context. World callbacks now receive a
 // *Context, but the many signatures written as *world.Tx keep compiling
 // against the new type. A follow-up change migrates those signatures to
-// *world.Context and removes this alias.
-//
-// Deprecated: use Context.
+// *world.Context and removes this alias. New code should use Context.
 type Tx = Context
 
 // Context is the owner-scoped handle passed to world callbacks and scheduled
@@ -73,7 +71,7 @@ func (ctx *Context) Defer(f func(ctx *Context)) *Task {
 // Range returns the lower and upper bounds of the World that the Context is
 // operating on.
 func (ctx *Context) Range() cube.Range {
-	return ctx.tx.w.ra
+	return ctx.w.ra
 }
 
 // SetBlock writes a block to the position passed. If a chunk is not yet loaded
@@ -368,21 +366,21 @@ func (ctx *Context) RedstonePower(pos cube.Pos, face cube.Face, accountForDust b
 
 func (ctx *Context) deferTask(f func(ctx *Context) error) *Task {
 	task := newTask()
-	if ctx.tx.closed {
+	if ctx.closed {
 		task.failIfPending(ErrWorldClosed)
 		return task
 	}
-	ctx.tx.deferred = append(ctx.tx.deferred, scheduledTransaction{task: task, f: f})
+	ctx.deferred = append(ctx.deferred, scheduledTransaction{task: task, f: f})
 	return task
 }
 
 // World returns the World of the Context. It panics if the transaction was already
 // marked complete.
 func (ctx *Context) World() *World {
-	if ctx.tx.closed {
+	if ctx.closed {
 		panic("world.Context: use of transaction after transaction finishes is not permitted")
 	}
-	return ctx.tx.w
+	return ctx.w
 }
 
 // CurrentTick returns the current tick of the transaction's world.
@@ -400,15 +398,15 @@ func (ctx *Context) Redstone() *redstone.State {
 
 // close finishes the Context, causing any following call on the Context to panic.
 func (ctx *Context) close() {
-	ctx.tx.closed = true
+	ctx.closed = true
 }
 
 func (ctx *Context) runDeferred() {
-	for len(ctx.tx.deferred) > 0 {
-		deferred := ctx.tx.deferred
-		ctx.tx.deferred = nil
+	for len(ctx.deferred) > 0 {
+		deferred := ctx.deferred
+		ctx.deferred = nil
 		for _, st := range deferred {
-			st.Run(ctx.tx.w)
+			st.Run(ctx.w)
 		}
 	}
 }
