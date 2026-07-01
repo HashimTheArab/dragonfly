@@ -67,7 +67,7 @@ func (l Leaves) RandomTick(pos cube.Pos, tx *world.Tx, _ *rand.Rand) {
 			tx.SetBlock(pos, l, nil)
 			return
 		}
-		ctx := tx.Context()
+		ctx := tx.Event()
 		if tx.World().Handler().HandleLeavesDecay(ctx, pos); ctx.Cancelled() {
 			// Prevent immediate re-updating.
 			l.ShouldUpdate = false

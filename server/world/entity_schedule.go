@@ -138,17 +138,16 @@ func (e *EntityHandle) currentWorldClosing() bool {
 // the same completion model as scheduledTransaction: run -> drain deferred ->
 // finish task.
 func (e *EntityHandle) runScheduled(task *Task, f func(ctx *Context, e Entity) error) {
-	run := e.execWorld(func(tx *Tx, ent Entity) {
-		if tx.World().closed.Load() {
+	run := e.execWorld(func(ctx *Context, ent Entity) {
+		if ctx.World().closed.Load() {
 			task.failIfPending(ErrWorldClosed)
 			return
 		}
 		if !task.begin() {
 			return
 		}
-		ctx := newContext(tx)
 		err := executeWithRecovery(func() error { return f(ctx, ent) })
-		tx.runDeferred()
+		ctx.runDeferred()
 		task.finish(err)
 	}, false, task.Done())
 	if !run || task.pending() {

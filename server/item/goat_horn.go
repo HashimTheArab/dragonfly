@@ -33,7 +33,7 @@ func (g GoatHorn) Use(tx *world.Tx, user User, _ *UseContext) bool {
 }
 
 // releaseItem releases the goat horn item if a user is still using it.
-func (g GoatHorn) releaseItem(_ *world.Context, e world.Entity) {
+func (g GoatHorn) releaseItem(_ *world.Tx, e world.Entity) {
 	user := e.(User)
 	if !user.UsingItem() {
 		// We aren't using the goat horn anymore.

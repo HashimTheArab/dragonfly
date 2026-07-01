@@ -123,7 +123,7 @@ func updateRedstoneFrom(pos, source cube.Pos, tx *world.Tx) {
 
 // redstoneUpdateCancelled checks if the redstone update has been cancelled by the HandleRedstoneUpdate handler.
 func redstoneUpdateCancelled(pos cube.Pos, tx *world.Tx) bool {
-	ctx := tx.Context()
+	ctx := tx.Event()
 	tx.World().Handler().HandleRedstoneUpdate(ctx, pos)
 	return ctx.Cancelled()
 }

@@ -133,7 +133,7 @@ func (c ExplosionConfig) Explode(tx *world.Tx, explosionPos mgl64.Vec3) {
 		}
 	}
 
-	ctx := tx.Context()
+	ctx := tx.Event()
 	spawnFire := c.SpawnFire
 	itemDropChance := c.ItemDropChance
 	if tx.World().Handler().HandleExplosion(ctx, explosionPos, &affectedEntities, &affectedBlocks, &itemDropChance, &spawnFire); ctx.Cancelled() {

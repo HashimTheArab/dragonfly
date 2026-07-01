@@ -16,7 +16,7 @@ func TestDoRunsOnWorldContext(t *testing.T) {
 	defer w.Close()
 
 	task := w.Do(func(ctx *Context) {
-		if ctx.Tx() == nil {
+		if ctx.tx == nil {
 			t.Fatal("scheduled context has nil transaction")
 		}
 	})
@@ -30,7 +30,7 @@ func TestCallReturnsTypedResult(t *testing.T) {
 	defer w.Close()
 
 	got, err := Call(testContext(t), w, func(ctx *Context) (int64, error) {
-		return ctx.Tx().CurrentTick(), nil
+		return ctx.CurrentTick(), nil
 	})
 	if err != nil {
 		t.Fatalf("Call failed: %v", err)
@@ -64,10 +64,10 @@ func TestCallEntityReturnsTypedResult(t *testing.T) {
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	got, err := CallEntity(testContext(t), h, func(ctx *Context, e Entity) (mgl64.Vec3, error) {
-		if ctx.Tx() == nil {
+		if ctx.tx == nil {
 			t.Fatal("entity call context has nil transaction")
 		}
 		return e.Position(), nil
@@ -85,7 +85,7 @@ func TestCallEntityDoesNotRunCancelledContext(t *testing.T) {
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -107,7 +107,7 @@ func TestCallRefReturnsTypedResult(t *testing.T) {
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	got, err := CallRef(testContext(t), NewEntityRef[taskTestEntity](h), func(ctx *Context, e taskTestEntity) (bool, error) {
 		return e.H() == h, nil
@@ -125,7 +125,7 @@ func TestCallRefReportsTypeMismatch(t *testing.T) {
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	_, err := CallRef(testContext(t), NewEntityRef[markedTaskEntity](h), func(ctx *Context, e markedTaskEntity) (int, error) {
 		t.Fatal("CallRef ran typed callback for mismatched entity")
@@ -176,7 +176,7 @@ func TestEntityDoAfterFailsWhenWorldCloseStarts(t *testing.T) {
 	w := New()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	task := h.DoAfter(time.Hour, func(*Context, Entity) {
 		t.Fatal("delayed entity task ran after world close started")
@@ -198,21 +198,21 @@ func TestEntityDoAfterFollowsMovedEntity(t *testing.T) {
 	defer w2.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w1.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w1.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	task := h.DoAfter(50*time.Millisecond, func(ctx *Context, _ Entity) {
-		if ctx.Tx().World() != w2 {
+		if ctx.World() != w2 {
 			t.Fatal("delayed entity task did not follow moved entity")
 		}
 	})
-	<-w1.exec(func(tx *Tx) {
+	<-w1.exec(func(tx *Context) {
 		e, ok := h.Entity(tx)
 		if !ok {
 			t.Fatal("entity missing before move")
 		}
 		tx.RemoveEntity(e)
 	})
-	<-w2.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w2.exec(func(tx *Context) { tx.AddEntity(h) })
 	if err := w1.Close(); err != nil {
 		t.Fatalf("close old world: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestEntityDoWaitsForDeferredWork(t *testing.T) {
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	release := make(chan struct{})
 	var deferredRan atomic.Bool
@@ -295,17 +295,17 @@ func TestEntityDoCancelAfterInvalidatedWeakTransactionDoesNotPoisonHandle(t *tes
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	w.exec(func(*Tx) {
+	w.exec(func(*Context) {
 		close(started)
 		<-release
 	})
 	<-started
 
-	removeDone := w.exec(func(tx *Tx) {
+	removeDone := w.exec(func(tx *Context) {
 		e, ok := h.Entity(tx)
 		if !ok {
 			t.Fatal("entity missing before remove")
@@ -327,7 +327,7 @@ func TestEntityDoCancelAfterInvalidatedWeakTransactionDoesNotPoisonHandle(t *tes
 		t.Fatalf("expected ErrTaskCancelled, got %v", err)
 	}
 
-	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 	task = h.Do(func(*Context, Entity) {})
 	if err := task.Wait(testContext(t)); err != nil {
 		t.Fatalf("handle poisoned after cancelling invalidated weak transaction: %v", err)
@@ -340,8 +340,8 @@ func TestDoDoesNotBlockOwnerWhenQueueFull(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		<-w.exec(func(tx *Tx) {
-			ctx := tx.Context()
+		<-w.exec(func(tx *Context) {
+			ctx := tx
 			for i := 0; i < cap(w.queue)+32; i++ {
 				w.Do(func(*Context) {})
 				ctx.Defer(func(*Context) {})
@@ -366,14 +366,14 @@ func TestDoQueuedBeforeCloseDoesNotRunAfterHandleClose(t *testing.T) {
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	w.exec(func(*Tx) {
+	w.exec(func(*Context) {
 		close(started)
 		<-release
 	})
 	<-started
 
 	for i := 0; i < cap(w.queue); i++ {
-		w.exec(func(*Tx) {})
+		w.exec(func(*Context) {})
 	}
 	task := w.Do(func(*Context) {
 		if closeHandled.Load() {
@@ -436,11 +436,11 @@ func TestEntityDoCompletesWhenEntityClosesBeforeQueuedTask(t *testing.T) {
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	done := w.exec(func(tx *Tx) {
+	done := w.exec(func(tx *Context) {
 		close(started)
 		<-release
 		e, ok := h.Entity(tx)
@@ -467,10 +467,10 @@ func TestExecWorldReturnsTrueWhenCallbackClosesEntity(t *testing.T) {
 	defer w.Close()
 
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
-	<-w.exec(func(tx *Tx) { tx.AddEntity(h) })
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	ran := false
-	ok := h.execWorld(func(tx *Tx, e Entity) {
+	ok := h.execWorld(func(tx *Context, e Entity) {
 		ran = true
 		tx.RemoveEntity(e)
 		_ = h.Close()
@@ -541,7 +541,7 @@ func (taskTestEntityConfig) Apply(*EntityData) {}
 
 type taskTestEntityType struct{}
 
-func (taskTestEntityType) Open(tx *Tx, handle *EntityHandle, _ *EntityData) Entity {
+func (taskTestEntityType) Open(tx *Context, handle *EntityHandle, _ *EntityData) Entity {
 	return taskTestEntity{h: handle, tx: tx}
 }
 
@@ -555,7 +555,7 @@ func (taskTestEntityType) EncodeNBT(*EntityData) map[string]any { return nil }
 
 type taskTestEntity struct {
 	h  *EntityHandle
-	tx *Tx
+	tx *Context
 }
 
 type markedTaskEntity interface {

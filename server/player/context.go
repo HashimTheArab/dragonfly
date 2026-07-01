@@ -1,29 +1,27 @@
 package player
 
 import (
-	"github.com/df-mc/dragonfly/server/event"
 	"github.com/df-mc/dragonfly/server/world"
 )
 
-// Context is the owner-scoped context passed to player callbacks. It proves
-// that the callback is already running on the player's world owner. Use
-// ctx.Tx() for world operations rather than scheduling another transaction.
+// Context is the owner-scoped context passed to player callbacks. It embeds the
+// world owner Context, so world operations (SetBlock, AddEntity, ...) and event
+// cancellation are available directly, and additionally exposes the Player the
+// callback concerns. A Context is valid only for the duration of the callback.
 type Context struct {
-	*event.Context[*Player]
+	*world.Context
+	p *Player
 }
 
-// newContext wraps a player in a cancellable owner context.
+// newContext returns a player Context for p, backed by a fresh event-scoped
+// view of the player's current world transaction.
 func newContext(p *Player) *Context {
-	return &Context{Context: event.C(p)}
+	return &Context{Context: p.tx.Event(), p: p}
 }
 
 // Player returns the player for this callback. The returned player is only
 // valid for the duration of the callback.
-func (ctx *Context) Player() *Player { return ctx.Val() }
-
-// Tx returns the transaction backing the player callback. The returned
-// transaction is only valid for the duration of the callback.
-func (ctx *Context) Tx() *world.Tx { return ctx.Player().tx }
+func (ctx *Context) Player() *Player { return ctx.p }
 
 // Defer schedules f to run after the current owner callback completes. The
 // deferred callback receives a player.Context so the player remains accessible.
@@ -33,9 +31,9 @@ func (ctx *Context) Tx() *world.Tx { return ctx.Player().tx }
 // the stable entity handle against the fresh transaction; if the player has
 // left the world by then, f is not run.
 func (ctx *Context) Defer(f func(ctx *Context)) *world.Task {
-	h := ctx.Player().H()
-	return ctx.Tx().Context().Defer(func(wctx *world.Context) {
-		if e, ok := h.Entity(wctx.Tx()); ok {
+	h := ctx.p.H()
+	return ctx.Context.Defer(func(wctx *world.Context) {
+		if e, ok := h.Entity(wctx); ok {
 			f(newContext(e.(*Player)))
 		}
 	})

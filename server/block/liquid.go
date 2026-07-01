@@ -41,7 +41,7 @@ func tickLiquid(b world.Liquid, pos cube.Pos, tx *world.Tx) {
 		if b.LiquidDepth()-4 > 0 {
 			res = b.WithDepth(b.LiquidDepth()-2*b.SpreadDecay(), false)
 		}
-		ctx := tx.Context()
+		ctx := tx.Event()
 		if tx.World().Handler().HandleLiquidDecay(ctx, pos, b, res); ctx.Cancelled() {
 			return
 		}
@@ -137,7 +137,7 @@ func flowInto(b world.Liquid, src, pos cube.Pos, tx *world.Tx, falling bool) boo
 			// (basically considered full depth), so no need to continue.
 			return true
 		}
-		ctx := tx.Context()
+		ctx := tx.Event()
 		if tx.World().Handler().HandleLiquidFlow(ctx, src, pos, b.WithDepth(newDepth, falling), existing); ctx.Cancelled() {
 			return false
 		}
@@ -159,7 +159,7 @@ func flowInto(b world.Liquid, src, pos cube.Pos, tx *world.Tx, falling bool) boo
 		// Can't flow into this block.
 		return false
 	}
-	ctx := tx.Context()
+	ctx := tx.Event()
 	if tx.World().Handler().HandleLiquidFlow(ctx, src, pos, b.WithDepth(newDepth, falling), existing); ctx.Cancelled() {
 		return false
 	}

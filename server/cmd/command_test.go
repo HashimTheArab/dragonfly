@@ -20,7 +20,7 @@ type nilContextCommand struct {
 	ran     *bool `cmd:"-"`
 }
 
-func (c *nilContextCommand) Run(_ Source, _ *Output, ctx *world.Context) {
+func (c *nilContextCommand) Run(_ Source, _ *Output, ctx *world.Tx) {
 	if ctx != nil {
 		panic("expected nil world context")
 	}
@@ -50,7 +50,7 @@ type nilContextTargetCommand struct {
 	ran     *bool `cmd:"-"`
 }
 
-func (c *nilContextTargetCommand) Run(Source, *Output, *world.Context) {
+func (c *nilContextTargetCommand) Run(Source, *Output, *world.Tx) {
 	*c.ran = true
 }
 

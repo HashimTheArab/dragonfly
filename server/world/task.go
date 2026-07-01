@@ -366,7 +366,7 @@ func (w *World) queueScheduled(st scheduledTransaction) {
 }
 
 // scheduledTransaction is a task-aware transaction queued via Do, DoAfter,
-// or Context.Defer. It creates its own Tx, runs the callback with panic
+// or Context.Defer. It creates its own Context, runs the callback with panic
 // recovery, drains deferred work, then finishes the task.
 type scheduledTransaction struct {
 	task *Task
@@ -378,10 +378,9 @@ func (st scheduledTransaction) Run(w *World) {
 	if !st.task.begin() {
 		return
 	}
-	tx := &Tx{w: w}
-	ctx := newContext(tx)
+	ctx := newContext(w)
 	err := executeWithRecovery(func() error { return st.f(ctx) })
-	tx.close()
-	tx.runDeferred()
+	ctx.close()
+	ctx.runDeferred()
 	st.task.finish(err)
 }
