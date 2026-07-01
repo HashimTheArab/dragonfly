@@ -36,13 +36,13 @@ func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
 		e.cond.Broadcast()
 		e.cond.L.Unlock()
 	})
-	closeWorld := e.trackCloseSchedule(task)
+	w := e.trackCloseSchedule(task)
 	if !task.pending() {
 		return task
 	}
 	go func() {
-		if closeWorld != nil {
-			defer closeWorld.scheduling.Done()
+		if w != nil {
+			defer w.scheduling.Done()
 		}
 		e.runScheduled(task, f)
 	}()

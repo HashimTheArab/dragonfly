@@ -100,22 +100,21 @@ func NewFinishedTask(err error) *Task {
 	return t
 }
 
-// Done returns a channel that is closed when the task has finished, failed, or
-// been cancelled.
-func (t *Task) Done() <-chan struct{} {
-	if t == nil {
-		return closedTaskDone()
-	}
-	return t.done
-}
-
+// closedDone is the Done channel returned for nil tasks.
 var closedDone = func() <-chan struct{} {
 	c := make(chan struct{})
 	close(c)
 	return c
 }()
 
-func closedTaskDone() <-chan struct{} { return closedDone }
+// Done returns a channel that is closed when the task has finished, failed, or
+// been cancelled.
+func (t *Task) Done() <-chan struct{} {
+	if t == nil {
+		return closedDone
+	}
+	return t.done
+}
 
 // Err returns the task error once Done is closed. It returns nil if the task
 // completed successfully or has not completed yet.

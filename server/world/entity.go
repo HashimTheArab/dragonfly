@@ -49,9 +49,13 @@ type EntityHandle struct {
 
 	cond         *sync.Cond
 	worldless    *atomic.Bool
-	worldVersion atomic.Uint64
 	weakTxActive bool
 	w            *World
+	// worldVersion increments on every change to w, letting weak transactions
+	// detect that the entity moved while they were queued.
+	worldVersion atomic.Uint64
+	// closed closes once the handle is closed. worldChanged is closed and
+	// replaced on every change to w, waking scheduled work waiting on it.
 	closed       chan struct{}
 	worldChanged chan struct{}
 	closeOnce    sync.Once

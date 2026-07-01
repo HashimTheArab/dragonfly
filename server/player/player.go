@@ -944,6 +944,11 @@ func (p *Player) Respawn() *world.EntityHandle {
 	return p.handle
 }
 
+// respawn heals the player and moves it to its spawn position in the world
+// returned by spawnLocation. f, if non-nil, runs with the player once it is
+// added to a world again: the respawn destination normally, or the world it
+// died in if the destination closed first. This guarantees a quit callback
+// passed by close always completes the player's teardown.
 func (p *Player) respawn(f func(p *Player)) {
 	if !p.Dead() || p.session() == session.Nop {
 		return
@@ -966,6 +971,7 @@ func (p *Player) respawn(f func(p *Player)) {
 
 	sess := p.session()
 	handle := p.handle
+	src := p.tx.World()
 	removed := make(chan struct{})
 	task := w.Do(func(tx *world.Tx) {
 		<-removed
@@ -978,22 +984,43 @@ func (p *Player) respawn(f func(p *Player)) {
 		}
 	})
 	if errors.Is(task.Err(), world.ErrWorldClosed) {
-		sess.Disconnect("respawn failed")
-		sess.CloseConnection()
+		// The destination world had already closed. The player is still in its
+		// current world, so quit it here for a full teardown (session close,
+		// data save, server cleanup).
+		if f != nil {
+			f(p)
+			return
+		}
+		p.quit("respawn failed")
 		return
 	}
 	handle = p.tx.RemoveEntity(p)
 	close(removed)
 	task.OnDone(func(err error) {
 		// Only on ErrWorldClosed was the entity never re-added (destination
-		// world closed) — the handle is orphaned, so close it and tear the
-		// session down. A recovered callback panic is left alone: the entity is
-		// live and closing it would panic.
-		if errors.Is(err, world.ErrWorldClosed) {
+		// world closed). A recovered callback panic is left alone: the entity
+		// is live and closing it would panic.
+		if !errors.Is(err, world.ErrWorldClosed) {
+			return
+		}
+		// Fall back to the source world so the normal quit path still runs.
+		src.Do(func(tx *world.Tx) {
+			np := tx.AddEntity(handle).(*Player)
+			if f != nil {
+				f(np)
+				return
+			}
+			np.quit("respawn failed")
+		}).OnDone(func(err error) {
+			if err == nil || errors.Is(err, world.ErrTaskPanicked) {
+				return
+			}
+			// The source world is gone too; the handle is orphaned. Close it
+			// and free the connection.
 			_ = handle.Close()
 			sess.Disconnect("respawn failed")
 			sess.CloseConnection()
-		}
+		})
 	})
 }
 
@@ -3158,6 +3185,8 @@ func (p *Player) canReach(pos mgl64.Vec3) bool {
 // Disconnect closes the player and removes it from the world.
 // Disconnect, unlike Close, allows a custom message to be passed to show to the player when it is
 // disconnected. The message is formatted following the rules of fmt.Sprintln without a newline at the end.
+// The player is removed from the world before Disconnect returns and must not
+// be used afterwards.
 func (p *Player) Disconnect(msg ...any) {
 	p.once.Do(func() {
 		p.close(format(msg))
@@ -3167,6 +3196,8 @@ func (p *Player) Disconnect(msg ...any) {
 // Close closes the player and removes it from the world.
 // Close disconnects the player with a 'Connection closed.' message. Disconnect should be used to disconnect a
 // player with a custom message.
+// The player is removed from the world before Close returns and must not be
+// used afterwards.
 func (p *Player) Close() error {
 	p.once.Do(func() {
 		p.close("Connection closed.")
@@ -3194,6 +3225,9 @@ func (p *Player) quit(msg string) {
 
 	if s := p.s; s != nil {
 		s.Disconnect(msg)
+		// Close the session on this owner directly: teardown must not depend
+		// on the session goroutine, which cannot schedule work anymore once
+		// the world starts closing.
 		s.Close(p.tx, p)
 		s.CloseConnection()
 		return

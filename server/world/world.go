@@ -30,11 +30,17 @@ type World struct {
 	conf Config
 	ra   cube.Range
 
-	queue                     chan transaction
-	queueClosing              chan struct{}
-	queueing                  sync.WaitGroup
-	scheduleMu                sync.Mutex
-	scheduling                sync.WaitGroup
+	queue        chan transaction
+	queueClosing chan struct{}
+	queueing     sync.WaitGroup
+
+	// scheduleMu serialises task scheduling against the close transitions
+	// below. scheduling counts in-flight scheduled work that close must drain.
+	scheduleMu sync.Mutex
+	scheduling sync.WaitGroup
+	// closed flips once close starts; new tasks fail with ErrWorldClosed.
+	// closeAcceptingEntityTasks is true only during the close transaction, when
+	// entity Close methods may still schedule final work that close drains.
 	closed                    atomic.Bool
 	closeAcceptingEntityTasks atomic.Bool
 
@@ -49,6 +55,8 @@ type World struct {
 
 	weather
 
+	// closeStarted closes as soon as World.Close begins, before the close
+	// transaction runs; closing closes once the world stops ticking.
 	closeStarted chan struct{}
 	closing      chan struct{}
 	running      sync.WaitGroup
@@ -712,7 +720,7 @@ func (w *World) addEntity(tx *Context, handle *EntityHandle) Entity {
 		// Show the entity to all viewers in the chunk of the entity.
 		showEntity(e, v)
 	}
-	w.Handler().HandleEntitySpawn(tx, e)
+	w.Handler().HandleEntitySpawn(tx.Event(), e)
 	return e
 }
 
@@ -727,7 +735,7 @@ func (w *World) removeEntity(e Entity, tx *Context) *EntityHandle {
 		// The entity currently isn't in this world.
 		return nil
 	}
-	w.Handler().HandleEntityDespawn(tx, e)
+	w.Handler().HandleEntityDespawn(tx.Event(), e)
 
 	c := w.chunk(pos)
 	c.Entities, c.modified = sliceutil.DeleteVal(c.Entities, handle), true

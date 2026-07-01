@@ -352,19 +352,22 @@ func (s *Session) Latency() time.Duration {
 // It is for off-owner session goroutines; callbacks that already have a
 // *world.Tx should use it directly instead.
 func (s *Session) withControllable(ctx context.Context, f func(tx *world.Tx, c Controllable) error) error {
-	_, err := world.CallRef[struct{}, Controllable](ctx, world.NewEntityRef[Controllable](s.ent), func(tx *world.Tx, c Controllable) (struct{}, error) {
+	_, err := world.CallRef(ctx, world.NewEntityRef[Controllable](s.ent), func(tx *world.Tx, c Controllable) (struct{}, error) {
 		return struct{}{}, f(tx, c)
 	})
 	return err
 }
 
+// sessionOwnerStopped reports whether err means the session's player can no
+// longer run owner callbacks, so session goroutines should stop quietly.
 func sessionOwnerStopped(err error) bool {
 	return errors.Is(err, world.ErrEntityClosed) || errors.Is(err, world.ErrWorldClosed) || errors.Is(err, world.ErrTaskCancelled)
 }
 
+// rethrowPanicError re-panics with the original panic value if err wraps a
+// *world.PanicError, so recovered callback panics surface on the caller.
 func rethrowPanicError(err error) {
-	var panicErr *world.PanicError
-	if errors.As(err, &panicErr) {
+	if panicErr, ok := errors.AsType[*world.PanicError](err); ok {
 		panic(panicErr.Value)
 	}
 }

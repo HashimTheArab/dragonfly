@@ -50,10 +50,12 @@ type Handler interface {
 	// ctx.Cancel() may be called to prevent leaves from decaying.
 	HandleLeavesDecay(ctx *Context, pos cube.Pos)
 	// HandleEntitySpawn handles an Entity being spawned into a World through a
-	// call to Context.AddEntity.
+	// call to Context.AddEntity. The spawn cannot be prevented: ctx.Cancel()
+	// has no effect.
 	HandleEntitySpawn(ctx *Context, e Entity)
 	// HandleEntityDespawn handles an Entity being despawned from a World
-	// through a call to Context.RemoveEntity.
+	// through a call to Context.RemoveEntity. The despawn cannot be prevented:
+	// ctx.Cancel() has no effect.
 	HandleEntityDespawn(ctx *Context, e Entity)
 	// HandleExplosion handles an explosion in the world. ctx.Cancel() may be called
 	// to cancel the explosion.
@@ -66,7 +68,8 @@ type Handler interface {
 	// HandleClose handles the World being closed. HandleClose may be used as a
 	// moment to finish code running on other goroutines that operates on the
 	// World specifically. HandleClose is called directly before the World stops
-	// ticking and before any chunks are saved to disk.
+	// ticking and before any chunks are saved to disk. The close cannot be
+	// prevented: ctx.Cancel() has no effect.
 	HandleClose(ctx *Context)
 }
 

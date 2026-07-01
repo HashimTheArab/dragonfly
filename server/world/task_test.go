@@ -17,7 +17,7 @@ func TestDoRunsOnWorldContext(t *testing.T) {
 
 	task := w.Do(func(ctx *Context) {
 		if ctx.tx == nil {
-			t.Fatal("scheduled context has nil transaction")
+			t.Error("scheduled context has nil transaction")
 		}
 	})
 	if err := task.Wait(testContext(t)); err != nil {
@@ -68,7 +68,7 @@ func TestCallEntityReturnsTypedResult(t *testing.T) {
 
 	got, err := CallEntity(testContext(t), h, func(ctx *Context, e Entity) (mgl64.Vec3, error) {
 		if ctx.tx == nil {
-			t.Fatal("entity call context has nil transaction")
+			t.Error("entity call context has nil transaction")
 		}
 		return e.Position(), nil
 	})
@@ -128,7 +128,7 @@ func TestCallRefReportsTypeMismatch(t *testing.T) {
 	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	_, err := CallRef(testContext(t), NewEntityRef[markedTaskEntity](h), func(ctx *Context, e markedTaskEntity) (int, error) {
-		t.Fatal("CallRef ran typed callback for mismatched entity")
+		t.Error("CallRef ran typed callback for mismatched entity")
 		return 0, nil
 	})
 	if !errors.Is(err, ErrEntityType) {
@@ -159,7 +159,7 @@ func TestDoAfterFailsWhenWorldCloseStarts(t *testing.T) {
 	w := New()
 
 	task := w.DoAfter(time.Hour, func(*Context) {
-		t.Fatal("delayed task ran after world close started")
+		t.Error("delayed task ran after world close started")
 	})
 	errc := make(chan error, 1)
 	w.Handle(closeWaitTaskHandler{task: task, errc: errc})
@@ -179,7 +179,7 @@ func TestEntityDoAfterFailsWhenWorldCloseStarts(t *testing.T) {
 	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
 
 	task := h.DoAfter(time.Hour, func(*Context, Entity) {
-		t.Fatal("delayed entity task ran after world close started")
+		t.Error("delayed entity task ran after world close started")
 	})
 	errc := make(chan error, 1)
 	w.Handle(closeWaitTaskHandler{task: task, errc: errc})
@@ -200,22 +200,25 @@ func TestEntityDoAfterFollowsMovedEntity(t *testing.T) {
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
 	<-w1.exec(func(tx *Context) { tx.AddEntity(h) })
 
-	task := h.DoAfter(50*time.Millisecond, func(ctx *Context, _ Entity) {
-		if ctx.World() != w2 {
-			t.Fatal("delayed entity task did not follow moved entity")
-		}
-	})
+	// Remove the entity from w1 before scheduling: whenever the timer fires,
+	// the callback can only run once the entity has been added to w2.
 	<-w1.exec(func(tx *Context) {
 		e, ok := h.Entity(tx)
 		if !ok {
-			t.Fatal("entity missing before move")
+			t.Error("entity missing before move")
+			return
 		}
 		tx.RemoveEntity(e)
 	})
-	<-w2.exec(func(tx *Context) { tx.AddEntity(h) })
+	task := h.DoAfter(50*time.Millisecond, func(ctx *Context, _ Entity) {
+		if ctx.World() != w2 {
+			t.Error("delayed entity task did not follow moved entity")
+		}
+	})
 	if err := w1.Close(); err != nil {
 		t.Fatalf("close old world: %v", err)
 	}
+	<-w2.exec(func(tx *Context) { tx.AddEntity(h) })
 	if err := task.Wait(testContext(t)); err != nil {
 		t.Fatalf("delayed entity task failed after move: %v", err)
 	}
@@ -328,12 +331,13 @@ func TestEntityDoCancelAfterInvalidatedWeakTransactionDoesNotPoisonHandle(t *tes
 	removeDone := w.exec(func(tx *Context) {
 		e, ok := h.Entity(tx)
 		if !ok {
-			t.Fatal("entity missing before remove")
+			t.Error("entity missing before remove")
+			return
 		}
 		tx.RemoveEntity(e)
 	})
 	task := h.Do(func(*Context, Entity) {
-		t.Fatal("cancelled task ran")
+		t.Error("cancelled task ran")
 	})
 	// The fast path in schedule may queue directly without a weak
 	// transaction. Either way, the task must still be cancellable while
@@ -440,7 +444,7 @@ func TestHandleCloseDrainsDeferredWorkBeforeSave(t *testing.T) {
 func TestDoAfterEntityCloseFailsPromptly(t *testing.T) {
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
 	task := h.DoAfter(time.Hour, func(*Context, Entity) {
-		t.Fatal("delayed task ran after entity closed")
+		t.Error("delayed task ran after entity closed")
 	})
 	if err := h.Close(); err != nil {
 		t.Fatalf("close entity: %v", err)
@@ -464,14 +468,15 @@ func TestEntityDoCompletesWhenEntityClosesBeforeQueuedTask(t *testing.T) {
 		<-release
 		e, ok := h.Entity(tx)
 		if !ok {
-			t.Fatal("entity missing")
+			t.Error("entity missing")
+			return
 		}
 		tx.RemoveEntity(e)
 		_ = h.Close()
 	})
 	<-started
 
-	task := h.Do(func(*Context, Entity) { t.Fatal("closed entity task ran") })
+	task := h.Do(func(*Context, Entity) { t.Error("closed entity task ran") })
 	time.Sleep(50 * time.Millisecond)
 	close(release)
 	<-done
@@ -508,7 +513,7 @@ func TestDoAfterWorldCloseFails(t *testing.T) {
 		t.Fatalf("close world: %v", err)
 	}
 
-	task := w.DoAfter(time.Hour, func(ctx *Context) { t.Fatal("task ran on closed world") })
+	task := w.DoAfter(time.Hour, func(ctx *Context) { t.Error("task ran on closed world") })
 	if err := task.Wait(testContext(t)); !errors.Is(err, ErrWorldClosed) {
 		t.Fatalf("expected ErrWorldClosed, got %v", err)
 	}
@@ -542,7 +547,7 @@ func TestEntityDoAfterWorldCloseFails(t *testing.T) {
 	}
 
 	task := h.Do(func(*Context, Entity) {
-		t.Fatal("entity task ran after world close")
+		t.Error("entity task ran after world close")
 	})
 	if err := task.Wait(testContext(t)); !errors.Is(err, ErrWorldClosed) {
 		t.Fatalf("expected ErrWorldClosed, got %v", err)
@@ -564,18 +569,18 @@ func TestEventCancellationIsolated(t *testing.T) {
 		first.Cancel()
 
 		if !first.Cancelled() {
-			t.Fatal("cancelled event does not report Cancelled")
+			t.Error("cancelled event does not report Cancelled")
 		}
 		if second.Cancelled() {
-			t.Fatal("cancelling one event leaked into another event of the same transaction")
+			t.Error("cancelling one event leaked into another event of the same transaction")
 		}
 		if tx.Cancelled() {
-			t.Fatal("cancelling an event leaked into the owning transaction")
+			t.Error("cancelling an event leaked into the owning transaction")
 		}
 		// The events must still share the underlying transaction so world
 		// operations from a handler reach the same world.
 		if first.World() != tx.World() || second.World() != tx.World() {
-			t.Fatal("event contexts do not share the transaction's world")
+			t.Error("event contexts do not share the transaction's world")
 		}
 	})
 }

@@ -19,9 +19,7 @@ func (p *Player) Do(f func(tx *world.Tx, p *Player)) *world.Task {
 	if p == nil {
 		return world.NewFinishedTask(world.ErrEntityClosed)
 	}
-	return NewRef(p.handle).Do(func(tx *world.Tx, current *Player) {
-		f(tx, current)
-	})
+	return NewRef(p.handle).Do(f)
 }
 
 // DoAfter schedules f on the player's current world owner after delay.
@@ -29,7 +27,5 @@ func (p *Player) DoAfter(delay time.Duration, f func(tx *world.Tx, p *Player)) *
 	if p == nil {
 		return world.NewFinishedTask(world.ErrEntityClosed)
 	}
-	return NewRef(p.handle).DoAfter(delay, func(tx *world.Tx, current *Player) {
-		f(tx, current)
-	})
+	return NewRef(p.handle).DoAfter(delay, f)
 }
