@@ -137,12 +137,32 @@ type execFunc func(tx *Context)
 // The returned channel closes when done; waiting on it from the owner deadlocks.
 func (w *World) exec(f execFunc) <-chan struct{} {
 	c := make(chan struct{})
-	w.queue <- normalTransaction{c: c, f: f}
+	ntx := normalTransaction{c: c, f: f}
+	if w.conf.Synchronous {
+		ntx.Run(w)
+		return c
+	}
+	w.queue <- ntx
 	return c
 }
 
 func (w *World) weakExec(valid func() bool, cond *sync.Cond, f execFunc) <-chan bool {
 	c := make(chan bool, 1)
+	if w.conf.Synchronous {
+		run := valid == nil || valid()
+		if run {
+			// As in weakTransaction.Run, f must not run under cond.L: it may
+			// relock it, e.g. through RemoveEntity.
+			cond.L.Unlock()
+			ctx := newContext(w)
+			f(ctx)
+			ctx.close()
+			ctx.runDeferred()
+			cond.L.Lock()
+		}
+		c <- run
+		return c
+	}
 	w.queue <- weakTransaction{c: c, f: f, valid: valid, cond: cond}
 	return c
 }

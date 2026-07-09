@@ -329,9 +329,14 @@ func (w *World) scheduleTask(task *Task, f func(ctx *Context) error) *Task {
 	}
 	st := scheduledTransaction{task: task, f: f}
 	w.scheduleMu.Lock()
-	defer w.scheduleMu.Unlock()
 	if w.closed.Load() {
+		w.scheduleMu.Unlock()
 		task.failIfPending(ErrWorldClosed)
+		return task
+	}
+	if w.conf.Synchronous {
+		w.scheduleMu.Unlock()
+		st.Run(w)
 		return task
 	}
 	select {
@@ -344,6 +349,7 @@ func (w *World) scheduleTask(task *Task, f func(ctx *Context) error) *Task {
 		w.scheduling.Add(1)
 		go w.queueScheduled(st)
 	}
+	w.scheduleMu.Unlock()
 	return task
 }
 
