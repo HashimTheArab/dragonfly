@@ -180,7 +180,7 @@ func (testEntityConfig) Apply(*EntityData) {}
 
 type testEntityType struct{}
 
-func (testEntityType) Open(_ *Tx, handle *EntityHandle, data *EntityData) Entity {
+func (testEntityType) Open(_ *Context, handle *EntityHandle, data *EntityData) Entity {
 	return &testEntity{handle: handle, data: data}
 }
 
@@ -219,7 +219,7 @@ func (e *testEntity) Rotation() cube.Rotation {
 	return e.data.Rot
 }
 
-func (e *testEntity) Tick(*Tx, int64) {
+func (e *testEntity) Tick(*Context, int64) {
 	e.data.Pos = e.data.Pos.Add(mgl64.Vec3{0, -0.1, 0})
 }
 
@@ -282,6 +282,6 @@ func (*testTickerBlock) EncodeNBT() map[string]any {
 	return nil
 }
 
-func (b *testTickerBlock) Tick(int64, cube.Pos, *Tx) {
+func (b *testTickerBlock) Tick(int64, cube.Pos, *Context) {
 	b.ticks++
 }

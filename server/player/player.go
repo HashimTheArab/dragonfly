@@ -3182,8 +3182,9 @@ func (p *Player) canReach(pos mgl64.Vec3) bool {
 // Disconnect closes the player and removes it from the world.
 // Disconnect, unlike Close, allows a custom message to be passed to show to the player when it is
 // disconnected. The message is formatted following the rules of fmt.Sprintln without a newline at the end.
-// The player is removed from the world before Disconnect returns and must not
-// be used afterwards.
+// The player is removed from its current world before Disconnect returns and
+// must not be used afterwards. If the player is dead, it first respawns: the
+// remaining teardown completes on the owner of the world it respawns into.
 func (p *Player) Disconnect(msg ...any) {
 	p.once.Do(func() {
 		p.close(format(msg))
@@ -3193,8 +3194,9 @@ func (p *Player) Disconnect(msg ...any) {
 // Close closes the player and removes it from the world.
 // Close disconnects the player with a 'Connection closed.' message. Disconnect should be used to disconnect a
 // player with a custom message.
-// The player is removed from the world before Close returns and must not be
-// used afterwards.
+// The player is removed from its current world before Close returns and must
+// not be used afterwards. If the player is dead, it first respawns: the
+// remaining teardown completes on the owner of the world it respawns into.
 func (p *Player) Close() error {
 	p.once.Do(func() {
 		p.close("Connection closed.")
