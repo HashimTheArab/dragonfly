@@ -164,12 +164,29 @@ func (w *World) weakExec(valid func() bool, cond *sync.Cond, f execFunc, allowCl
 		return c
 	}
 	w.scheduleMu.Lock()
-	defer w.scheduleMu.Unlock()
 	if w.closed.Load() && !w.closeAcceptingEntityTasks.Load() && !allowClosed {
+		w.scheduleMu.Unlock()
 		c <- false
 		return c
 	}
-	w.queue <- weakTransaction{c: c, f: f, valid: valid, cond: cond}
+	wtx := weakTransaction{c: c, f: f, valid: valid, cond: cond}
+	select {
+	case w.queue <- wtx:
+		w.scheduleMu.Unlock()
+	default:
+		w.scheduling.Add(1)
+		w.scheduleMu.Unlock()
+		go func() {
+			defer w.scheduling.Done()
+			select {
+			case w.queue <- wtx:
+			case <-w.closing:
+				wtx.fail()
+			case <-w.queueClosing:
+				wtx.fail()
+			}
+		}()
+	}
 	return c
 }
 

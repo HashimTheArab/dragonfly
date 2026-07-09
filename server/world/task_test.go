@@ -1,8 +1,11 @@
 package world
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -229,8 +232,35 @@ func TestDoRecordsPanic(t *testing.T) {
 	defer w.Close()
 
 	task := w.Do(func(ctx *Context) { panic("boom") })
+	err := task.Wait(testContext(t))
+	if !errors.Is(err, ErrTaskPanicked) {
+		t.Fatalf("expected ErrTaskPanicked, got %v", err)
+	}
+	panicErr, ok := errors.AsType[*PanicError](err)
+	if !ok {
+		t.Fatalf("expected *PanicError, got %T", err)
+	}
+	if len(panicErr.Stack) == 0 {
+		t.Fatal("expected PanicError to capture the panicking goroutine's stack")
+	}
+}
+
+// TestDoLogsRecoveredPanic verifies that a recovered fire-and-forget panic is
+// reported through the world's logger.
+func TestDoLogsRecoveredPanic(t *testing.T) {
+	var logs bytes.Buffer
+	w := Config{Log: slog.New(slog.NewTextHandler(&logs, nil))}.New()
+	defer w.Close()
+
+	task := w.Do(func(ctx *Context) { panic("boom") })
 	if err := task.Wait(testContext(t)); !errors.Is(err, ErrTaskPanicked) {
 		t.Fatalf("expected ErrTaskPanicked, got %v", err)
+	}
+	if got := strings.Count(logs.String(), "level=ERROR"); got != 1 {
+		t.Fatalf("expected one Error-level panic log, got %v: %q", got, logs.String())
+	}
+	if !strings.Contains(logs.String(), "boom") {
+		t.Fatalf("expected panic log to mention panic value: %q", logs.String())
 	}
 }
 
@@ -378,6 +408,51 @@ func TestDoDoesNotBlockOwnerWhenQueueFull(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("Do or Context.Defer blocked the world owner")
 	}
+}
+
+// TestWeakExecDoesNotBlockOwnerWhenQueueFull ensures an off-owner weak
+// transaction blocked on a full queue does not hold scheduleMu, which would
+// deadlock an owner callback calling World.Do.
+func TestWeakExecDoesNotBlockOwnerWhenQueueFull(t *testing.T) {
+	w := New()
+
+	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
+
+	entered := make(chan struct{})
+	proceed := make(chan struct{})
+	release := make(chan struct{})
+
+	// Occupy the world owner goroutine.
+	w.exec(func(tx *Context) {
+		close(entered)
+		<-proceed
+		// Owner-side fire-and-forget must not block on scheduleMu.
+		w.Do(func(ctx *Context) {})
+		close(release)
+	})
+	<-entered
+
+	// Fill the queue to capacity while the owner is busy.
+	for i := 0; i < cap(w.queue); i++ {
+		w.queue <- normalTransaction{c: make(chan struct{}), f: func(tx *Context) {}}
+	}
+
+	// Entity task whose weak transaction ends up in World.weakExec with the
+	// queue full.
+	task := h.Do(func(ctx *Context, e Entity) {})
+	time.Sleep(200 * time.Millisecond)
+
+	close(proceed)
+	select {
+	case <-release:
+	case <-time.After(3 * time.Second):
+		t.Fatal("owner-side World.Do deadlocked on scheduleMu held by weakExec blocked on full queue")
+	}
+	if err := task.Wait(testContext(t)); err != nil {
+		t.Fatalf("entity task failed after queue drained: %v", err)
+	}
+	_ = w.Close()
 }
 
 func TestDoQueuedBeforeCloseDoesNotRunAfterHandleClose(t *testing.T) {

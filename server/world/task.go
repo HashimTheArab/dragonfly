@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,8 @@ var (
 // with the original value while supporting errors.Is(err, ErrTaskPanicked).
 type PanicError struct {
 	Value any
+	// Stack is the stack of the panicking goroutine, captured at recovery.
+	Stack []byte
 }
 
 // Error implements the error interface.
@@ -39,11 +42,13 @@ func (e *PanicError) Error() string {
 // Unwrap returns ErrTaskPanicked so errors.Is works.
 func (e *PanicError) Unwrap() error { return ErrTaskPanicked }
 
-// executeWithRecovery runs f, recovering any panic into a *PanicError.
-func executeWithRecovery(f func() error) (err error) {
+// executeWithRecovery runs f, recovering and logging any panic through w.
+func executeWithRecovery(w *World, f func() error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = &PanicError{Value: r}
+			panicErr := &PanicError{Value: r, Stack: debug.Stack()}
+			w.conf.Log.Error("scheduled task panicked", "panic", panicErr.Value, "stack", string(panicErr.Stack))
+			err = panicErr
 		}
 	}()
 	return f()
@@ -386,7 +391,7 @@ func (st scheduledTransaction) Run(w *World) {
 		return
 	}
 	ctx := newContext(w)
-	err := executeWithRecovery(func() error { return st.f(ctx) })
+	err := executeWithRecovery(w, func() error { return st.f(ctx) })
 	ctx.close()
 	ctx.runDeferred()
 	st.task.finish(err)

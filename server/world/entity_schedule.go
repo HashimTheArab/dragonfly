@@ -180,7 +180,7 @@ func (e *EntityHandle) runScheduled(task *Task, f func(ctx *Context, e Entity) e
 		if !task.begin() {
 			return
 		}
-		err := executeWithRecovery(func() error { return f(ctx, ent) })
+		err := executeWithRecovery(ctx.w, func() error { return f(ctx, ent) })
 		ctx.runDeferred()
 		task.finish(err)
 	}, false, task.Done(), allowedCloseWorld)
