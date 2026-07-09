@@ -88,7 +88,7 @@ func (e *EntityHandle) scheduleAfter(delay time.Duration, f func(ctx *Context, e
 			case <-task.Done():
 				return
 			case <-closeStarted:
-				if e.currentWorldCloseStarted() == closeStarted {
+				if cs, _ := e.currentWorldSignals(); cs == closeStarted {
 					task.failIfPending(ErrWorldClosed)
 					return
 				}
@@ -145,31 +145,11 @@ func (e *EntityHandle) currentWorldSynchronous() bool {
 	return e.w != nil && e.w != closeWorld && e.worldReady && e.w.conf.Synchronous
 }
 
-// currentWorldCloseStarted returns the closeStarted channel of the entity's
-// current world, or nil if the entity is not in a world.
-func (e *EntityHandle) currentWorldCloseStarted() <-chan struct{} {
-	e.cond.L.Lock()
-	defer e.cond.L.Unlock()
-	if e.w == nil || e.w == closeWorld {
-		return nil
-	}
-	return e.w.closeStarted
-}
-
-// currentWorldClosing checks under lock whether the entity's current world
-// has started closing.
+// currentWorldClosing reports whether the entity's current world has started
+// closing.
 func (e *EntityHandle) currentWorldClosing() bool {
-	e.cond.L.Lock()
-	defer e.cond.L.Unlock()
-	if e.w == nil || e.w == closeWorld {
-		return false
-	}
-	select {
-	case <-e.w.closeStarted:
-		return true
-	default:
-		return false
-	}
+	closeStarted, _ := e.currentWorldSignals()
+	return cancelled(closeStarted)
 }
 
 // runScheduled executes the scheduled entity callback via execWorld, using
