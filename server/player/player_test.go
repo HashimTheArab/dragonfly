@@ -2,6 +2,7 @@ package player
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"testing"
@@ -27,7 +28,7 @@ func TestRespawnCompletesInSynchronousWorld(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		w.Do(func(tx *world.Context) {
+		w.Do(func(tx *world.Tx) {
 			p := tx.AddEntity(h).(*Player)
 			p.addHealth(-p.MaxHealth())
 			p.respawn(nil)
@@ -41,7 +42,7 @@ func TestRespawnCompletesInSynchronousWorld(t *testing.T) {
 		t.Fatal("respawn deadlocked in synchronous world")
 	}
 
-	w.Do(func(tx *world.Context) {
+	w.Do(func(tx *world.Tx) {
 		if e, ok := h.Entity(tx); ok {
 			e.(*Player).s = nil
 		}
@@ -67,7 +68,7 @@ func TestRespawnClosedDestinationFallsBackBeforeReturning(t *testing.T) {
 	release := make(chan struct{})
 	returned := make(chan struct{})
 	go func() {
-		src.Do(func(tx *world.Context) {
+		src.Do(func(tx *world.Tx) {
 			p := tx.AddEntity(h).(*Player)
 			p.Handle(redirectRespawnHandler{w: dst})
 			p.addHealth(-p.MaxHealth())
@@ -116,7 +117,7 @@ func TestOrphanedSessionCloseRunsStopHandler(t *testing.T) {
 	sess.SetHandle(h, skin.Skin{})
 
 	var p *Player
-	w.Do(func(tx *world.Context) {
+	w.Do(func(tx *world.Tx) {
 		p = tx.AddEntity(h).(*Player)
 		tx.RemoveEntity(p)
 	})
@@ -137,6 +138,111 @@ func TestOrphanedSessionCloseRunsStopHandler(t *testing.T) {
 	default:
 		t.Fatal("stop handler did not run for orphaned session close")
 	}
+}
+
+func TestContextDeferErrReturnsCallbackError(t *testing.T) {
+	w := newSynchronousTestWorld()
+	defer w.Close()
+	h := world.EntitySpawnOpts{}.New(Type, Config{})
+	want := errors.New("deferred player error")
+
+	var deferred *world.Task
+	w.Do(func(tx *world.Tx) {
+		p := tx.AddEntity(h).(*Player)
+		deferred = newContext(p).DeferErr(func(ctx *Context) error {
+			if ctx.Player().H() != h {
+				t.Error("deferred context resolved the wrong player")
+			}
+			return want
+		})
+	})
+	if err := deferred.Wait(context.Background()); !errors.Is(err, want) {
+		t.Fatalf("expected deferred callback error, got %v", err)
+	}
+}
+
+func TestContextDeferErrReportsEntityNotInWorld(t *testing.T) {
+	src := newSynchronousTestWorld()
+	defer src.Close()
+	dst := newSynchronousTestWorld()
+	defer dst.Close()
+	h := world.EntitySpawnOpts{}.New(Type, Config{})
+
+	var deferred *world.Task
+	src.Do(func(tx *world.Tx) {
+		p := tx.AddEntity(h).(*Player)
+		deferred = newContext(p).DeferErr(func(*Context) error {
+			t.Error("deferred callback ran after player changed worlds")
+			return nil
+		})
+		tx.RemoveEntity(p)
+		dst.Do(func(tx *world.Tx) { tx.AddEntity(h) })
+	})
+	if err := deferred.Wait(context.Background()); !errors.Is(err, world.ErrEntityNotInWorld) {
+		t.Fatalf("expected ErrEntityNotInWorld, got %v", err)
+	}
+}
+
+func TestContextDeferErrReportsClosedEntity(t *testing.T) {
+	w := newSynchronousTestWorld()
+	defer w.Close()
+	h := world.EntitySpawnOpts{}.New(Type, Config{})
+
+	var deferred *world.Task
+	w.Do(func(tx *world.Tx) {
+		p := tx.AddEntity(h).(*Player)
+		deferred = newContext(p).DeferErr(func(*Context) error {
+			t.Error("deferred callback ran after player handle closed")
+			return nil
+		})
+		tx.RemoveEntity(p)
+		if err := h.Close(); err != nil {
+			t.Fatalf("close handle: %v", err)
+		}
+	})
+	if err := deferred.Wait(context.Background()); !errors.Is(err, world.ErrEntityClosed) {
+		t.Fatalf("expected ErrEntityClosed, got %v", err)
+	}
+}
+
+func TestOneShotPlayerHelpers(t *testing.T) {
+	w := newSynchronousTestWorld()
+	defer w.Close()
+	h := world.EntitySpawnOpts{}.New(Type, Config{})
+	w.Do(func(tx *world.Tx) { tx.AddEntity(h) })
+
+	var didRun bool
+	if err := Do(h, func(_ *world.Tx, p *Player) { didRun = p.H() == h }).Wait(context.Background()); err != nil {
+		t.Fatalf("Do failed: %v", err)
+	}
+	if !didRun {
+		t.Fatal("Do did not resolve the player")
+	}
+
+	didRun = false
+	if err := DoAfter(h, time.Millisecond, func(_ *world.Tx, p *Player) { didRun = p.H() == h }).Wait(context.Background()); err != nil {
+		t.Fatalf("DoAfter failed: %v", err)
+	}
+	if !didRun {
+		t.Fatal("DoAfter did not resolve the player")
+	}
+
+	got, err := Call(context.Background(), h, func(_ *world.Tx, p *Player) (bool, error) {
+		return p.H() == h, nil
+	})
+	if err != nil {
+		t.Fatalf("Call failed: %v", err)
+	}
+	if !got {
+		t.Fatal("Call did not resolve the player")
+	}
+}
+
+func newSynchronousTestWorld() *world.World {
+	return world.Config{
+		Synchronous: true,
+		Entities:    world.EntityRegistryConfig{}.New([]world.EntityType{Type}),
+	}.New()
 }
 
 type redirectRespawnHandler struct {

@@ -20,8 +20,8 @@ type nilContextCommand struct {
 	ran     *bool `cmd:"-"`
 }
 
-func (c *nilContextCommand) Run(_ Source, _ *Output, ctx *world.Tx) {
-	if ctx != nil {
+func (c *nilContextCommand) Run(_ Source, _ *Output, tx *world.Tx) {
+	if tx != nil {
 		panic("expected nil world context")
 	}
 	*c.ran = true
