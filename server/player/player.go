@@ -971,6 +971,16 @@ func (p *Player) respawn(f func(p *Player)) {
 	sess := p.session()
 	src := p.tx.World()
 	handle := p.tx.RemoveEntity(p)
+	// restore re-adds the player through tx and finishes with f or the normal
+	// quit path; the fallback branches below share it.
+	restore := func(tx *world.Tx) {
+		np := tx.AddEntity(handle).(*Player)
+		if f != nil {
+			f(np)
+			return
+		}
+		np.quit("respawn failed")
+	}
 	task := w.Do(func(tx *world.Tx) {
 		np := tx.AddEntity(handle).(*Player)
 		np.Teleport(pos)
@@ -983,12 +993,7 @@ func (p *Player) respawn(f func(p *Player)) {
 	if errors.Is(task.Err(), world.ErrWorldClosed) {
 		// The destination refused synchronously: re-add through the still-open
 		// source context. This also keeps synchronous worlds fully inline.
-		np := p.tx.AddEntity(handle).(*Player)
-		if f != nil {
-			f(np)
-			return
-		}
-		np.quit("respawn failed")
+		restore(p.tx)
 		return
 	}
 	task.OnDone(func(err error) {
@@ -998,14 +1003,7 @@ func (p *Player) respawn(f func(p *Player)) {
 			return
 		}
 		// Fall back to the source world so the normal quit path still runs.
-		src.Do(func(tx *world.Tx) {
-			np := tx.AddEntity(handle).(*Player)
-			if f != nil {
-				f(np)
-				return
-			}
-			np.quit("respawn failed")
-		}).OnDone(func(err error) {
+		src.Do(restore).OnDone(func(err error) {
 			if err == nil || errors.Is(err, world.ErrTaskPanicked) {
 				return
 			}

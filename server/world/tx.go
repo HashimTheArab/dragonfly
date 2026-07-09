@@ -33,9 +33,18 @@ type tx struct {
 	deferred []scheduledTransaction
 }
 
+// contextAlloc bundles a Context with its transaction so newContext costs one
+// allocation on the per-transaction hot path.
+type contextAlloc struct {
+	ctx Context
+	tx  tx
+}
+
 // newContext returns a Context backed by a fresh transaction on World w.
 func newContext(w *World) *Context {
-	return &Context{tx: &tx{w: w}}
+	a := &contextAlloc{tx: tx{w: w}}
+	a.ctx.tx = &a.tx
+	return &a.ctx
 }
 
 // Event returns a Context sharing ctx's transaction but with its own cancel

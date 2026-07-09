@@ -376,14 +376,6 @@ func sessionOwnerStopped(err error) bool {
 	return errors.Is(err, world.ErrEntityClosed) || errors.Is(err, world.ErrWorldClosed) || errors.Is(err, world.ErrTaskCancelled)
 }
 
-// rethrowPanicError re-panics with the original panic value if err wraps a
-// *world.PanicError, so recovered callback panics surface on the caller.
-func rethrowPanicError(err error) {
-	if panicErr, ok := errors.AsType[*world.PanicError](err); ok {
-		panic(panicErr.Value)
-	}
-}
-
 // ClientData returns the login.ClientData of the underlying *minecraft.Conn.
 func (s *Session) ClientData() login.ClientData {
 	return s.conn.ClientData()
@@ -420,7 +412,7 @@ func (s *Session) handlePackets() {
 			return s.handlePacket(pk, tx, c)
 		})
 		if err != nil {
-			rethrowPanicError(err)
+			world.RethrowPanic(err)
 			if sessionOwnerStopped(err) {
 				return
 			}

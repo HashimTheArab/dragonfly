@@ -22,48 +22,33 @@ func (r EntityRef[T]) Handle() *EntityHandle { return r.h }
 // but hands f the entity as T. If the entity is no longer a T when the task
 // runs, the task fails with ErrEntityType.
 func (r EntityRef[T]) Do(f func(ctx *Context, e T)) *Task {
-	if r.h == nil {
-		return NewFinishedTask(ErrEntityClosed)
-	}
-	return r.h.schedule(func(ctx *Context, e Entity) error {
-		v, err := assertEntity[T](e)
-		if err != nil {
-			return err
-		}
-		f(ctx, v)
-		return nil
-	})
+	return r.h.schedule(typed(f))
 }
 
 // DoAfter schedules f on the entity's world owner after delay, typed like Do.
 func (r EntityRef[T]) DoAfter(delay time.Duration, f func(ctx *Context, e T)) *Task {
-	if r.h == nil {
-		return NewFinishedTask(ErrEntityClosed)
-	}
-	return r.h.scheduleAfter(delay, func(ctx *Context, e Entity) error {
+	return r.h.scheduleAfter(delay, typed(f))
+}
+
+// typed wraps f so the scheduled entity is asserted to T before f runs.
+func typed[T Entity](f func(ctx *Context, e T)) func(*Context, Entity) error {
+	return func(ctx *Context, e Entity) error {
 		v, err := assertEntity[T](e)
 		if err != nil {
 			return err
 		}
 		f(ctx, v)
 		return nil
-	})
+	}
 }
 
 // CallRef runs f with the ref's entity on its current world owner and waits
 // for the typed result. Off-owner code only, like Call.
 func CallRef[R any, E Entity](ctx context.Context, ref EntityRef[E], f func(ctx *Context, e E) (R, error)) (R, error) {
 	var zero R
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	select {
-	case <-ctx.Done():
-		return zero, ctx.Err()
-	default:
-	}
-	if ref.h == nil {
-		return zero, ErrEntityClosed
+	ctx, err := callContext(ctx)
+	if err != nil {
+		return zero, err
 	}
 	var result R
 	task := ref.h.schedule(func(wctx *Context, e Entity) error {

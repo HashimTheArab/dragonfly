@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync/atomic"
@@ -262,6 +263,22 @@ func TestDoLogsRecoveredPanic(t *testing.T) {
 	if !strings.Contains(logs.String(), "boom") {
 		t.Fatalf("expected panic log to mention panic value: %q", logs.String())
 	}
+}
+
+func TestRethrowPanicPanicsWithOriginalValue(t *testing.T) {
+	const value = "boom"
+	defer func() {
+		if v := recover(); v != value {
+			t.Fatalf("expected panic value %q, got %v", value, v)
+		}
+	}()
+
+	RethrowPanic(fmt.Errorf("packet: %w", &PanicError{Value: value}))
+}
+
+func TestRethrowPanicIgnoresOrdinaryError(t *testing.T) {
+	RethrowPanic(fmt.Errorf("ordinary error"))
+	RethrowPanic(nil)
 }
 
 func TestDoRunsDeferredWork(t *testing.T) {

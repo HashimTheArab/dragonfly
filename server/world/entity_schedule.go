@@ -32,11 +32,7 @@ func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
 		task.failIfPending(ErrEntityClosed)
 		return task
 	}
-	task.setCancel(func() {
-		e.cond.L.Lock()
-		e.cond.Broadcast()
-		e.cond.L.Unlock()
-	})
+	task.setCancel(e.wakeScheduled)
 	w := e.trackCloseSchedule(task)
 	if !task.pending() {
 		return task
@@ -67,11 +63,7 @@ func (e *EntityHandle) scheduleAfter(delay time.Duration, f func(ctx *Context, e
 		task.failIfPending(ErrEntityClosed)
 		return task
 	}
-	task.setCancel(func() {
-		e.cond.L.Lock()
-		e.cond.Broadcast()
-		e.cond.L.Unlock()
-	})
+	task.setCancel(e.wakeScheduled)
 	go func() {
 		timer := time.NewTimer(delay)
 		defer timer.Stop()
@@ -127,11 +119,23 @@ func (e *EntityHandle) trackCloseSchedule(task *Task) *World {
 	}
 }
 
+// wakeScheduled wakes goroutines waiting on the handle's cond, so a scheduler
+// blocked in execWorld re-checks its cancel signal.
+func (e *EntityHandle) wakeScheduled() {
+	e.cond.L.Lock()
+	e.cond.Broadcast()
+	e.cond.L.Unlock()
+}
+
 // currentWorldSignals returns the current world's close channel and the
-// handle's world-change channel.
+// handle's world-change channel, creating the latter for this waiter if
+// needed.
 func (e *EntityHandle) currentWorldSignals() (<-chan struct{}, <-chan struct{}) {
 	e.cond.L.Lock()
 	defer e.cond.L.Unlock()
+	if e.worldChanged == nil {
+		e.worldChanged = make(chan struct{})
+	}
 	if e.w == nil || e.w == closeWorld {
 		return nil, e.worldChanged
 	}

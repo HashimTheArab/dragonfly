@@ -57,8 +57,8 @@ type EntityHandle struct {
 	// worldVersion increments on every change to w, letting weak transactions
 	// detect that the entity moved while they were queued.
 	worldVersion atomic.Uint64
-	// closed closes once the handle is closed. worldChanged is closed and
-	// replaced on every change to w, waking scheduled work waiting on it.
+	// closed closes once the handle is closed. worldChanged, created lazily
+	// for delayed schedulers, is closed and dropped on every change to w.
 	closed       chan struct{}
 	worldChanged chan struct{}
 	closeOnce    sync.Once
@@ -95,12 +95,11 @@ func (opts EntitySpawnOpts) New(t EntityType, conf EntityConfig) *EntityHandle {
 		clear(opts.ID[:8])
 	}
 	handle := &EntityHandle{
-		id:           opts.ID,
-		t:            t,
-		cond:         sync.NewCond(&sync.Mutex{}),
-		worldless:    &atomic.Bool{},
-		closed:       make(chan struct{}),
-		worldChanged: make(chan struct{}),
+		id:        opts.ID,
+		t:         t,
+		cond:      sync.NewCond(&sync.Mutex{}),
+		worldless: &atomic.Bool{},
+		closed:    make(chan struct{}),
 	}
 	handle.worldless.Store(true)
 	handle.data.Pos, handle.data.Rot, handle.data.Vel = opts.Position, opts.Rotation, opts.Velocity
@@ -121,11 +120,10 @@ func NewEntity(t EntityType, conf EntityConfig) *EntityHandle {
 // an EntityHandle.
 func entityFromData(t EntityType, id int64, data map[string]any) *EntityHandle {
 	handle := &EntityHandle{
-		t:            t,
-		cond:         sync.NewCond(&sync.Mutex{}),
-		worldless:    &atomic.Bool{},
-		closed:       make(chan struct{}),
-		worldChanged: make(chan struct{}),
+		t:         t,
+		cond:      sync.NewCond(&sync.Mutex{}),
+		worldless: &atomic.Bool{},
+		closed:    make(chan struct{}),
 	}
 	binary.LittleEndian.PutUint64(handle.id[8:], uint64(id))
 	handle.decodeNBT(data)
@@ -354,8 +352,10 @@ func (e *EntityHandle) markWorldReady(w *World) {
 }
 
 func (e *EntityHandle) notifyWorldChangedLocked() {
-	close(e.worldChanged)
-	e.worldChanged = make(chan struct{})
+	if e.worldChanged != nil {
+		close(e.worldChanged)
+		e.worldChanged = nil
+	}
 	e.cond.Broadcast()
 }
 

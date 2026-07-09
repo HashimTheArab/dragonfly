@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"iter"
 	"maps"
@@ -145,9 +144,7 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 				return !yield(p), nil
 			})
 			if err != nil {
-				if pe, ok := errors.AsType[*world.PanicError](err); ok {
-					panic(pe.Value)
-				}
+				world.RethrowPanic(err)
 				srv.pmu.Lock()
 				delete(srv.p, inc.p.handle.UUID())
 				srv.pmu.Unlock()
@@ -245,9 +242,7 @@ func (srv *Server) Players(tx *world.Tx) iter.Seq[*player.Player] {
 				return !yield(p), nil
 			})
 			if err != nil {
-				if pe, ok := errors.AsType[*world.PanicError](err); ok {
-					panic(pe.Value)
-				}
+				world.RethrowPanic(err)
 				continue
 			}
 			if ret {

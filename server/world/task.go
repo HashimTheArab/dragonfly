@@ -41,6 +41,23 @@ func (e *PanicError) Error() string {
 // Unwrap returns ErrTaskPanicked so errors.Is works.
 func (e *PanicError) Unwrap() error { return ErrTaskPanicked }
 
+// RethrowPanic re-panics with the original panic value if err wraps a
+// *PanicError. It does nothing for any other error, including nil.
+func RethrowPanic(err error) {
+	if pe, ok := errors.AsType[*PanicError](err); ok {
+		panic(pe.Value)
+	}
+}
+
+// callContext normalises a possibly-nil caller context and reports whether it
+// was cancelled before any work was scheduled.
+func callContext(ctx context.Context) (context.Context, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return ctx, ctx.Err()
+}
+
 // executeWithRecovery runs f, recovering and logging any panic through w.
 func executeWithRecovery(w *World, f func() error) (err error) {
 	defer func() {
@@ -251,11 +268,12 @@ func (w *World) Do(f func(ctx *Context)) *Task {
 // task before delay elapses stops f from being queued at all.
 func (w *World) DoAfter(delay time.Duration, f func(ctx *Context)) *Task {
 	t := newTask()
+	run := func(ctx *Context) error {
+		f(ctx)
+		return nil
+	}
 	if delay <= 0 {
-		return w.scheduleTask(t, func(ctx *Context) error {
-			f(ctx)
-			return nil
-		})
+		return w.scheduleTask(t, run)
 	}
 	if w == nil || w.queue == nil || w.closed.Load() {
 		t.failIfPending(ErrWorldClosed)
@@ -266,10 +284,7 @@ func (w *World) DoAfter(delay time.Duration, f func(ctx *Context)) *Task {
 		defer timer.Stop()
 		select {
 		case <-timer.C:
-			w.scheduleTask(t, func(ctx *Context) error {
-				f(ctx)
-				return nil
-			})
+			w.scheduleTask(t, run)
 		case <-t.Done():
 		case <-w.closeStarted:
 			t.failIfPending(ErrWorldClosed)
@@ -288,13 +303,9 @@ func (w *World) DoAfter(delay time.Duration, f func(ctx *Context)) *Task {
 // owner itself (any scheduled callback or Handler event) deadlocks.
 func Call[T any](ctx context.Context, w *World, f func(ctx *Context) (T, error)) (T, error) {
 	var zero T
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	select {
-	case <-ctx.Done():
-		return zero, ctx.Err()
-	default:
+	ctx, err := callContext(ctx)
+	if err != nil {
+		return zero, err
 	}
 	var result T
 	task := w.scheduleTask(newTask(), func(wctx *Context) error {
