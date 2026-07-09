@@ -2,11 +2,10 @@ package world
 
 import "time"
 
-// Do schedules f to run with the EntityHandle's entity on its current world
-// owner. Do returns immediately; if the entity is not currently in a world, the
-// task waits until it enters one or the entity closes. The entity value passed
-// to f is only valid for the duration of f. If the entity is already bound to a
-// synchronous World, f runs before Do returns.
+// Do schedules f to run with the entity on its current world owner and
+// returns immediately. If the entity is in no world yet, the task waits until
+// it enters one or the handle closes. The entity passed to f is only valid
+// inside f. On a synchronous World, f runs before Do returns.
 func (e *EntityHandle) Do(f func(ctx *Context, e Entity)) *Task {
 	return e.schedule(func(ctx *Context, e Entity) error {
 		f(ctx, e)
@@ -14,7 +13,8 @@ func (e *EntityHandle) Do(f func(ctx *Context, e Entity)) *Task {
 	})
 }
 
-// DoAfter schedules f to run with the EntityHandle's entity after delay.
+// DoAfter schedules f to run with the entity after delay, following the
+// entity if it changes worlds in the meantime.
 func (e *EntityHandle) DoAfter(delay time.Duration, f func(ctx *Context, e Entity)) *Task {
 	return e.scheduleAfter(delay, func(ctx *Context, e Entity) error {
 		f(ctx, e)
@@ -22,10 +22,10 @@ func (e *EntityHandle) DoAfter(delay time.Duration, f func(ctx *Context, e Entit
 	})
 }
 
-// schedule runs f on the entity's current world owner via a goroutine that
-// waits for the entity to be world-bound and follows it across world changes.
-// It deliberately does not fast-path onto the current world's queue — that
-// commits to one world and would fail instead of follow the entity on migration.
+// schedule runs f on the entity's current world owner from a goroutine that
+// waits for the entity to be world-bound. It deliberately never enqueues onto
+// the current world directly: that would commit to one world and fail instead
+// of following the entity when it migrates.
 func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
 	task := newTask()
 	if e == nil {
@@ -55,9 +55,9 @@ func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
 	return task
 }
 
-// scheduleAfter is the entity counterpart to World.DoAfter. It runs its own
-// timer loop (not World.DoAfter) because the entity may change worlds during
-// the delay, so it re-acquires world signals each iteration.
+// scheduleAfter runs its own timer loop instead of reusing World.DoAfter:
+// the entity may change worlds during the delay, so the loop re-reads the
+// current world's signals every iteration.
 func (e *EntityHandle) scheduleAfter(delay time.Duration, f func(ctx *Context, e Entity) error) *Task {
 	if delay <= 0 {
 		return e.schedule(f)
@@ -102,8 +102,8 @@ func (e *EntityHandle) scheduleAfter(delay time.Duration, f func(ctx *Context, e
 	return task
 }
 
-// trackCloseSchedule marks immediate entity work created during the world's
-// close transaction so World.close drains it before shutting the queue down.
+// trackCloseSchedule registers entity work created during the world's close
+// transaction, so World.close drains it before shutting the queue down.
 func (e *EntityHandle) trackCloseSchedule(task *Task) *World {
 	e.cond.L.Lock()
 	defer e.cond.L.Unlock()
@@ -127,7 +127,8 @@ func (e *EntityHandle) trackCloseSchedule(task *Task) *World {
 	}
 }
 
-// currentWorldSignals returns the close and world-change channels under lock.
+// currentWorldSignals returns the current world's close channel and the
+// handle's world-change channel.
 func (e *EntityHandle) currentWorldSignals() (<-chan struct{}, <-chan struct{}) {
 	e.cond.L.Lock()
 	defer e.cond.L.Unlock()
@@ -152,9 +153,9 @@ func (e *EntityHandle) currentWorldClosing() bool {
 	return cancelled(closeStarted)
 }
 
-// runScheduled executes the scheduled entity callback via execWorld, using
-// the same completion model as scheduledTransaction: run -> drain deferred ->
-// finish task.
+// runScheduled executes the scheduled entity callback via execWorld with the
+// same completion model as scheduledTransaction: run, drain deferred work,
+// finish the task.
 func (e *EntityHandle) runScheduled(task *Task, f func(ctx *Context, e Entity) error, allowedCloseWorld *World) {
 	run := e.execWorld(func(ctx *Context, ent Entity) {
 		if !task.begin() {

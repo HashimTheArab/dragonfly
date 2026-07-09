@@ -372,11 +372,10 @@ func (ctx *Context) deferTask(f func(ctx *Context) error) *Task {
 	return task
 }
 
-// World returns the Context's World. It panics if the callback has completed.
-//
-// The returned *World is the off-owner handle: its blocking Save and Close must
-// not be called from within the callback (they deadlock on this owner). Do
-// world operations through the Context, not through World().
+// World returns the Context's World. It panics once the callback has
+// completed. Treat the result as the off-owner handle: blocking calls like
+// Save and Close deadlock from inside the callback, so do world operations
+// through the Context instead.
 func (ctx *Context) World() *World {
 	if ctx.closed {
 		panic("world.Context: use of transaction after transaction finishes is not permitted")

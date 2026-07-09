@@ -11,26 +11,25 @@ import (
 )
 
 var (
-	// ErrWorldClosed is returned by scheduled tasks that could not run because
-	// the target world is closed or closing.
+	// ErrWorldClosed means the task's world closed before the task could run.
 	ErrWorldClosed = errors.New("world: world closed")
-	// ErrEntityClosed is returned by scheduled entity tasks when the entity is
-	// closed before the task can run.
+	// ErrEntityClosed means the entity closed before the task could run.
 	ErrEntityClosed = errors.New("world: entity closed")
-	// ErrTaskCancelled is returned by tasks cancelled before they started.
+	// ErrTaskCancelled means the task was cancelled before it started.
 	ErrTaskCancelled = errors.New("world: scheduled task cancelled")
-	// ErrTaskPanicked wraps a panic recovered from a scheduled callback.
+	// ErrTaskPanicked means the task's callback panicked; see PanicError.
 	ErrTaskPanicked = errors.New("world: scheduled task panicked")
-	// ErrEntityType is returned by typed entity refs when the entity no longer
-	// has the expected dynamic type when the scheduled task runs.
+	// ErrEntityType means the entity no longer had the type expected by a
+	// typed EntityRef when the task ran.
 	ErrEntityType = errors.New("world: unexpected entity type")
 )
 
-// PanicError wraps a recovered panic value, preserving it for re-panicking
-// with the original value while supporting errors.Is(err, ErrTaskPanicked).
+// PanicError is the Task error for a callback that panicked. It matches
+// errors.Is(err, ErrTaskPanicked) and keeps the original panic value and stack.
 type PanicError struct {
+	// Value is the recovered panic value.
 	Value any
-	// Stack is the stack of the panicking goroutine, captured at recovery.
+	// Stack is the stack of the panicking goroutine.
 	Stack []byte
 }
 
@@ -77,10 +76,9 @@ const (
 	taskCancelled
 )
 
-// Task is a handle to work scheduled onto a world or entity owner. The default
-// use of a Task is fire-and-forget; Done, Err and Wait exist for tests,
-// shutdown paths and other code that is known not to be running on the same
-// owner context.
+// Task tracks work scheduled onto a world or entity owner. Tasks are usually
+// fire-and-forget: Done, Err and Wait are for code running off the owner,
+// such as tests and shutdown paths.
 type Task struct {
 	done  chan struct{}
 	state atomic.Int32
@@ -97,8 +95,7 @@ func newTask() *Task {
 	return &Task{done: make(chan struct{})}
 }
 
-// NewFinishedTask returns a Task that is already completed with the given
-// error.
+// NewFinishedTask returns a Task that already completed with err.
 func NewFinishedTask(err error) *Task {
 	t := newTask()
 	t.failIfPending(err)
@@ -112,8 +109,8 @@ var closedDone = func() <-chan struct{} {
 	return c
 }()
 
-// Done returns a channel that is closed when the task has finished, failed, or
-// been cancelled.
+// Done returns a channel that closes once the task has run, failed or been
+// cancelled.
 func (t *Task) Done() <-chan struct{} {
 	if t == nil {
 		return closedDone
@@ -121,8 +118,8 @@ func (t *Task) Done() <-chan struct{} {
 	return t.done
 }
 
-// Err returns the task error once Done is closed. It returns nil if the task
-// completed successfully or has not completed yet.
+// Err returns the task's error, or nil while the task is still pending or
+// after it succeeded.
 func (t *Task) Err() error {
 	if t == nil {
 		return ErrTaskCancelled
@@ -137,10 +134,9 @@ func (t *Task) Err() error {
 	}
 }
 
-// Wait waits for the task to finish or for ctx to be cancelled. Wait should
-// not be called from a callback that is already running on the same world or
-// entity owner; doing so would recreate the blocking pattern Do is meant
-// to avoid.
+// Wait blocks until the task finishes or ctx is cancelled. Never call it from
+// a callback running on the same owner: that blocks the owner on itself, the
+// deadlock Do exists to avoid.
 func (t *Task) Wait(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -156,9 +152,8 @@ func (t *Task) Wait(ctx context.Context) error {
 	}
 }
 
-// OnDone spawns a goroutine that calls f with the task's error once it
-// completes. If the task is nil, f is called immediately with
-// ErrTaskCancelled.
+// OnDone calls f with the task's error on a fresh goroutine once the task
+// completes. For a nil task, f runs immediately with ErrTaskCancelled.
 func (t *Task) OnDone(f func(err error)) {
 	if t == nil {
 		f(ErrTaskCancelled)
@@ -170,8 +165,8 @@ func (t *Task) OnDone(f func(err error)) {
 	}()
 }
 
-// Cancel attempts to cancel the task before it starts. It returns true if the
-// task was still pending and will not run.
+// Cancel stops a task that has not started yet, reporting whether it did:
+// true means the task will never run.
 func (t *Task) Cancel() bool {
 	if t == nil || !t.state.CompareAndSwap(taskPending, taskCancelled) {
 		return false
@@ -182,14 +177,13 @@ func (t *Task) Cancel() bool {
 	return true
 }
 
-// begin transitions the task from pending to running. Returns false if the
-// task was already started or cancelled.
+// begin moves the task from pending to running, reporting whether it did.
 func (t *Task) begin() bool {
 	return t != nil && t.state.CompareAndSwap(taskPending, taskRunning)
 }
 
-// failIfPending transitions the task from pending to done with the given
-// error. Returns false if the task was no longer pending.
+// failIfPending completes a still-pending task with err, reporting whether it
+// did.
 func (t *Task) failIfPending(err error) bool {
 	if t == nil || !t.state.CompareAndSwap(taskPending, taskRunning) {
 		return false
@@ -242,12 +236,10 @@ func (t *Task) runCancel() {
 	}
 }
 
-// Do schedules f to run on the world's owner context. Do does not wait for f
-// to run and is safe to use from goroutines outside the world owner. Scheduled
-// work runs FIFO with other world transactions once queued. If the owner queue
-// is saturated, Do still returns without blocking the caller and queues the
-// task from a helper goroutine. On a synchronous World, f runs before Do
-// returns.
+// Do schedules f to run on the world owner and returns immediately; it is
+// safe to call from anywhere, including owner callbacks. Work runs in FIFO
+// order once queued, though a full queue can delay enqueueing. On a
+// synchronous World, f runs before Do returns.
 func (w *World) Do(f func(ctx *Context)) *Task {
 	return w.scheduleTask(newTask(), func(ctx *Context) error {
 		f(ctx)
@@ -255,8 +247,8 @@ func (w *World) Do(f func(ctx *Context)) *Task {
 	})
 }
 
-// DoAfter schedules f to run on the world's owner context after delay.
-// If the task is cancelled before delay elapses, f is not queued.
+// DoAfter schedules f to run on the world owner after delay. Cancelling the
+// task before delay elapses stops f from being queued at all.
 func (w *World) DoAfter(delay time.Duration, f func(ctx *Context)) *Task {
 	t := newTask()
 	if delay <= 0 {
@@ -290,10 +282,10 @@ func (w *World) DoAfter(delay time.Duration, f func(ctx *Context)) *Task {
 	return t
 }
 
-// Call schedules f on w's owner and waits for its typed result. It is for
-// off-owner code (tests, startup, background goroutines); if you already have a
-// *world.Context, use it directly. Never call it from the owner goroutine (a
-// scheduled callback or Handler event) — it deadlocks waiting on that owner.
+// Call runs f on w's owner and waits for its typed result. It is for
+// off-owner code such as tests, startup and background goroutines; if you
+// already have a *world.Context, just use it directly. Calling it from the
+// owner itself (any scheduled callback or Handler event) deadlocks.
 func Call[T any](ctx context.Context, w *World, f func(ctx *Context) (T, error)) (T, error) {
 	var zero T
 	if ctx == nil {
@@ -313,15 +305,14 @@ func Call[T any](ctx context.Context, w *World, f func(ctx *Context) (T, error))
 	return awaitTask(ctx, task, &result)
 }
 
-// CallEntity schedules f on the EntityHandle's current world owner and waits
-// for its typed result. It is shorthand for CallRef with Entity as the type.
-// Like Call, it must not be used from the owner goroutine (see Call).
+// CallEntity runs f with the EntityHandle's entity on its current world owner
+// and waits for the typed result. Off-owner code only, like Call.
 func CallEntity[R any](ctx context.Context, h *EntityHandle, f func(ctx *Context, e Entity) (R, error)) (R, error) {
 	return CallRef(ctx, NewEntityRef[Entity](h), f)
 }
 
-// scheduleTask enqueues a scheduledTransaction on the world's owner queue.
-// If the queue is full, a helper goroutine is spawned to avoid blocking.
+// scheduleTask enqueues a scheduledTransaction on the world's owner queue,
+// handing a full queue off to a helper goroutine rather than blocking.
 func (w *World) scheduleTask(task *Task, f func(ctx *Context) error) *Task {
 	if task == nil {
 		task = newTask()
@@ -359,8 +350,8 @@ func (w *World) scheduleTask(task *Task, f func(ctx *Context) error) *Task {
 	return task
 }
 
-// queueScheduled is a helper goroutine that retries enqueuing a transaction
-// when the world queue was full at the time of scheduling.
+// queueScheduled retries enqueuing st once the queue, full at schedule time,
+// has room, failing the task if the world closes first.
 func (w *World) queueScheduled(st scheduledTransaction) {
 	defer w.scheduling.Done()
 	if w.closed.Load() {
@@ -377,9 +368,9 @@ func (w *World) queueScheduled(st scheduledTransaction) {
 	}
 }
 
-// scheduledTransaction is a task-aware transaction queued via Do, DoAfter,
-// or Context.Defer. It creates its own Context, runs the callback with panic
-// recovery, drains deferred work, then finishes the task.
+// scheduledTransaction is a queued task from Do, DoAfter or Context.Defer: it
+// runs the callback with panic recovery, drains deferred work and finishes the
+// task.
 type scheduledTransaction struct {
 	task *Task
 	f    func(ctx *Context) error

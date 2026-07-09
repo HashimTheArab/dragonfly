@@ -944,11 +944,10 @@ func (p *Player) Respawn() *world.EntityHandle {
 	return p.handle
 }
 
-// respawn heals the player and moves it to its spawn position in the world
-// returned by spawnLocation. f, if non-nil, runs with the player once it is
-// added to a world again: the respawn destination normally, or the world it
-// died in if the destination closed first. This guarantees a quit callback
-// passed by close always completes the player's teardown.
+// respawn heals the player and moves it to its spawn position. f, if
+// non-nil, runs with the player once it is back in a world — normally the
+// respawn destination, otherwise the world it died in — so a quit callback
+// from close always completes the player's teardown.
 func (p *Player) respawn(f func(p *Player)) {
 	if !p.Dead() || p.session() == session.Nop {
 		return
@@ -982,9 +981,8 @@ func (p *Player) respawn(f func(p *Player)) {
 		}
 	})
 	if errors.Is(task.Err(), world.ErrWorldClosed) {
-		// The destination rejected the task synchronously. Restore the player
-		// through the still-active source context so Close/Disconnect completes
-		// before returning and synchronous worlds do not need a queued fallback.
+		// The destination refused synchronously: re-add through the still-open
+		// source context. This also keeps synchronous worlds fully inline.
 		np := p.tx.AddEntity(handle).(*Player)
 		if f != nil {
 			f(np)
@@ -994,9 +992,8 @@ func (p *Player) respawn(f func(p *Player)) {
 		return
 	}
 	task.OnDone(func(err error) {
-		// Only on ErrWorldClosed was the entity never re-added (destination
-		// world closed). A recovered callback panic is left alone: the entity
-		// is live and closing it would panic.
+		// Only ErrWorldClosed means the entity was never re-added. A callback
+		// panic is left alone: the entity is live.
 		if !errors.Is(err, world.ErrWorldClosed) {
 			return
 		}

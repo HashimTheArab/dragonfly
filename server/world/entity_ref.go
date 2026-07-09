@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// EntityRef is a typed stable reference to an EntityHandle. The entity value T
-// is only exposed inside scheduled owner callbacks, where it is safe to use.
+// EntityRef is a stable, typed reference to an entity. The entity value T is
+// only handed to scheduled owner callbacks, where it is safe to use.
 type EntityRef[T Entity] struct {
 	h *EntityHandle
 }
@@ -18,9 +18,9 @@ func NewEntityRef[T Entity](h *EntityHandle) EntityRef[T] { return EntityRef[T]{
 // Handle returns the underlying stable entity handle.
 func (r EntityRef[T]) Handle() *EntityHandle { return r.h }
 
-// Do schedules f on the referenced entity's current owner. If the entity is
-// not currently in a world, the task waits until it enters one or the handle
-// closes. Closing the handle before the task runs records ErrEntityClosed.
+// Do schedules f on the entity's current world owner, like EntityHandle.Do,
+// but hands f the entity as T. If the entity is no longer a T when the task
+// runs, the task fails with ErrEntityType.
 func (r EntityRef[T]) Do(f func(ctx *Context, e T)) *Task {
 	if r.h == nil {
 		return NewFinishedTask(ErrEntityClosed)
@@ -35,7 +35,7 @@ func (r EntityRef[T]) Do(f func(ctx *Context, e T)) *Task {
 	})
 }
 
-// DoAfter schedules f on the referenced entity's owner after delay.
+// DoAfter schedules f on the entity's world owner after delay, typed like Do.
 func (r EntityRef[T]) DoAfter(delay time.Duration, f func(ctx *Context, e T)) *Task {
 	if r.h == nil {
 		return NewFinishedTask(ErrEntityClosed)
@@ -50,9 +50,8 @@ func (r EntityRef[T]) DoAfter(delay time.Duration, f func(ctx *Context, e T)) *T
 	})
 }
 
-// CallRef schedules f on the ref's current world owner and waits for its typed
-// result. For off-owner code only; if you already have a *world.Context, use it
-// directly. Like Call, never call it from the owner goroutine (see Call).
+// CallRef runs f with the ref's entity on its current world owner and waits
+// for the typed result. Off-owner code only, like Call.
 func CallRef[R any, E Entity](ctx context.Context, ref EntityRef[E], f func(ctx *Context, e E) (R, error)) (R, error) {
 	var zero R
 	if ctx == nil {
@@ -79,7 +78,7 @@ func CallRef[R any, E Entity](ctx context.Context, ref EntityRef[E], f func(ctx 
 	return awaitTask(ctx, task, &result)
 }
 
-// assertEntity asserts that e is of type T, returning ErrEntityType if not.
+// assertEntity converts e to T, returning ErrEntityType if it no longer is one.
 func assertEntity[T Entity](e Entity) (T, error) {
 	v, ok := e.(T)
 	if !ok {
