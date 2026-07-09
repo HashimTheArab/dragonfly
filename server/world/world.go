@@ -146,7 +146,7 @@ func (w *World) exec(f execFunc) <-chan struct{} {
 	return c
 }
 
-func (w *World) weakExec(valid func() bool, cond *sync.Cond, f execFunc) <-chan bool {
+func (w *World) weakExec(valid func() bool, cond *sync.Cond, f execFunc, allowClosed bool) <-chan bool {
 	c := make(chan bool, 1)
 	if w.conf.Synchronous {
 		run := valid == nil || valid()
@@ -161,6 +161,12 @@ func (w *World) weakExec(valid func() bool, cond *sync.Cond, f execFunc) <-chan 
 			cond.L.Lock()
 		}
 		c <- run
+		return c
+	}
+	w.scheduleMu.Lock()
+	defer w.scheduleMu.Unlock()
+	if w.closed.Load() && !w.closeAcceptingEntityTasks.Load() && !allowClosed {
+		c <- false
 		return c
 	}
 	w.queue <- weakTransaction{c: c, f: f, valid: valid, cond: cond}
@@ -741,6 +747,7 @@ func (w *World) addEntity(tx *Context, handle *EntityHandle) Entity {
 		showEntity(e, v)
 	}
 	w.Handler().HandleEntitySpawn(tx.Event(), e)
+	handle.markWorldReady(w)
 	return e
 }
 
@@ -1254,7 +1261,8 @@ func (w *World) loadChunk(pos ChunkPos) (*Column, error) {
 		w.chunks[pos] = col
 		for _, e := range col.Entities {
 			w.entities[e] = pos
-			e.w = w
+			e.setAndUnlockWorld(w)
+			e.markWorldReady(w)
 		}
 		return col, nil
 	case errors.Is(err, leveldb.ErrNotFound):

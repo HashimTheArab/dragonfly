@@ -241,7 +241,8 @@ func (t *Task) runCancel() {
 // to run and is safe to use from goroutines outside the world owner. Scheduled
 // work runs FIFO with other world transactions once queued. If the owner queue
 // is saturated, Do still returns without blocking the caller and queues the
-// task from a helper goroutine.
+// task from a helper goroutine. On a synchronous World, f runs before Do
+// returns.
 func (w *World) Do(f func(ctx *Context)) *Task {
 	return w.scheduleTask(newTask(), func(ctx *Context) error {
 		f(ctx)

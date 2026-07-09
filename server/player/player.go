@@ -970,11 +970,9 @@ func (p *Player) respawn(f func(p *Player)) {
 	p.Handler().HandleRespawn(p, &pos, &w)
 
 	sess := p.session()
-	handle := p.handle
 	src := p.tx.World()
-	removed := make(chan struct{})
+	handle := p.tx.RemoveEntity(p)
 	task := w.Do(func(tx *world.Tx) {
-		<-removed
 		np := tx.AddEntity(handle).(*Player)
 		np.Teleport(pos)
 		np.session().SendRespawn(pos, p)
@@ -984,18 +982,17 @@ func (p *Player) respawn(f func(p *Player)) {
 		}
 	})
 	if errors.Is(task.Err(), world.ErrWorldClosed) {
-		// The destination world had already closed. The player is still in its
-		// current world, so quit it here for a full teardown (session close,
-		// data save, server cleanup).
+		// The destination rejected the task synchronously. Restore the player
+		// through the still-active source context so Close/Disconnect completes
+		// before returning and synchronous worlds do not need a queued fallback.
+		np := p.tx.AddEntity(handle).(*Player)
 		if f != nil {
-			f(p)
+			f(np)
 			return
 		}
-		p.quit("respawn failed")
+		np.quit("respawn failed")
 		return
 	}
-	handle = p.tx.RemoveEntity(p)
-	close(removed)
 	task.OnDone(func(err error) {
 		// Only on ErrWorldClosed was the entity never re-added (destination
 		// world closed). A recovered callback panic is left alone: the entity

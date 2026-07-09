@@ -5,7 +5,8 @@ import "time"
 // Do schedules f to run with the EntityHandle's entity on its current world
 // owner. Do returns immediately; if the entity is not currently in a world, the
 // task waits until it enters one or the entity closes. The entity value passed
-// to f is only valid for the duration of f.
+// to f is only valid for the duration of f. If the entity is already bound to a
+// synchronous World, f runs before Do returns.
 func (e *EntityHandle) Do(f func(ctx *Context, e Entity)) *Task {
 	return e.schedule(func(ctx *Context, e Entity) error {
 		f(ctx, e)
@@ -40,12 +41,17 @@ func (e *EntityHandle) schedule(f func(ctx *Context, e Entity) error) *Task {
 	if !task.pending() {
 		return task
 	}
-	go func() {
+	run := func() {
 		if w != nil {
 			defer w.scheduling.Done()
 		}
-		e.runScheduled(task, f)
-	}()
+		e.runScheduled(task, f, w)
+	}
+	if e.currentWorldSynchronous() {
+		run()
+	} else {
+		go run()
+	}
 	return task
 }
 
@@ -77,7 +83,7 @@ func (e *EntityHandle) scheduleAfter(delay time.Duration, f func(ctx *Context, e
 					task.failIfPending(ErrWorldClosed)
 					return
 				}
-				e.runScheduled(task, f)
+				e.runScheduled(task, f, nil)
 				return
 			case <-task.Done():
 				return
@@ -131,6 +137,14 @@ func (e *EntityHandle) currentWorldSignals() (<-chan struct{}, <-chan struct{}) 
 	return e.w.closeStarted, e.worldChanged
 }
 
+// currentWorldSynchronous reports whether the entity is bound to a
+// synchronous World.
+func (e *EntityHandle) currentWorldSynchronous() bool {
+	e.cond.L.Lock()
+	defer e.cond.L.Unlock()
+	return e.w != nil && e.w != closeWorld && e.worldReady && e.w.conf.Synchronous
+}
+
 // currentWorldCloseStarted returns the closeStarted channel of the entity's
 // current world, or nil if the entity is not in a world.
 func (e *EntityHandle) currentWorldCloseStarted() <-chan struct{} {
@@ -161,7 +175,7 @@ func (e *EntityHandle) currentWorldClosing() bool {
 // runScheduled executes the scheduled entity callback via execWorld, using
 // the same completion model as scheduledTransaction: run -> drain deferred ->
 // finish task.
-func (e *EntityHandle) runScheduled(task *Task, f func(ctx *Context, e Entity) error) {
+func (e *EntityHandle) runScheduled(task *Task, f func(ctx *Context, e Entity) error, allowedCloseWorld *World) {
 	run := e.execWorld(func(ctx *Context, ent Entity) {
 		if !task.begin() {
 			return
@@ -169,8 +183,12 @@ func (e *EntityHandle) runScheduled(task *Task, f func(ctx *Context, e Entity) e
 		err := executeWithRecovery(func() error { return f(ctx, ent) })
 		ctx.runDeferred()
 		task.finish(err)
-	}, false, task.Done())
+	}, false, task.Done(), allowedCloseWorld)
 	if !run || task.pending() {
-		task.failIfPending(ErrEntityClosed)
+		err := ErrEntityClosed
+		if e.currentWorldClosing() {
+			err = ErrWorldClosed
+		}
+		task.failIfPending(err)
 	}
 }

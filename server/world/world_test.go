@@ -2,6 +2,7 @@ package world
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -68,6 +69,68 @@ func TestSynchronousEntityDoCanRemoveEntity(t *testing.T) {
 	defer cancel()
 	if err := task.Wait(ctx); err != nil {
 		t.Fatalf("entity Do self-removal did not complete: %v", err)
+	}
+}
+
+func TestSynchronousEntityDoRunsInline(t *testing.T) {
+	w := Config{Synchronous: true}.New()
+	defer w.Close()
+
+	h := EntitySpawnOpts{Position: mgl64.Vec3{0, 4, 0}}.New(testEntityType{}, testEntityConfig{})
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	returned := make(chan *Task, 1)
+	go func() {
+		returned <- h.Do(func(*Context, Entity) {
+			close(started)
+			<-release
+		})
+	}()
+	<-started
+	select {
+	case <-returned:
+		t.Fatal("entity Do returned before its callback completed")
+	default:
+	}
+	close(release)
+	if err := (<-returned).Wait(context.Background()); err != nil {
+		t.Fatalf("entity Do failed: %v", err)
+	}
+}
+
+func TestSynchronousEntityDoWaitsForAddEntityToFinish(t *testing.T) {
+	w := Config{Synchronous: true}.New()
+	defer w.Close()
+
+	state := &blockingOpenState{
+		firstOpen:  make(chan struct{}),
+		secondOpen: make(chan struct{}),
+		release:    make(chan struct{}),
+	}
+	h := EntitySpawnOpts{}.New(blockingOpenType{}, blockingOpenConfig{state: state})
+	task := h.Do(func(*Context, Entity) {})
+	added := make(chan struct{})
+	go func() {
+		w.Do(func(tx *Context) { tx.AddEntity(h) })
+		close(added)
+	}()
+	<-state.firstOpen
+
+	premature := false
+	select {
+	case <-state.secondOpen:
+		premature = true
+	case <-time.After(time.Millisecond * 50):
+	}
+	close(state.release)
+	<-added
+	if err := task.Wait(context.Background()); err != nil {
+		t.Fatalf("entity Do failed: %v", err)
+	}
+	if premature {
+		t.Fatal("entity callback opened before AddEntity completed")
 	}
 }
 
@@ -163,6 +226,41 @@ func (e *testEntity) Tick(*Tx, int64) {
 type testTickerBlock struct {
 	ticks int
 }
+
+type blockingOpenState struct {
+	opens      atomic.Int32
+	firstOpen  chan struct{}
+	secondOpen chan struct{}
+	release    chan struct{}
+}
+
+type blockingOpenConfig struct {
+	state *blockingOpenState
+}
+
+func (c blockingOpenConfig) Apply(data *EntityData) { data.Data = c.state }
+
+type blockingOpenType struct{}
+
+func (blockingOpenType) Open(_ *Context, handle *EntityHandle, data *EntityData) Entity {
+	state := data.Data.(*blockingOpenState)
+	switch state.opens.Add(1) {
+	case 1:
+		close(state.firstOpen)
+		<-state.release
+	case 2:
+		close(state.secondOpen)
+	}
+	return &testEntity{handle: handle, data: data}
+}
+
+func (blockingOpenType) EncodeEntity() string { return "dragonfly:blocking_open" }
+
+func (blockingOpenType) BBox(Entity) cube.BBox { return cube.BBox{} }
+
+func (blockingOpenType) DecodeNBT(map[string]any, *EntityData) {}
+
+func (blockingOpenType) EncodeNBT(*EntityData) map[string]any { return nil }
 
 func (*testTickerBlock) EncodeBlock() (string, map[string]any) {
 	return "dragonfly:test_ticker", nil

@@ -498,7 +498,7 @@ func TestExecWorldReturnsTrueWhenCallbackClosesEntity(t *testing.T) {
 		ran = true
 		tx.RemoveEntity(e)
 		_ = h.Close()
-	}, false, nil)
+	}, false, nil, nil)
 	if !ran {
 		t.Fatal("execWorld callback did not run")
 	}
@@ -535,6 +535,31 @@ func TestEntityDoScheduledDuringWorldCloseRunsBeforeQueueShutdown(t *testing.T) 
 	}
 	if err := task.Wait(testContext(t)); err != nil {
 		t.Fatalf("close-time entity task failed: %v", err)
+	}
+}
+
+func TestEntityDoBlockedBeforeWorldCloseFailsPromptly(t *testing.T) {
+	w := New()
+	h := NewEntity(closeSchedulingEntityType{}, closeSchedulingEntityConfig{})
+	<-w.exec(func(tx *Context) { tx.AddEntity(h) })
+
+	h.cond.L.Lock()
+	h.weakTxActive = true
+	h.cond.L.Unlock()
+	task := h.Do(func(*Context, Entity) {
+		t.Error("entity task ran after world close")
+	})
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close world: %v", err)
+	}
+	h.cond.L.Lock()
+	h.weakTxActive = false
+	h.cond.Broadcast()
+	h.cond.L.Unlock()
+
+	if err := task.Wait(testContext(t)); !errors.Is(err, ErrWorldClosed) {
+		t.Fatalf("expected ErrWorldClosed, got %v", err)
 	}
 }
 
