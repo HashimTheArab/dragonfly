@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/df-mc/dragonfly/server/player/skin"
 	"github.com/df-mc/dragonfly/server/session"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
@@ -94,6 +95,47 @@ func TestRespawnClosedDestinationFallsBackBeforeReturning(t *testing.T) {
 	sess.CloseConnection()
 	if err := src.Close(); err != nil {
 		t.Fatalf("close source world: %v", err)
+	}
+}
+
+// TestOrphanedSessionCloseRunsStopHandler covers the respawn fallback for a
+// player whose destination and source worlds have both closed: the session is
+// closed with a nil transaction, which must still run the stop handler so the
+// server can balance its player accounting.
+func TestOrphanedSessionCloseRunsStopHandler(t *testing.T) {
+	conn := &testConn{}
+	stopped := make(chan *world.Tx, 1)
+	sess := session.Config{HandleStop: func(tx *world.Tx, _ session.Controllable) {
+		stopped <- tx
+	}}.New(conn)
+	w := world.Config{
+		Synchronous: true,
+		Entities:    world.EntityRegistryConfig{}.New([]world.EntityType{Type}),
+	}.New()
+	h := world.EntitySpawnOpts{}.New(Type, Config{Session: sess})
+	sess.SetHandle(h, skin.Skin{})
+
+	var p *Player
+	w.Do(func(tx *world.Context) {
+		p = tx.AddEntity(h).(*Player)
+		tx.RemoveEntity(p)
+	})
+	if err := w.Close(); err != nil {
+		t.Fatalf("close world: %v", err)
+	}
+
+	_ = h.Close()
+	sess.Disconnect("respawn failed")
+	sess.Close(nil, p)
+	sess.CloseConnection()
+
+	select {
+	case tx := <-stopped:
+		if tx != nil {
+			t.Fatal("expected nil transaction in stop handler for orphaned session close")
+		}
+	default:
+		t.Fatal("stop handler did not run for orphaned session close")
 	}
 }
 

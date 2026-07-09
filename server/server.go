@@ -537,8 +537,12 @@ func (srv *Server) handleSessionClose(tx *world.Tx, c session.Controllable) {
 		return
 	}
 
-	if err := srv.conf.PlayerProvider.Save(c.UUID(), c.(*player.Player).Data(), tx.World()); err != nil {
-		srv.conf.Log.Error("Save player data: " + err.Error())
+	if tx != nil {
+		if err := srv.conf.PlayerProvider.Save(c.UUID(), c.(*player.Player).Data(), tx.World()); err != nil {
+			srv.conf.Log.Error("Save player data: " + err.Error())
+		}
+	} else {
+		srv.conf.Log.Error("Save player data: player's worlds closed before teardown; data not saved", "uuid", c.UUID())
 	}
 	srv.pwg.Done()
 }

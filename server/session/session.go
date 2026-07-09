@@ -162,6 +162,9 @@ type Config struct {
 
 	JoinMessage, QuitMessage chat.Translation
 
+	// HandleStop is called once when the Session is closed. The transaction is
+	// nil if the Controllable could not be restored to any world, such as when
+	// both its current world and respawn destination closed during teardown.
 	HandleStop func(*world.Tx, Controllable)
 	// BlockRegistry overrides the registry used for network serialization. If nil, world.DefaultBlockRegistry is used.
 	BlockRegistry world.BlockRegistry
@@ -286,6 +289,9 @@ func (s *Session) Spawn(c Controllable, tx *world.Tx) {
 
 // Close closes the session, which in turn closes the controllable and the connection that the session
 // manages. Close ensures the method only runs code on the first call.
+// A nil transaction may be passed for a Controllable that is no longer in any
+// world; world-bound teardown (container close, chunk loader, entity removal)
+// is then skipped.
 func (s *Session) Close(tx *world.Tx, c Controllable) {
 	s.once.Do(func() {
 		s.close(tx, c)
@@ -295,8 +301,10 @@ func (s *Session) Close(tx *world.Tx, c Controllable) {
 // close closes the session, which in turn closes the controllable and the connection that the session
 // manages.
 func (s *Session) close(tx *world.Tx, c Controllable) {
-	c.MoveItemsToInventory()
-	s.closeCurrentContainer(tx, false)
+	if tx != nil {
+		c.MoveItemsToInventory()
+		s.closeCurrentContainer(tx, false)
+	}
 	if s.viewLayer != nil {
 		_ = s.viewLayer.Close()
 	}
@@ -308,7 +316,9 @@ func (s *Session) close(tx *world.Tx, c Controllable) {
 	_ = s.offHand.Close()
 	_ = s.armour.Close()
 
-	s.chunkLoader.Close(tx)
+	if tx != nil {
+		s.chunkLoader.Close(tx)
+	}
 
 	if !s.conf.QuitMessage.Zero() {
 		chat.Global.Writet(s.conf.QuitMessage, s.conn.IdentityData().DisplayName)
@@ -317,7 +327,9 @@ func (s *Session) close(tx *world.Tx, c Controllable) {
 
 	// Note: Be aware of where RemoveEntity is called. This must not be done too
 	// early.
-	tx.RemoveEntity(c)
+	if tx != nil {
+		tx.RemoveEntity(c)
+	}
 	_ = s.ent.Close()
 
 	// This should always be called last due to the timing of the removal of

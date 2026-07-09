@@ -1012,10 +1012,12 @@ func (p *Player) respawn(f func(p *Player)) {
 			if err == nil || errors.Is(err, world.ErrTaskPanicked) {
 				return
 			}
-			// The source world is gone too; the handle is orphaned. Close it
-			// and free the connection.
+			// The source world is gone too; the handle is orphaned. Close the
+			// session without a world so the stop handler still runs, then
+			// free the connection.
 			_ = handle.Close()
 			sess.Disconnect("respawn failed")
+			sess.Close(nil, p)
 			sess.CloseConnection()
 		})
 	})
