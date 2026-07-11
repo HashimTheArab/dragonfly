@@ -1,7 +1,6 @@
 package chunk
 
 import (
-	"maps"
 	"slices"
 	"sync"
 
@@ -138,10 +137,45 @@ func (chunk *Chunk) Clone() *Chunk {
 	if len(chunk.blockEntities) != 0 {
 		clone.blockEntities = make(map[cube.Pos]map[string]any, len(chunk.blockEntities))
 		for pos, data := range chunk.blockEntities {
-			clone.blockEntities[pos] = maps.Clone(data)
+			clone.blockEntities[pos] = cloneBlockEntityNBT(data)
 		}
 	}
 	return clone
+}
+
+func cloneBlockEntityNBT(data map[string]any) map[string]any {
+	clone := make(map[string]any, len(data))
+	for key, value := range data {
+		clone[key] = cloneBlockEntityNBTValue(value)
+	}
+	return clone
+}
+
+func cloneBlockEntityNBTValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		return cloneBlockEntityNBT(value)
+	case []any:
+		clone := make([]any, len(value))
+		for index, element := range value {
+			clone[index] = cloneBlockEntityNBTValue(element)
+		}
+		return clone
+	case []map[string]any:
+		clone := make([]map[string]any, len(value))
+		for index, element := range value {
+			clone[index] = cloneBlockEntityNBT(element)
+		}
+		return clone
+	case []byte:
+		return slices.Clone(value)
+	case []int32:
+		return slices.Clone(value)
+	case []int64:
+		return slices.Clone(value)
+	default:
+		return value
+	}
 }
 
 // Equals returns if the chunk passed is equal to the current one
