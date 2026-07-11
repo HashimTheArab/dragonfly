@@ -299,6 +299,9 @@ func decodePalettedStorage(buf *bytes.Buffer, e Encoding, pe paletteEncoding) (*
 			if err != nil {
 				return nil, err
 			}
+			if err := validatePackedPaletteIndices(data, size, p.Len()); err != nil {
+				return nil, err
+			}
 			// Some servers encode a single-value palette using non-zero bits per block. Canonicalise it to a 0-bit
 			// storage and skip allocating index words.
 			p.size = 0
@@ -315,7 +318,31 @@ func decodePalettedStorage(buf *bytes.Buffer, e Encoding, pe paletteEncoding) (*
 	if err != nil {
 		return nil, err
 	}
+	if err := validatePackedPaletteIndices(data, size, p.Len()); err != nil {
+		return nil, err
+	}
 	return newPalettedStorage(uint32s, p), nil
+}
+
+func validatePackedPaletteIndices(data []byte, size paletteSize, paletteLen int) error {
+	if size == 0 {
+		return nil
+	}
+	indicesPerWord := 32 / int(size)
+	mask := uint32(1<<size) - 1
+	remaining := 4096
+	for offset := 0; offset+4 <= len(data) && remaining > 0; offset += 4 {
+		word := binary.LittleEndian.Uint32(data[offset : offset+4])
+		count := min(indicesPerWord, remaining)
+		for index := 0; index < count; index++ {
+			paletteIndex := int((word >> (index * int(size))) & mask)
+			if paletteIndex >= paletteLen {
+				return fmt.Errorf("palette index %d exceeds palette length %d", paletteIndex, paletteLen)
+			}
+		}
+		remaining -= count
+	}
+	return nil
 }
 
 // peekPaletteCount peeks the amount of palette entries that follow in buf for this encoding and block size without

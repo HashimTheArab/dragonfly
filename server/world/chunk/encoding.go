@@ -142,6 +142,9 @@ func (diskEncoding) decodePalette(buf *bytes.Buffer, blockSize paletteSize, e pa
 			return nil, fmt.Errorf("error reading palette entry count: %w", err)
 		}
 	}
+	if err := validatePaletteCount(uint64(paletteCount), blockSize); err != nil {
+		return nil, err
+	}
 
 	var err error
 	palette := newPalette(blockSize, make([]uint32, paletteCount))
@@ -175,9 +178,12 @@ func (networkEncoding) decodePalette(buf *bytes.Buffer, blockSize paletteSize, _
 		if err := protocol.Varint32(buf, &paletteCount); err != nil {
 			return nil, fmt.Errorf("error reading palette entry count: %w", err)
 		}
-		if paletteCount <= 0 {
-			return nil, fmt.Errorf("invalid palette entry count %v", paletteCount)
-		}
+	}
+	if paletteCount <= 0 {
+		return nil, fmt.Errorf("invalid palette entry count %v", paletteCount)
+	}
+	if err := validatePaletteCount(uint64(paletteCount), blockSize); err != nil {
+		return nil, err
 	}
 
 	palette, temp := newPalette(blockSize, make([]uint32, paletteCount)), int32(0)
@@ -209,13 +215,15 @@ func (networkPersistentEncoding) encodePalette(buf *bytes.Buffer, p *Palette, pe
 func (networkPersistentEncoding) decodePalette(buf *bytes.Buffer, blockSize paletteSize, pe paletteEncoding) (*Palette, error) {
 	var paletteCount int32 = 1
 	if blockSize != 0 {
-		err := protocol.Varint32(buf, &paletteCount)
-		if err != nil {
-			panic(err)
+		if err := protocol.Varint32(buf, &paletteCount); err != nil {
+			return nil, fmt.Errorf("error reading palette entry count: %w", err)
 		}
-		if paletteCount <= 0 {
-			return nil, fmt.Errorf("invalid palette entry count %v", paletteCount)
-		}
+	}
+	if paletteCount <= 0 {
+		return nil, fmt.Errorf("invalid palette entry count %v", paletteCount)
+	}
+	if err := validatePaletteCount(uint64(paletteCount), blockSize); err != nil {
+		return nil, err
 	}
 
 	blocks := make([]blockEntry, paletteCount)
@@ -237,6 +245,9 @@ func (networkPersistentEncoding) decodePalette(buf *bytes.Buffer, blockSize pale
 		if p != 0x0a {
 			break
 		}
+		if err := validatePaletteCount(uint64(len(blocks)+1), blockSize); err != nil {
+			return nil, fmt.Errorf("invalid uncounted palette entry: %w", err)
+		}
 		block := blockEntry{}
 		if err := dec.Decode(&block); err != nil {
 			return nil, fmt.Errorf("error decoding block state: %w", err)
@@ -252,6 +263,14 @@ func (networkPersistentEncoding) decodePalette(buf *bytes.Buffer, blockSize pale
 	}
 
 	return palette, nil
+}
+
+func validatePaletteCount(count uint64, blockSize paletteSize) error {
+	capacity := uint64(1) << blockSize
+	if count > capacity {
+		return fmt.Errorf("palette entry count %d exceeds %d-entry capacity for %d bits per block", count, capacity, blockSize)
+	}
+	return nil
 }
 
 func upgradePalette(blocks []blockEntry, palette *Palette, br BlockRegistry) error {
