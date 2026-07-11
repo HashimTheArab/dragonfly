@@ -1,6 +1,7 @@
 package chunk
 
 import (
+	"maps"
 	"slices"
 	"sync"
 
@@ -116,6 +117,9 @@ func (chunk *Chunk) ClearBlockEntityDataInRange(min, max cube.Pos) {
 
 // Clone returns an independent copy of the Chunk.
 func (chunk *Chunk) Clone() *Chunk {
+	chunk.blockEntitiesMu.RLock()
+	defer chunk.blockEntitiesMu.RUnlock()
+
 	clone := &Chunk{
 		r:                    chunk.r,
 		br:                   chunk.br,
@@ -130,6 +134,12 @@ func (chunk *Chunk) Clone() *Chunk {
 	}
 	for i, biomes := range chunk.biomes {
 		clone.biomes[i] = biomes.Clone()
+	}
+	if len(chunk.blockEntities) != 0 {
+		clone.blockEntities = make(map[cube.Pos]map[string]any, len(chunk.blockEntities))
+		for pos, data := range chunk.blockEntities {
+			clone.blockEntities[pos] = maps.Clone(data)
+		}
 	}
 	return clone
 }

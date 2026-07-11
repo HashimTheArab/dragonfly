@@ -33,3 +33,21 @@ func TestChunkClearBlockEntityDataInRange(t *testing.T) {
 		t.Fatal("expected block entity data outside X/Z range to remain")
 	}
 }
+
+func TestChunkClonePreservesIndependentBlockEntityData(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	t.Parallel()
+
+	pos := cube.Pos{1, 64, 1}
+	ch := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	ch.SetBlockEntityData(pos, map[string]any{"id": "Chest"})
+
+	clone := ch.Clone()
+	if _, ok := clone.BlockEntityData(pos); !ok {
+		t.Fatal("expected clone to preserve block entity data")
+	}
+	clone.SetBlockEntityData(pos, nil)
+	if _, ok := ch.BlockEntityData(pos); !ok {
+		t.Fatal("expected clone block entity mutations not to affect the original")
+	}
+}
