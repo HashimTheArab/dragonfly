@@ -62,3 +62,20 @@ func TestDecodePalettedStorage_RejectsMissingPaletteEntry(t *testing.T) {
 		t.Fatalf("expected missing palette entry error, got %v", err)
 	}
 }
+
+func TestDecodePalettedStorage_RejectsMissingPaletteEntryGeneralPath(t *testing.T) {
+	buf := bytes.NewBuffer(nil)
+	buf.WriteByte(5) // Two bits per block using network runtime IDs.
+	if err := binary.Write(buf, binary.LittleEndian, uint32(3)); err != nil {
+		t.Fatalf("write first packed index: %v", err)
+	}
+	buf.Write(make([]byte, paletteSize(2).uint32s()*4-4))
+	_ = protocol.WriteVarint32(buf, 2)
+	_ = protocol.WriteVarint32(buf, 0)
+	_ = protocol.WriteVarint32(buf, 1)
+
+	_, err := decodePalettedStorage(buf, NetworkEncoding, BlockPaletteEncoding{Blocks: testBlockRegistry{}})
+	if err == nil || !strings.Contains(err.Error(), "palette index") {
+		t.Fatalf("expected missing palette entry error, got %v", err)
+	}
+}

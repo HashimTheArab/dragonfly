@@ -44,6 +44,8 @@ func TestChunkClonePreservesIndependentBlockEntityData(t *testing.T) {
 		"id":     "Chest",
 		"nested": map[string]any{"value": int32(1)},
 		"bytes":  []byte{1, 2},
+		"ints":   []int32{3, 4},
+		"longs":  []int64{5, 6},
 	})
 
 	clone := ch.Clone()
@@ -53,12 +55,20 @@ func TestChunkClonePreservesIndependentBlockEntityData(t *testing.T) {
 	cloneData, _ := clone.BlockEntityData(pos)
 	cloneData["nested"].(map[string]any)["value"] = int32(2)
 	cloneData["bytes"].([]byte)[0] = 9
+	cloneData["ints"].([]int32)[0] = 9
+	cloneData["longs"].([]int64)[0] = 9
 	originalData, _ := ch.BlockEntityData(pos)
 	if got := originalData["nested"].(map[string]any)["value"]; got != int32(1) {
 		t.Fatalf("nested original value = %v, want 1", got)
 	}
 	if got := originalData["bytes"].([]byte)[0]; got != 1 {
 		t.Fatalf("original byte = %d, want 1", got)
+	}
+	if got := originalData["ints"].([]int32)[0]; got != 3 {
+		t.Fatalf("original int = %d, want 3", got)
+	}
+	if got := originalData["longs"].([]int64)[0]; got != 5 {
+		t.Fatalf("original long = %d, want 5", got)
 	}
 	clone.SetBlockEntityData(pos, nil)
 	if _, ok := ch.BlockEntityData(pos); !ok {
