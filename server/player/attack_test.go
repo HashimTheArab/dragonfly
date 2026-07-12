@@ -15,12 +15,12 @@ import (
 )
 
 func TestAttackEntityDamagesHeldItemWhenAttackingNonLivingDamageableEntity(t *testing.T) {
-	w := world.Config{Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type, testDamageableEntityType{}})}.New()
+	w := world.Config{Synchronous: true, Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type, testDamageableEntityType{}})}.New()
 	defer w.Close()
 
 	var attacked bool
 	var before, after int
-	<-w.Do(func(tx *world.Tx) {
+	w.Do(func(tx *world.Tx) {
 		p := tx.AddEntity(world.EntitySpawnOpts{Position: mgl64.Vec3{0, 1, 0}}.New(Type, Config{Name: "player"})).(*Player)
 		sword := item.NewStack(item.Sword{Tier: item.ToolTierWood}, 1)
 		p.SetHeldItems(sword, item.Stack{})
@@ -31,7 +31,7 @@ func TestAttackEntityDamagesHeldItemWhenAttackingNonLivingDamageableEntity(t *te
 
 		held, _ := p.HeldItems()
 		after = held.Durability()
-	}).Done()
+	})
 
 	if !attacked {
 		t.Fatal("expected player to attack End crystal")
@@ -42,11 +42,11 @@ func TestAttackEntityDamagesHeldItemWhenAttackingNonLivingDamageableEntity(t *te
 }
 
 func TestTotemEffectsMatchJavaEdition(t *testing.T) {
-	w := world.Config{Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
+	w := world.Config{Synchronous: true, Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
 	defer w.Close()
 
 	var testErr error
-	<-w.Do(func(tx *world.Tx) {
+	w.Do(func(tx *world.Tx) {
 		p := tx.AddEntity(world.EntitySpawnOpts{Position: mgl64.Vec3{0, 1, 0}}.New(Type, Config{Name: "player", Health: 10, MaxHealth: 20})).(*Player)
 		p.AddEffect(effect.New(effect.Speed, 1, time.Minute))
 
@@ -76,18 +76,18 @@ func TestTotemEffectsMatchJavaEdition(t *testing.T) {
 			testErr = fmt.Errorf("absorption after totem = %v, want 8", got)
 			return
 		}
-	}).Done()
+	})
 	if testErr != nil {
 		t.Fatal(testErr)
 	}
 }
 
 func TestRespawnAnchorExplosionConsumesOffhandTotem(t *testing.T) {
-	w := world.Config{Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
+	w := world.Config{Synchronous: true, Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
 	defer w.Close()
 
 	var testErr error
-	<-w.Do(func(tx *world.Tx) {
+	w.Do(func(tx *world.Tx) {
 		anchorPos := cube.Pos{0, 1, 0}
 		tx.SetBlock(anchorPos, block.RespawnAnchor{Charges: 1}, nil)
 
@@ -105,7 +105,7 @@ func TestRespawnAnchorExplosionConsumesOffhandTotem(t *testing.T) {
 			testErr = err
 			return
 		}
-	}).Done()
+	})
 	if testErr != nil {
 		t.Fatal(testErr)
 	}
@@ -125,16 +125,16 @@ func TestExplosionDamageScalesWithJavaDifficulty(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := world.Config{Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
+			w := world.Config{Synchronous: true, Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
 			defer w.Close()
 			w.SetDifficulty(tt.difficulty)
 
 			var gotHealth float64
-			<-w.Do(func(tx *world.Tx) {
+			w.Do(func(tx *world.Tx) {
 				p := tx.AddEntity(world.EntitySpawnOpts{Position: mgl64.Vec3{1, 1, 0}}.New(Type, Config{Name: "player", Health: 200, MaxHealth: 200})).(*Player)
 				p.Explode(mgl64.Vec3{0, 1, 0}, 1, block.ExplosionConfig{Size: 5})
 				gotHealth = p.Health()
-			}).Done()
+			})
 
 			if gotHealth != tt.wantHealth {
 				t.Fatalf("health after power 5 full-impact explosion on %s = %v, want %v", tt.name, gotHealth, tt.wantHealth)
@@ -144,16 +144,16 @@ func TestExplosionDamageScalesWithJavaDifficulty(t *testing.T) {
 }
 
 func TestExplosionDamageKeepsJavaFractionalDamage(t *testing.T) {
-	w := world.Config{Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
+	w := world.Config{Synchronous: true, Entities: world.EntityRegistryConfig{}.New([]world.EntityType{Type})}.New()
 	defer w.Close()
 	w.SetDifficulty(world.DifficultyNormal)
 
 	var gotHealth float64
-	<-w.Do(func(tx *world.Tx) {
+	w.Do(func(tx *world.Tx) {
 		p := tx.AddEntity(world.EntitySpawnOpts{Position: mgl64.Vec3{1, 1, 0}}.New(Type, Config{Name: "player", Health: 200, MaxHealth: 200})).(*Player)
 		p.Explode(mgl64.Vec3{0, 1, 0}, 0.5, block.ExplosionConfig{Size: 5})
 		gotHealth = p.Health()
-	}).Done()
+	})
 
 	if gotHealth != 172.75 {
 		t.Fatalf("health after power 5 half-impact explosion = %v, want 172.75", gotHealth)

@@ -72,11 +72,11 @@ func TestWallHangingSignFacingMatchesClickedFace(t *testing.T) {
 }
 
 func TestWallMountedHangingSignSurvivesWithDirectWallSupport(t *testing.T) {
-	w := world.Config{DisableLighting: true}.New()
+	w := world.Config{Synchronous: true, DisableLighting: true}.New()
 	defer w.Close()
 
 	var testErr error
-	<-w.Do(func(tx *world.Tx) {
+	w.Do(func(tx *world.Tx) {
 		signPos := cube.Pos{1, 1, 0}
 		supportPos := signPos.Side(cube.FaceWest)
 		sign := HangingSign{Wood: OakWood(), Attach: WallHangingAttachment(cube.East)}
@@ -87,18 +87,18 @@ func TestWallMountedHangingSignSurvivesWithDirectWallSupport(t *testing.T) {
 		if _, ok := tx.Block(signPos).(HangingSign); !ok {
 			testErr = errString("wall-mounted hanging sign broke despite direct wall support")
 		}
-	}).Done()
+	})
 	if testErr != nil {
 		t.Fatal(testErr)
 	}
 }
 
 func TestHangingSignUseOnBlockPlacesWallSignOnClickedFace(t *testing.T) {
-	w := world.Config{DisableLighting: true}.New()
+	w := world.Config{Synchronous: true, DisableLighting: true}.New()
 	defer w.Close()
 
 	var testErr error
-	<-w.Do(func(tx *world.Tx) {
+	w.Do(func(tx *world.Tx) {
 		supportPos := cube.Pos{0, 1, 0}
 		signPos := supportPos.Side(cube.FaceEast)
 		tx.SetBlock(supportPos, Dirt{}, nil)
@@ -113,7 +113,7 @@ func TestHangingSignUseOnBlockPlacesWallSignOnClickedFace(t *testing.T) {
 		if sign.Attach != WallHangingAttachment(cube.East) {
 			testErr = errString("wall hanging sign attachment did not face the clicked face")
 		}
-	}).Done()
+	})
 	if testErr != nil {
 		t.Fatal(testErr)
 	}

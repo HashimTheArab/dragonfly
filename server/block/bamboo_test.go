@@ -23,11 +23,11 @@ func TestBambooSaplingUsesBambooModelForInteractionTargeting(t *testing.T) {
 }
 
 func TestUsingBambooOnExistingBambooDoesNotReplaceClickedStalk(t *testing.T) {
-	w := world.Config{DisableLighting: true}.New()
+	w := world.Config{Synchronous: true, DisableLighting: true}.New()
 	defer w.Close()
 
 	var testErr error
-	<-w.Do(func(tx *world.Tx) {
+	w.Do(func(tx *world.Tx) {
 		pos := cube.Pos{0, 1, 0}
 		tx.SetBlock(pos.Side(cube.FaceDown), Dirt{}, nil)
 		tx.SetBlock(pos, Bamboo{Age: false, LeafSize: bambooNoLeaves, Thick: false}, nil)
@@ -42,18 +42,18 @@ func TestUsingBambooOnExistingBambooDoesNotReplaceClickedStalk(t *testing.T) {
 			testErr = errString("using bamboo on bamboo did not extend the stalk")
 			return
 		}
-	}).Done()
+	})
 	if testErr != nil {
 		t.Fatal(testErr)
 	}
 }
 
 func TestUsingBambooOnMossPlacesSapling(t *testing.T) {
-	w := world.Config{DisableLighting: true}.New()
+	w := world.Config{Synchronous: true, DisableLighting: true}.New()
 	defer w.Close()
 
 	var testErr error
-	<-w.Do(func(tx *world.Tx) {
+	w.Do(func(tx *world.Tx) {
 		support := cube.Pos{0, 0, 0}
 		pos := support.Side(cube.FaceUp)
 		tx.SetBlock(support, Moss{}, nil)
@@ -63,18 +63,18 @@ func TestUsingBambooOnMossPlacesSapling(t *testing.T) {
 		if _, ok := tx.Block(pos).(BambooSapling); !ok {
 			testErr = errString("using bamboo on moss placed " + blockType(tx.Block(pos)) + ", want bamboo sapling")
 		}
-	}).Done()
+	})
 	if testErr != nil {
 		t.Fatal(testErr)
 	}
 }
 
 func TestBambooCanSurviveOnAnyNonAirSupport(t *testing.T) {
-	w := world.Config{DisableLighting: true}.New()
+	w := world.Config{Synchronous: true, DisableLighting: true}.New()
 	defer w.Close()
 
 	var testErr error
-	<-w.Do(func(tx *world.Tx) {
+	w.Do(func(tx *world.Tx) {
 		pos := cube.Pos{0, 1, 0}
 		tx.SetBlock(pos.Side(cube.FaceDown), Stone{}, nil)
 		tx.SetBlock(pos, Bamboo{Age: false, LeafSize: bambooNoLeaves, Thick: false}, nil)
@@ -82,18 +82,18 @@ func TestBambooCanSurviveOnAnyNonAirSupport(t *testing.T) {
 		if !canSurviveBamboo(pos, tx) {
 			testErr = errString("bamboo could not survive on stone support")
 		}
-	}).Done()
+	})
 	if testErr != nil {
 		t.Fatal(testErr)
 	}
 }
 
 func TestUsingBambooOnBambooSaplingConvertsSaplingToStalk(t *testing.T) {
-	w := world.Config{DisableLighting: true}.New()
+	w := world.Config{Synchronous: true, DisableLighting: true}.New()
 	defer w.Close()
 
 	var testErr error
-	<-w.Do(func(tx *world.Tx) {
+	w.Do(func(tx *world.Tx) {
 		pos := cube.Pos{0, 1, 0}
 		tx.SetBlock(pos.Side(cube.FaceDown), Dirt{}, nil)
 		tx.SetBlock(pos, BambooSapling{Age: false}, nil)
@@ -108,18 +108,18 @@ func TestUsingBambooOnBambooSaplingConvertsSaplingToStalk(t *testing.T) {
 			testErr = errString("using bamboo on bamboo sapling did not place a bamboo stalk above")
 			return
 		}
-	}).Done()
+	})
 	if testErr != nil {
 		t.Fatal(testErr)
 	}
 }
 
 func TestBoneMealItemOnBambooSaplingConvertsSaplingToStalk(t *testing.T) {
-	w := world.Config{DisableLighting: true}.New()
+	w := world.Config{Synchronous: true, DisableLighting: true}.New()
 	defer w.Close()
 
 	var testErr error
-	<-w.Do(func(tx *world.Tx) {
+	w.Do(func(tx *world.Tx) {
 		pos := cube.Pos{0, 1, 0}
 		tx.SetBlock(pos.Side(cube.FaceDown), Dirt{}, nil)
 		tx.SetBlock(pos, BambooSapling{Age: false}, nil)
@@ -141,7 +141,7 @@ func TestBoneMealItemOnBambooSaplingConvertsSaplingToStalk(t *testing.T) {
 			testErr = errString("bone meal did not grow bamboo above sapling")
 			return
 		}
-	}).Done()
+	})
 	if testErr != nil {
 		t.Fatal(testErr)
 	}
