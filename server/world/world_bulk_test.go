@@ -1,6 +1,7 @@
 package world
 
 import (
+	"context"
 	"log/slog"
 	"reflect"
 	"testing"
@@ -398,7 +399,7 @@ func TestBuildStructureRuntimeIDStructureMatchesLegacyStructure(t *testing.T) {
 			for _, chunkPos := range []ChunkPos{{0, 0}, {1, 0}, {0, 1}, {1, 1}} {
 				legacyChunk := legacyWorld.chunk(chunkPos)
 				runtimeIDChunk := runtimeIDWorld.chunk(chunkPos)
-				if !legacyChunk.Chunk.Equals(runtimeIDChunk.Chunk) {
+				if !legacyChunk.Equals(runtimeIDChunk.Chunk) {
 					t.Fatalf("runtime ID structure produced different chunk data at %v", chunkPos)
 				}
 				if !reflect.DeepEqual(legacyChunk.BlockEntities, runtimeIDChunk.BlockEntities) {
@@ -409,25 +410,29 @@ func TestBuildStructureRuntimeIDStructureMatchesLegacyStructure(t *testing.T) {
 	}
 }
 
-func TestTxFillVolumeThroughWorldExec(t *testing.T) {
+func TestTxFillVolumeThroughWorldDo(t *testing.T) {
 	w := Config{DisableLighting: true}.New()
 	defer w.Close()
 
-	<-w.Exec(func(tx *Tx) {
+	if err := w.Do(func(tx *Tx) {
 		tx.FillVolume(cube.Pos{0, 0, 0}, [3]int{1, 1, 1}, benchmarkRegisteredStone(), nil)
-	})
+	}).Wait(context.Background()); err != nil {
+		t.Fatalf("fill volume task failed: %v", err)
+	}
 
 	var got Block
-	<-w.Exec(func(tx *Tx) {
+	if err := w.Do(func(tx *Tx) {
 		got = tx.Block(cube.Pos{0, 0, 0})
-	})
+	}).Wait(context.Background()); err != nil {
+		t.Fatalf("read block task failed: %v", err)
+	}
 	if gotRID, wantRID := BlockRuntimeID(got), BlockRuntimeID(benchmarkRegisteredStone()); gotRID != wantRID {
 		t.Fatalf("expected runtime ID %v, got %v", wantRID, gotRID)
 	}
 }
 
-func TestTxFillVolumeConcurrentExec(t *testing.T) {
-	// Exec serializes transactions, so this test exercises the Exec
+func TestTxFillVolumeConcurrentDo(t *testing.T) {
+	// Do serializes transactions, so this test exercises the Do
 	// submission/completion path under -race rather than concurrent fill
 	// bodies.
 	w := Config{DisableLighting: true}.New()
@@ -438,9 +443,12 @@ func TestTxFillVolumeConcurrentExec(t *testing.T) {
 	for i := 0; i < fills; i++ {
 		i := i
 		go func() {
-			<-w.Exec(func(tx *Tx) {
+			err := w.Do(func(tx *Tx) {
 				tx.FillVolume(cube.Pos{i, 0, 0}, [3]int{4, 4, 4}, benchmarkRegisteredStone(), nil)
-			})
+			}).Wait(context.Background())
+			if err != nil {
+				t.Errorf("fill volume task %d failed: %v", i, err)
+			}
 			done <- struct{}{}
 		}()
 	}
@@ -448,12 +456,14 @@ func TestTxFillVolumeConcurrentExec(t *testing.T) {
 		<-done
 	}
 
-	<-w.Exec(func(tx *Tx) {
+	if err := w.Do(func(tx *Tx) {
 		wantRID := BlockRuntimeID(benchmarkRegisteredStone())
 		for i := 0; i < fills; i++ {
 			if gotRID := BlockRuntimeID(tx.Block(cube.Pos{i, 0, 0})); gotRID != wantRID {
 				t.Fatalf("expected fill at x=%v to have runtime ID %v, got %v", i, wantRID, gotRID)
 			}
 		}
-	})
+	}).Wait(context.Background()); err != nil {
+		t.Fatalf("verify fills task failed: %v", err)
+	}
 }

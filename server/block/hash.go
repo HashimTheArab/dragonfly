@@ -159,6 +159,7 @@ const (
 	hashPodzol
 	hashPolishedBlackstoneBrick
 	hashPolishedTuff
+	hashPortal
 	hashPotato
 	hashPrismarine
 	hashPumpkin
@@ -854,6 +855,10 @@ func (PolishedTuff) Hash() (uint64, uint64) {
 	return hashPolishedTuff, 0
 }
 
+func (p Portal) Hash() (uint64, uint64) {
+	return hashPortal, uint64(p.Axis)
+}
+
 func (p Potato) Hash() (uint64, uint64) {
 	return hashPotato, uint64(p.Growth)
 }
@@ -966,7 +971,7 @@ func (s Shelf) Hash() (uint64, uint64) {
 	if s.Bamboo {
 		return hashShelf, uint64(boolByte(true))<<4 | uint64(s.Facing)<<5 | uint64(boolByte(s.Powered))<<7 | uint64(s.PoweredType)<<8
 	}
-	return hashShelf, uint64(s.Wood.Uint8()) | uint64(boolByte(s.Bamboo))<<4 | uint64(s.Facing)<<5 | uint64(boolByte(s.Powered))<<7 | uint64(s.PoweredType)<<8
+	return hashShelf, uint64(s.Wood.Uint8()) | uint64(s.Facing)<<5 | uint64(boolByte(s.Powered))<<7 | uint64(s.PoweredType)<<8
 }
 
 func (ShortGrass) Hash() (uint64, uint64) {

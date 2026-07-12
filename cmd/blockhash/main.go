@@ -136,6 +136,18 @@ func (b *hashBuilder) writeNextHash(w io.Writer) {
 func (b *hashBuilder) writeMethods(w io.Writer) {
 	for _, name := range b.names {
 		fields := b.blockFields[name]
+		if name == "Shelf" {
+			if _, err := fmt.Fprintln(w, `
+func (s Shelf) Hash() (uint64, uint64) {
+	if s.Bamboo {
+		return hashShelf, uint64(boolByte(true))<<4 | uint64(s.Facing)<<5 | uint64(boolByte(s.Powered))<<7 | uint64(s.PoweredType)<<8
+	}
+	return hashShelf, uint64(s.Wood.Uint8()) | uint64(s.Facing)<<5 | uint64(boolByte(s.Powered))<<7 | uint64(s.PoweredType)<<8
+}`); err != nil {
+				log.Fatalln(err)
+			}
+			continue
+		}
 
 		var h string
 		var bitSize int
@@ -254,7 +266,7 @@ func (b *hashBuilder) ftype(structName, s string, expr ast.Expr, directives map[
 		return "uint64(" + s + ".Uint8())", 4
 	case "CoralType", "SkullType":
 		return "uint64(" + s + ".Uint8())", 3
-	case "AnvilType", "SandstoneType", "PrismarineType", "StoneBricksType", "NetherBricksType", "FroglightType",
+	case "AnvilType", "SandstoneType", "PrismarineType", "StoneBricksType", "NetherBricksType", "FroglightType", "MushroomType", "SeagrassType",
 		"WallConnectionType", "BlackstoneType", "DeepslateType", "TallGrassType", "CopperType", "OxidationType":
 		return "uint64(" + s + ".Uint8())", 2
 	case "OreType", "FireType", "DoubleTallGrassType":
@@ -271,6 +283,9 @@ func (b *hashBuilder) ftype(structName, s string, expr ast.Expr, directives map[
 
 func (b *hashBuilder) resolveBlocks() {
 	for bl, fields := range b.fields {
+		if !ast.IsExported(bl) {
+			continue
+		}
 		if _, ok := b.funcs[bl]; ok {
 			b.blockFields[bl] = fields
 		}

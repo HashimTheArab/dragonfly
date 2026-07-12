@@ -547,10 +547,10 @@ func (l Leaves) Color() color.RGBA {
 		return color.RGBA{75, 110, 51, 255}
 	case DarkOakLeaves():
 		return color.RGBA{63, 93, 43, 255}
-	//case CrimsonWood():
-	//	return color.RGBA{172, 32, 32, 255}
-	//case WarpedLeaves():
-	//	return color.RGBA{69, 107, 88, 255}
+	// case CrimsonWood():
+	// 	return color.RGBA{172, 32, 32, 255}
+	// case WarpedLeaves():
+	// 	return color.RGBA{69, 107, 88, 255}
 	case MangroveLeaves():
 		return color.RGBA{45, 65, 30, 255}
 	case CherryLeaves():
@@ -564,7 +564,7 @@ func (LitPumpkin) Color() color.RGBA {
 }
 
 func (l Log) Color() color.RGBA {
-	return l.Wood.wood.Color()
+	return l.Wood.Color()
 }
 
 func (Loom) Color() color.RGBA {
@@ -960,19 +960,19 @@ func (s WheatSeeds) Color() color.RGBA {
 }
 
 func (w WoodDoor) Color() color.RGBA {
-	return w.Wood.wood.Color()
+	return w.Wood.Color()
 }
 
 func (w WoodFenceGate) Color() color.RGBA {
-	return w.Wood.wood.Color()
+	return w.Wood.Color()
 }
 
 func (w WoodFence) Color() color.RGBA {
-	return w.Wood.wood.Color()
+	return w.Wood.Color()
 }
 
 func (t WoodTrapdoor) Color() color.RGBA {
-	return t.Wood.wood.Color()
+	return t.Wood.Color()
 }
 
 func (w wood) Color() color.RGBA {

@@ -78,6 +78,19 @@ type Config struct {
 	// Suitable for practice/PvP servers where chunks are pre-built and
 	// realistic lighting is not needed.
 	DisableLighting bool
+
+	// Synchronous removes the World's own background goroutines. Immediate tasks
+	// from World.Do and Call run on the calling goroutine, the World is not saved
+	// or unloaded automatically, and time only passes on explicit
+	// World.AdvanceTick calls. World.DoAfter and entity work scheduled before an
+	// entity enters a world still use background goroutines and wall-clock
+	// delays; callers must synchronise on the returned Task. This makes
+	// Synchronous Worlds well suited to unit tests that need a World to interact
+	// with.
+	// A Synchronous World must be driven from one goroutine. Do, Call and
+	// AdvanceTick are not safe to call concurrently, including from delayed
+	// item or death callbacks.
+	Synchronous bool
 }
 
 // New creates a new World using the Config conf. The World returned will start
@@ -130,6 +143,7 @@ func (conf Config) New() *World {
 		viewers:          make(map[*Loader]Viewer),
 		chunks:           make(map[ChunkPos]*Column),
 		queueClosing:     make(chan struct{}),
+		closeStarted:     make(chan struct{}),
 		closing:          make(chan struct{}),
 		queue:            make(chan transaction, 128),
 		r:                rand.New(conf.RandSource),
@@ -142,14 +156,16 @@ func (conf Config) New() *World {
 	var h Handler = NopHandler{}
 	w.handler.Store(&h)
 
-	w.queueing.Add(1)
-	w.running.Add(2)
-
 	t := ticker{interval: time.Second / 20}
-	go t.tickLoop(w)
-	go w.autoSave()
-	go w.handleTransactions()
+	if !conf.Synchronous {
+		w.queueing.Add(1)
+		w.running.Add(2)
 
-	<-w.Exec(t.tick)
+		go t.tickLoop(w)
+		go w.autoSave()
+		go w.handleTransactions()
+	}
+
+	<-w.exec(t.tick)
 	return w
 }

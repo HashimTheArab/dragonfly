@@ -17,7 +17,7 @@ func TestEndCrystalPlacementUsesJavaEntityCollisionColumn(t *testing.T) {
 	defer w.Close()
 
 	var testErr error
-	<-w.Exec(func(tx *world.Tx) {
+	<-w.Do(func(tx *world.Tx) {
 		pos := cube.Pos{0, 0, 0}
 		tx.SetBlock(pos, block.Obsidian{}, nil)
 		tx.AddEntity(world.EntitySpawnOpts{Position: mgl64.Vec3{1.31, 1, 0.5}}.New(testCrystalBlockingEntityType{}, testCrystalBlockingEntityBehaviour{}))
@@ -30,7 +30,7 @@ func TestEndCrystalPlacementUsesJavaEntityCollisionColumn(t *testing.T) {
 		if ctx.CountSub != 1 {
 			testErr = fmt.Errorf("CountSub = %d, want 1", ctx.CountSub)
 		}
-	})
+	}).Done()
 	if testErr != nil {
 		t.Fatal(testErr)
 	}
@@ -41,14 +41,14 @@ func TestEndCrystalPlacementBlocksEntitiesInsideJavaCollisionColumn(t *testing.T
 	defer w.Close()
 
 	var placed bool
-	<-w.Exec(func(tx *world.Tx) {
+	<-w.Do(func(tx *world.Tx) {
 		pos := cube.Pos{0, 0, 0}
 		tx.SetBlock(pos, block.Obsidian{}, nil)
 		tx.AddEntity(world.EntitySpawnOpts{Position: mgl64.Vec3{0.5, 1, 0.5}}.New(testCrystalBlockingEntityType{}, testCrystalBlockingEntityBehaviour{}))
 
 		var ctx item.UseContext
 		placed = (item.EndCrystal{}).UseOnBlock(pos, cube.FaceUp, mgl64.Vec3{0.5, 1, 0.5}, tx, nil, &ctx)
-	})
+	}).Done()
 
 	if placed {
 		t.Fatal("end crystal placement succeeded despite entity inside Java placement AABB")
@@ -60,14 +60,14 @@ func TestEndCrystalPlacementRequiresOnlyBlockAboveClear(t *testing.T) {
 	defer w.Close()
 
 	var placed bool
-	<-w.Exec(func(tx *world.Tx) {
+	<-w.Do(func(tx *world.Tx) {
 		pos := cube.Pos{0, 0, 0}
 		tx.SetBlock(pos, block.Obsidian{}, nil)
 		tx.SetBlock(pos.Side(cube.FaceUp).Side(cube.FaceUp), block.Stone{}, nil)
 
 		var ctx item.UseContext
 		placed = (item.EndCrystal{}).UseOnBlock(pos, cube.FaceUp, mgl64.Vec3{0.5, 1, 0.5}, tx, nil, &ctx)
-	})
+	}).Done()
 
 	if !placed {
 		t.Fatal("end crystal placement failed even though Java only requires the block directly above to be clear")
