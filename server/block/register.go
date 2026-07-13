@@ -48,6 +48,10 @@ func init() {
 	world.RegisterBlock(Emerald{})
 	world.RegisterBlock(EnchantingTable{})
 	world.RegisterBlock(EndBricks{})
+	world.RegisterBlock(EndPortal{})
+	for _, f := range allEndPortalFrames() {
+		world.RegisterBlock(f)
+	}
 	world.RegisterBlock(EndStone{})
 	world.RegisterBlock(FletchingTable{})
 	world.RegisterBlock(GlassPane{})
@@ -146,10 +150,9 @@ func init() {
 	}
 
 	registerAll(allAnvils())
-	registerAll(allBamboo())
 	registerAll(allBambooBlocks())
-	registerAll(allBambooSapling())
-	registerAll(allAzalea())
+	registerAll(allBamboos())
+	registerAll(allBambooSaplings())
 	registerAll(allBanners())
 	registerAll(allBarrels())
 	registerAll(allBasalt())
@@ -162,7 +165,7 @@ func init() {
 	registerAll(allCactus())
 	registerAll(allCake())
 	registerAll(allCampfires())
-	registerAll(allCandle())
+	registerAll(allCandles())
 	registerAll(allCarpet())
 	registerAll(allCarrots())
 	registerAll(allIronChains())
@@ -256,7 +259,7 @@ func init() {
 	registerAll(allCopperLanterns())
 	registerAll(allCopperTorches())
 	registerAll(allCopperTrapdoors())
-	registerAll(allSapling())
+	registerAll(allShulkerBoxes())
 	registerShellBuildingBlocks()
 }
 
@@ -266,8 +269,6 @@ func init() {
 	world.RegisterItem(AncientDebris{})
 	world.RegisterItem(Andesite{Polished: true})
 	world.RegisterItem(Andesite{})
-	world.RegisterItem(Azalea{})
-	world.RegisterItem(Azalea{Flowering: true})
 	world.RegisterItem(Bamboo{})
 	world.RegisterItem(BambooBlock{})
 	world.RegisterItem(BambooBlock{Stripped: true})
@@ -318,6 +319,7 @@ func init() {
 	world.RegisterItem(Emerald{})
 	world.RegisterItem(EnchantingTable{})
 	world.RegisterItem(EndBricks{})
+	world.RegisterItem(EndPortalFrame{})
 	world.RegisterItem(EndRod{})
 	world.RegisterItem(EndStone{})
 	world.RegisterItem(EnderChest{})
@@ -509,6 +511,9 @@ func init() {
 		world.RegisterItem(LapisOre{Type: ore})
 		world.RegisterItem(RedstoneOre{Type: ore})
 	}
+	for _, c := range item.OptionalColours() {
+		world.RegisterItem(Candle{Colour: c})
+	}
 	for _, f := range FireTypes() {
 		world.RegisterItem(Lantern{Type: f})
 		world.RegisterItem(Torch{Type: f})
@@ -580,9 +585,9 @@ func init() {
 			world.RegisterItem(Copper{Type: c, Oxidation: o, Waxed: true})
 		}
 	}
-	world.RegisterItem(Candle{})
-	for _, c := range item.Colours() {
-		world.RegisterItem(Candle{Dyed: true, Colour: c})
+
+	for _, c := range item.OptionalColours() {
+		world.RegisterItem(ShulkerBox{Colour: c})
 	}
 	registerShellBuildingItems()
 }

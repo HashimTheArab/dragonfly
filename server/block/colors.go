@@ -95,10 +95,11 @@ func (Calcite) Color() color.RGBA {
 }
 
 func (c Candle) Color() color.RGBA {
-	if !c.Dyed {
+	colour, ok := c.Colour.Colour()
+	if !ok {
 		return color.RGBA{254, 240, 179, 255}
 	}
-	switch c.Colour {
+	switch colour {
 	case item.ColourWhite():
 		return color.RGBA{224, 229, 229, 255}
 	case item.ColourOrange():

@@ -7,116 +7,85 @@ import (
 	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
-	"github.com/df-mc/dragonfly/server/world/sound"
-	"github.com/go-gl/mathgl/mgl64"
 )
 
-// BambooSapling is the initial stage of bamboo growth. It appears as a small shoot
-// and grows into a bamboo stalk over time.
+// BambooSapling ...
 type BambooSapling struct {
 	empty
 	transparent
-	Age bool
+	bass
+
+	Ready bool
 }
 
-var _ item.BoneMealAffected = BambooSapling{}
+var (
+	_ item.BoneMealAffected = BambooSapling{}
+	_ Flammable             = BambooSapling{}
+)
 
-// Model returns the model used for client interaction targeting.
+// BoneMeal ...
+func (b BambooSapling) BoneMeal(pos cube.Pos, tx *world.Tx) item.BoneMealResult {
+	if b.grow(pos, tx) {
+		return item.BoneMealResultSmall
+	}
+	return item.BoneMealResultNone
+}
+
+// FlammabilityInfo ...
+func (b BambooSapling) FlammabilityInfo() FlammabilityInfo {
+	return newFlammabilityInfo(60, 60, true)
+}
+
+// NeighbourUpdateTick ...
+func (b BambooSapling) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
+	down := tx.Block(pos.Side(cube.FaceDown))
+	if canSupportBamboo(down) {
+		return
+	}
+	breakBlock(b, pos, tx)
+}
+
+// Model returns the collision model used for client interaction targeting.
 func (BambooSapling) Model() world.BlockModel {
 	return model.Bamboo{}
 }
 
-// UseOnBlock places a bamboo sapling on any non-air support.
-func (b BambooSapling) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx, user item.User, ctx *item.UseContext) bool {
-	pos, _, used := firstReplaceable(tx, pos, face, b)
-	if !used {
-		return false
-	}
-	below := pos.Side(cube.FaceDown)
-	if !canSupportBamboo(tx.Block(below)) {
-		return false
-	}
-	place(tx, pos, b, user, ctx)
-	return placed(ctx)
-}
-
-// NeighbourUpdateTick breaks the sapling if it loses support.
-func (b BambooSapling) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
-	below := pos.Side(cube.FaceDown)
-	if !canSupportBamboo(tx.Block(below)) {
-		breakBlock(b, pos, tx)
-		tx.PlaySound(pos.Vec3(), sound.BlockBreaking{Block: b})
-	}
-}
-
-// RandomTick converts the sapling to a 2-block bamboo stalk when the light
-// level above is >= 9, matching vanilla Bedrock behaviour.
+// RandomTick ...
 func (b BambooSapling) RandomTick(pos cube.Pos, tx *world.Tx, r *rand.Rand) {
-	if b.Age {
-		return
+	if tx.Light(pos) >= 9 && r.IntN(3) == 0 {
+		b.grow(pos, tx)
 	}
-	above := pos.Side(cube.FaceUp)
-	if _, ok := tx.Block(above).(Air); !ok {
-		return
-	}
-	if tx.Light(above) < 9 {
-		return
-	}
-	// Convert: bottom = aged bamboo, top = fresh growable bamboo.
-	tx.SetBlock(pos, Bamboo{Age: true, LeafSize: bambooNoLeaves, Thick: false}, nil)
-	tx.SetBlock(above, Bamboo{Age: false, LeafSize: SmallLeaves, Thick: false}, nil)
-}
-
-// BoneMeal grows the sapling into a bamboo stalk immediately.
-func (b BambooSapling) BoneMeal(pos cube.Pos, tx *world.Tx) item.BoneMealResult {
-	above := pos.Side(cube.FaceUp)
-	if _, ok := tx.Block(above).(Air); !ok {
-		return item.BoneMealResultNone
-	}
-	// Bottom becomes aged (age_bit=1), top is fresh growable (age_bit=0).
-	tx.SetBlock(pos, Bamboo{Age: true, LeafSize: bambooNoLeaves, Thick: false}, nil)
-	tx.SetBlock(above, Bamboo{Age: false, LeafSize: SmallLeaves, Thick: false}, nil)
-	return item.BoneMealResultSmall
 }
 
 // BreakInfo ...
-func (BambooSapling) BreakInfo() BreakInfo {
-	b := Bamboo{}
-	return BreakInfo{
-		Hardness:    0,
-		Harvestable: alwaysHarvestable,
-		Effective:   nothingEffective,
-		Drops:       oneOf(b),
-		BreakHandler: func(pos cube.Pos, tx *world.Tx, u item.User) {
-			tx.PlaySound(pos.Vec3(), sound.BlockBreaking{Block: b})
-		},
-	}
+func (b BambooSapling) BreakInfo() BreakInfo {
+	return newBreakInfo(0, alwaysHarvestable, axeEffective, oneOf(Bamboo{}))
 }
 
 // HasLiquidDrops ...
-func (BambooSapling) HasLiquidDrops() bool {
+func (b BambooSapling) HasLiquidDrops() bool {
 	return true
-}
-
-// FlammabilityInfo ...
-func (BambooSapling) FlammabilityInfo() FlammabilityInfo {
-	return newFlammabilityInfo(60, 100, false)
-}
-
-// EncodeItem ...
-func (BambooSapling) EncodeItem() (name string, meta int16) {
-	return "minecraft:bamboo", 0
 }
 
 // EncodeBlock ...
 func (b BambooSapling) EncodeBlock() (string, map[string]any) {
-	return "minecraft:bamboo_sapling", map[string]any{"age_bit": boolByte(b.Age)}
+	return "minecraft:bamboo_sapling", map[string]any{"age_bit": boolByte(b.Ready)}
 }
 
-// allBambooSapling returns all bamboo sapling block states.
-func allBambooSapling() (blocks []world.Block) {
-	for _, age := range []bool{false, true} {
-		blocks = append(blocks, BambooSapling{Age: age})
+// grow ...
+func (b BambooSapling) grow(pos cube.Pos, tx *world.Tx) bool {
+	if !replaceableWith(tx, pos.Side(cube.FaceUp), b) {
+		return false
 	}
+
+	tx.SetBlock(pos, Bamboo{}, nil)
+	tx.SetBlock(pos.Side(cube.FaceUp), Bamboo{LeafSize: BambooSizeSmallLeaves()}, nil)
+	return true
+}
+
+// allBambooSaplings ...
+func allBambooSaplings() (saplings []world.Block) {
+	saplings = append(saplings, BambooSapling{Ready: false})
+	saplings = append(saplings, BambooSapling{Ready: true})
 	return
 }

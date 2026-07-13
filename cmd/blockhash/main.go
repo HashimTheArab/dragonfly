@@ -256,8 +256,7 @@ func (b *hashBuilder) ftype(structName, s string, expr ast.Expr, directives map[
 			return "uint64(" + s + ".FaceUint8())", 3
 		}
 		return "uint64(" + s + ".Uint8())", 5
-	case "HangingAttachment":
-		// Wall (0-3), Ceiling non-attached (4-7), Ceiling attached (8-23) = 24 values, 5 bits.
+	case "OptionalColour", "HangingAttachment":
 		return "uint64(" + s + ".Uint8())", 5
 	case "GrindstoneAttachment":
 		return "uint64(" + s + ".Uint8())", 2
@@ -271,6 +270,8 @@ func (b *hashBuilder) ftype(structName, s string, expr ast.Expr, directives map[
 		return "uint64(" + s + ".Uint8())", 2
 	case "OreType", "FireType", "DoubleTallGrassType":
 		return "uint64(" + s + ".Uint8())", 1
+	case "BambooLeafSize":
+		return "uint64(" + s + ".Uint8())", 2
 	case "Direction", "Axis":
 		return "uint64(" + s + ")", 2
 	case "Face":

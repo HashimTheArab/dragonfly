@@ -280,23 +280,22 @@ func (s Shelf) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.
 	return placed(ctx)
 }
 
-// NeighbourUpdateTick actualiza el estado de Redstone.
-func (s Shelf) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
-	powered := tx.RedstonePower(pos, cube.FaceDown, true) > 0 ||
-		tx.RedstonePower(pos, cube.FaceUp, true) > 0 ||
-		tx.RedstonePower(pos, cube.FaceNorth, true) > 0 ||
-		tx.RedstonePower(pos, cube.FaceSouth, true) > 0 ||
-		tx.RedstonePower(pos, cube.FaceEast, true) > 0 ||
-		tx.RedstonePower(pos, cube.FaceWest, true) > 0
+// RedstonePowerUpdate updates the powered state of the shelf.
+func (s Shelf) RedstonePowerUpdate(_ cube.Pos, _ *world.Tx, power int) (world.Block, bool) {
+	powered := power > 0
+	if powered == s.Powered {
+		return s, false
+	}
+	s.Powered = powered
+	return s, true
+}
 
-	if powered != s.Powered {
-		s.Powered = powered
-		if powered {
-			tx.PlaySound(pos.Vec3Middle(), sound.PowerOn{})
-		} else {
-			tx.PlaySound(pos.Vec3Middle(), sound.PowerOff{})
-		}
-		tx.SetBlock(pos, s, nil)
+// RedstonePowerPostUpdate plays feedback after an uncancelled powered-state change.
+func (Shelf) RedstonePowerPostUpdate(pos cube.Pos, tx *world.Tx, _, after world.Block, _, _ int) {
+	if after.(Shelf).Powered {
+		tx.PlaySound(pos.Vec3Middle(), sound.PowerOn{})
+	} else {
+		tx.PlaySound(pos.Vec3Middle(), sound.PowerOff{})
 	}
 }
 

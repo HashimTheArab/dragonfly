@@ -105,6 +105,9 @@ type Session struct {
 
 	viewLayer *world.ViewLayer
 
+	inputLocksMu sync.RWMutex
+	inputLocks   uint32
+
 	// cmdsDirty signals the session tick loop to run resendCommands on the
 	// next tick instead of waiting for the 5-second periodic check. Set by
 	// RefreshAvailableCommands when a caller (e.g. custom rank loader) has

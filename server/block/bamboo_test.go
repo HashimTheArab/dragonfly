@@ -30,7 +30,7 @@ func TestUsingBambooOnExistingBambooDoesNotReplaceClickedStalk(t *testing.T) {
 	w.Do(func(tx *world.Tx) {
 		pos := cube.Pos{0, 1, 0}
 		tx.SetBlock(pos.Side(cube.FaceDown), Dirt{}, nil)
-		tx.SetBlock(pos, Bamboo{Age: false, LeafSize: bambooNoLeaves, Thick: false}, nil)
+		tx.SetBlock(pos, Bamboo{Ready: false, LeafSize: BambooSizeNoLeaves(), Thick: false}, nil)
 
 		ctx := &item.UseContext{}
 		_ = (Bamboo{}).UseOnBlock(pos, cube.FaceUp, mgl64.Vec3{}, tx, nil, ctx)
@@ -77,9 +77,9 @@ func TestBambooCanSurviveOnAnyNonAirSupport(t *testing.T) {
 	w.Do(func(tx *world.Tx) {
 		pos := cube.Pos{0, 1, 0}
 		tx.SetBlock(pos.Side(cube.FaceDown), Stone{}, nil)
-		tx.SetBlock(pos, Bamboo{Age: false, LeafSize: bambooNoLeaves, Thick: false}, nil)
+		tx.SetBlock(pos, Bamboo{Ready: false, LeafSize: BambooSizeNoLeaves(), Thick: false}, nil)
 
-		if !canSurviveBamboo(pos, tx) {
+		if !canSupportBamboo(tx.Block(pos.Side(cube.FaceDown))) {
 			testErr = errString("bamboo could not survive on stone support")
 		}
 	})
@@ -96,7 +96,7 @@ func TestUsingBambooOnBambooSaplingConvertsSaplingToStalk(t *testing.T) {
 	w.Do(func(tx *world.Tx) {
 		pos := cube.Pos{0, 1, 0}
 		tx.SetBlock(pos.Side(cube.FaceDown), Dirt{}, nil)
-		tx.SetBlock(pos, BambooSapling{Age: false}, nil)
+		tx.SetBlock(pos, BambooSapling{Ready: false}, nil)
 
 		ctx := &item.UseContext{}
 		_ = (Bamboo{}).UseOnBlock(pos, cube.FaceUp, mgl64.Vec3{}, tx, nil, ctx)
@@ -122,7 +122,7 @@ func TestBoneMealItemOnBambooSaplingConvertsSaplingToStalk(t *testing.T) {
 	w.Do(func(tx *world.Tx) {
 		pos := cube.Pos{0, 1, 0}
 		tx.SetBlock(pos.Side(cube.FaceDown), Dirt{}, nil)
-		tx.SetBlock(pos, BambooSapling{Age: false}, nil)
+		tx.SetBlock(pos, BambooSapling{Ready: false}, nil)
 
 		ctx := &item.UseContext{}
 		if ok := (item.BoneMeal{}).UseOnBlock(pos, cube.FaceUp, mgl64.Vec3{}, tx, nil, ctx); !ok {

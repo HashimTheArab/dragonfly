@@ -165,6 +165,18 @@ func (b DecoratedPot) WithFacing(facing cube.Direction) world.Block {
 }
 
 // FacingDirection returns the horizontal direction the block faces.
+func (b EndPortalFrame) FacingDirection() cube.Direction {
+	return b.Facing
+}
+
+// WithFacing returns a copy of the block with its facing set to facing. It does not update any
+// other blocks that the block may be part of, such as the second half of a bed or door.
+func (b EndPortalFrame) WithFacing(facing cube.Direction) world.Block {
+	b.Facing = facing
+	return b
+}
+
+// FacingDirection returns the horizontal direction the block faces.
 func (b EnderChest) FacingDirection() cube.Direction {
 	return b.Facing
 }
@@ -551,17 +563,6 @@ func (b Bed) DyeColour() item.Colour {
 
 // WithColour returns a copy of the block with its colour set to colour.
 func (b Bed) WithColour(colour item.Colour) world.Block {
-	b.Colour = colour
-	return b
-}
-
-// DyeColour returns the dye colour of the block.
-func (b Candle) DyeColour() item.Colour {
-	return b.Colour
-}
-
-// WithColour returns a copy of the block with its colour set to colour.
-func (b Candle) WithColour(colour item.Colour) world.Block {
 	b.Colour = colour
 	return b
 }
