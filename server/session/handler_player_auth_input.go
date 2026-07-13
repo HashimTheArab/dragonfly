@@ -68,6 +68,13 @@ func (h PlayerAuthInputHandler) handleMovement(pk *packet.PlayerAuthInput, s *Se
 
 // handleActions handles the actions with the world that are present in the PlayerAuthInput packet.
 func (h PlayerAuthInputHandler) handleActions(pk *packet.PlayerAuthInput, s *Session, tx *world.Tx, c Controllable) error {
+	// Apply toggleable state before interactions from the same input packet.
+	// In particular, STOP_SPRINTING must be visible to an embedded attack so
+	// critical-hit evaluation uses the player's current input rather than the
+	// previous tick's sprint state. PocketMine processes these state changes
+	// before combat for the same reason.
+	h.handleInputFlags(pk.InputData, s, c)
+
 	if pk.InputData.Load(packet.InputFlagPerformItemInteraction) {
 		if err := h.handleUseItemData(pk.ItemInteractionData, s, c); err != nil {
 			return err
@@ -78,8 +85,6 @@ func (h PlayerAuthInputHandler) handleActions(pk *packet.PlayerAuthInput, s *Ses
 			return err
 		}
 	}
-	h.handleInputFlags(pk.InputData, s, c)
-
 	if pk.InputData.Load(packet.InputFlagPerformItemStackRequest) {
 		s.inTransaction.Store(true)
 		defer s.inTransaction.Store(false)

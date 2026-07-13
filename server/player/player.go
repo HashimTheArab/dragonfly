@@ -617,12 +617,13 @@ func (p *Player) Hurt(dmg float64, src world.DamageSource) (float64, bool) {
 	totalDamage := p.FinalDamageFrom(dmg, src)
 	damageLeft := totalDamage
 
-	// Projectile damage bypasses melee immunity entirely — arrows always
-	// register their hit regardless of existing attack immunity frames.
-	_, isProjectile := src.(entity.ProjectileDamageSource)
-
-	immune := p.attackTime > 0 // PM-style: check tick counter
-	if immune && !isProjectile {
+	// Attack immunity belongs exclusively to direct entity attacks. Damage
+	// over time (fire, poison, wither and similar sources) must neither be
+	// swallowed by a recent player hit nor open a new immunity window that
+	// blocks the next hit. Projectiles continue to bypass melee immunity.
+	usesImmunity := usesAttackImmunity(src)
+	immune := p.attackTime > 0 && usesImmunity
+	if immune {
 		if damageLeft -= p.lastDamage; damageLeft <= 0 {
 			return 0, false
 		}
@@ -630,12 +631,10 @@ func (p *Player) Hurt(dmg float64, src world.DamageSource) (float64, bool) {
 
 	immunity := time.Second / 2
 	ctx := newContext(p)
-	if p.Handler().HandleHurt(ctx, &damageLeft, immune && !isProjectile, &immunity, src); ctx.Cancelled() {
+	if p.Handler().HandleHurt(ctx, &damageLeft, immune, &immunity, src); ctx.Cancelled() {
 		return 0, false
 	}
-	// Projectile hits should not reset or interfere with existing melee
-	// immunity frames — only melee (and other non-projectile) sources set them.
-	if !isProjectile {
+	if usesImmunity {
 		p.setAttackImmunity(immunity, totalDamage)
 	}
 
@@ -696,6 +695,11 @@ func (p *Player) Hurt(dmg float64, src world.DamageSource) (float64, bool) {
 		p.kill(src)
 	}
 	return totalDamage, true
+}
+
+func usesAttackImmunity(src world.DamageSource) bool {
+	_, ok := src.(entity.AttackDamageSource)
+	return ok
 }
 
 // applyTotemEffects is an unexported function that is used to handle totem effects.
