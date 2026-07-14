@@ -3,6 +3,7 @@ package portal_test
 import (
 	"testing"
 
+	"github.com/df-mc/dragonfly/internal/testkit"
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/item"
@@ -54,11 +55,10 @@ func interiorPositions(center cube.Pos) []cube.Pos {
 }
 
 func TestActivateEndPortal(t *testing.T) {
-	w := world.New()
-	t.Cleanup(func() { _ = w.Close() })
+	w := testkit.NewWorld(t, world.Config{})
 
 	center := cube.Pos{8, 10, 8}
-	mustDo(t, w, func(tx *world.Tx) {
+	testkit.Do(t, w, func(tx *world.Tx) {
 		buildEndPortalRing(tx, center)
 
 		first := endPortalRingFrames(center)[0]
@@ -74,11 +74,10 @@ func TestActivateEndPortal(t *testing.T) {
 }
 
 func TestActivateEndPortalMissingEye(t *testing.T) {
-	w := world.New()
-	t.Cleanup(func() { _ = w.Close() })
+	w := testkit.NewWorld(t, world.Config{})
 
 	center := cube.Pos{8, 10, 8}
-	mustDo(t, w, func(tx *world.Tx) {
+	testkit.Do(t, w, func(tx *world.Tx) {
 		buildEndPortalRing(tx, center)
 
 		frames := endPortalRingFrames(center)
@@ -97,11 +96,10 @@ func TestActivateEndPortalMissingEye(t *testing.T) {
 }
 
 func TestActivateEndPortalWrongFacing(t *testing.T) {
-	w := world.New()
-	t.Cleanup(func() { _ = w.Close() })
+	w := testkit.NewWorld(t, world.Config{})
 
 	center := cube.Pos{8, 10, 8}
-	mustDo(t, w, func(tx *world.Tx) {
+	testkit.Do(t, w, func(tx *world.Tx) {
 		buildEndPortalRing(tx, center)
 
 		frames := endPortalRingFrames(center)
@@ -115,11 +113,10 @@ func TestActivateEndPortalWrongFacing(t *testing.T) {
 }
 
 func TestEnderEyeCompletesRing(t *testing.T) {
-	w := world.New()
-	t.Cleanup(func() { _ = w.Close() })
+	w := testkit.NewWorld(t, world.Config{})
 
 	center := cube.Pos{8, 10, 8}
-	mustDo(t, w, func(tx *world.Tx) {
+	testkit.Do(t, w, func(tx *world.Tx) {
 		frames := endPortalRingFrames(center)
 		for i, fp := range frames {
 			tx.SetBlock(fp.pos, block.EndPortalFrame{Facing: fp.facing, Eye: i != 0}, nil)
@@ -142,11 +139,10 @@ func TestEnderEyeCompletesRing(t *testing.T) {
 }
 
 func TestEndPortalDespawnsOnFrameBreak(t *testing.T) {
-	w := world.New()
-	t.Cleanup(func() { _ = w.Close() })
+	w := testkit.NewWorld(t, world.Config{})
 
 	center := cube.Pos{8, 10, 8}
-	mustDo(t, w, func(tx *world.Tx) {
+	testkit.Do(t, w, func(tx *world.Tx) {
 		buildEndPortalRing(tx, center)
 		first := endPortalRingFrames(center)[0]
 		if !portal.ActivateEndPortal(tx, first.pos) {
@@ -173,11 +169,10 @@ func TestEndPortalDespawnsOnFrameBreak(t *testing.T) {
 }
 
 func TestEndPortalKeptOnPortalBlockBreak(t *testing.T) {
-	w := world.New()
-	t.Cleanup(func() { _ = w.Close() })
+	w := testkit.NewWorld(t, world.Config{})
 
 	center := cube.Pos{8, 10, 8}
-	mustDo(t, w, func(tx *world.Tx) {
+	testkit.Do(t, w, func(tx *world.Tx) {
 		buildEndPortalRing(tx, center)
 		if !portal.ActivateEndPortal(tx, endPortalRingFrames(center)[0].pos) {
 			t.Fatal("ActivateEndPortal() = false on a complete ring, want true")
@@ -204,10 +199,9 @@ func TestEndPortalKeptOnPortalBlockBreak(t *testing.T) {
 }
 
 func TestGenerateEndSpawnPlatformClearsThreeLayers(t *testing.T) {
-	w := world.New()
-	t.Cleanup(func() { _ = w.Close() })
+	w := testkit.NewWorld(t, world.Config{})
 
-	mustDo(t, w, func(tx *world.Tx) {
+	testkit.Do(t, w, func(tx *world.Tx) {
 		for y := 49; y <= 52; y++ {
 			tx.SetBlock(cube.Pos{100, y, 0}, block.Obsidian{}, nil)
 		}

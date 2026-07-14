@@ -3,6 +3,7 @@ package portal_test
 import (
 	"testing"
 
+	"github.com/df-mc/dragonfly/internal/testkit"
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/block/model"
@@ -91,11 +92,10 @@ func TestNetherPortalFromPos(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := world.Config{Synchronous: true}.New()
-			t.Cleanup(func() { _ = w.Close() })
+			w := testkit.NewWorld(t, world.Config{Synchronous: true})
 
 			origin := cube.Pos{8, 10, 8}
-			mustDo(t, w, func(tx *world.Tx) {
+			testkit.Do(t, w, func(tx *world.Tx) {
 				tt.build(tx, origin)
 				p, ok := portal.NetherPortalFromPos(tx, origin.Add(tt.pos))
 				if ok != tt.ok {
@@ -120,11 +120,10 @@ func TestPortalModelHasNoCollisionBBox(t *testing.T) {
 func TestActivateNetherPortal(t *testing.T) {
 	for _, axis := range []cube.Axis{cube.Z, cube.X} {
 		t.Run(axis.String(), func(t *testing.T) {
-			w := world.Config{Synchronous: true}.New()
-			t.Cleanup(func() { _ = w.Close() })
+			w := testkit.NewWorld(t, world.Config{Synchronous: true})
 
 			origin := cube.Pos{8, 10, 8}
-			mustDo(t, w, func(tx *world.Tx) {
+			testkit.Do(t, w, func(tx *world.Tx) {
 				buildVerticalFrame(tx, origin, axis, 2, 3)
 				if !portal.ActivateNetherPortal(tx, origin) {
 					t.Fatal("ActivateNetherPortal() = false, want true")
@@ -147,11 +146,10 @@ func TestActivateNetherPortal(t *testing.T) {
 }
 
 func TestFireChargeActivatesNetherPortal(t *testing.T) {
-	w := world.Config{Synchronous: true}.New()
-	t.Cleanup(func() { _ = w.Close() })
+	w := testkit.NewWorld(t, world.Config{Synchronous: true})
 
 	origin := cube.Pos{8, 10, 8}
-	mustDo(t, w, func(tx *world.Tx) {
+	testkit.Do(t, w, func(tx *world.Tx) {
 		buildVerticalFrame(tx, origin, cube.Z, 2, 3)
 		ctx := &item.UseContext{}
 		if ok := (item.FireCharge{}).UseOnBlock(origin.Side(cube.FaceDown), cube.FaceUp, cube.Pos{}.Vec3(), tx, nil, ctx); !ok {
@@ -167,11 +165,10 @@ func TestFireChargeActivatesNetherPortal(t *testing.T) {
 }
 
 func TestActivatedPortalCleanupOnBrokenFrame(t *testing.T) {
-	w := world.Config{Synchronous: true}.New()
-	t.Cleanup(func() { _ = w.Close() })
+	w := testkit.NewWorld(t, world.Config{Synchronous: true})
 
 	origin := cube.Pos{8, 10, 8}
-	mustDo(t, w, func(tx *world.Tx) {
+	testkit.Do(t, w, func(tx *world.Tx) {
 		buildVerticalFrame(tx, origin, cube.Z, 2, 3)
 		if !portal.ActivateNetherPortal(tx, origin) {
 			t.Fatal("ActivateNetherPortal() = false, want true")
@@ -235,11 +232,4 @@ func widthOffset(axis cube.Axis, width int) cube.Pos {
 		return cube.Pos{width, 0, 0}
 	}
 	return cube.Pos{0, 0, width}
-}
-
-func mustDo(t *testing.T, w *world.World, f func(tx *world.Tx)) {
-	t.Helper()
-	if err := w.Do(f).Err(); err != nil {
-		t.Fatalf("world task failed: %v", err)
-	}
 }

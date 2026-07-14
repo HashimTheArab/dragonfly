@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/df-mc/dragonfly/internal/testkit"
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
@@ -57,12 +58,12 @@ func TestEntProjectileTravelsThroughPortal(t *testing.T) {
 
 	sourcePos := mgl64.Vec3{80.5, 64, 80.5}
 	targetPortal := cube.Pos{10, 64, 10}
-	mustDo(t, nether, func(tx *world.Tx) {
+	testkit.Do(t, nether, func(tx *world.Tx) {
 		buildActivePortal(tx, targetPortal)
 	})
 
 	handle := world.EntitySpawnOpts{Position: sourcePos}.New(EnderPearlType, enderPearlConf)
-	mustDo(t, overworld, func(tx *world.Tx) {
+	testkit.Do(t, overworld, func(tx *world.Tx) {
 		e := tx.AddEntity(handle)
 		(block.Portal{Axis: cube.Z}).EntityInside(cube.PosFromVec3(sourcePos), tx, e)
 		if _, ok := handle.Entity(tx); !ok {
@@ -81,7 +82,7 @@ func TestEntProjectileTravelsThroughPortal(t *testing.T) {
 		t.Fatalf("destination spawn event position = %v, want %v", got, want)
 	}
 
-	mustDo(t, nether, func(tx *world.Tx) {
+	testkit.Do(t, nether, func(tx *world.Tx) {
 		e, ok := handle.Entity(tx)
 		if !ok {
 			t.Fatal("entity was not added to the Nether")
@@ -123,15 +124,16 @@ func TestEntTravelsThroughPortalOnTick(t *testing.T) {
 	})
 
 	sourcePortal, targetPortal := cube.Pos{80, 64, 80}, cube.Pos{10, 64, 10}
-	mustDo(t, overworld, func(tx *world.Tx) {
+	testkit.Do(t, overworld, func(tx *world.Tx) {
 		buildActivePortal(tx, sourcePortal)
 	})
-	mustDo(t, nether, func(tx *world.Tx) {
+
+	testkit.Do(t, nether, func(tx *world.Tx) {
 		buildActivePortal(tx, targetPortal)
 	})
 
 	handle := world.EntitySpawnOpts{Position: sourcePortal.Vec3Middle().Sub(mgl64.Vec3{1})}.New(testMovingEntType{}, testMoveConfig{delta: mgl64.Vec3{1}})
-	mustDo(t, overworld, func(tx *world.Tx) {
+	testkit.Do(t, overworld, func(tx *world.Tx) {
 		e := tx.AddEntity(handle)
 		ticker, ok := e.(world.TickerEntity)
 		if !ok {
@@ -144,7 +146,7 @@ func TestEntTravelsThroughPortalOnTick(t *testing.T) {
 	if entityInWorld(handle, overworld) {
 		t.Fatal("entity remained in the source world after tick-driven portal travel")
 	}
-	mustDo(t, nether, func(tx *world.Tx) {
+	testkit.Do(t, nether, func(tx *world.Tx) {
 		e, ok := handle.Entity(tx)
 		if !ok {
 			t.Fatal("entity was not added to the Nether")
@@ -178,12 +180,12 @@ func TestEntTravelsThroughEndPortal(t *testing.T) {
 	})
 
 	sourcePortal := cube.Pos{50, 64, 50}
-	mustDo(t, overworld, func(tx *world.Tx) {
+	testkit.Do(t, overworld, func(tx *world.Tx) {
 		tx.SetBlock(sourcePortal, block.EndPortal{}, nil)
 	})
 
 	handle := world.EntitySpawnOpts{Position: sourcePortal.Vec3Middle().Sub(mgl64.Vec3{1})}.New(testMovingEntType{}, testMoveConfig{delta: mgl64.Vec3{1}})
-	mustDo(t, overworld, func(tx *world.Tx) {
+	testkit.Do(t, overworld, func(tx *world.Tx) {
 		e := tx.AddEntity(handle)
 		ticker, ok := e.(world.TickerEntity)
 		if !ok {
@@ -196,7 +198,7 @@ func TestEntTravelsThroughEndPortal(t *testing.T) {
 	if entityInWorld(handle, overworld) {
 		t.Fatal("entity remained in the source world after End portal travel")
 	}
-	mustDo(t, end, func(tx *world.Tx) {
+	testkit.Do(t, end, func(tx *world.Tx) {
 		e, ok := handle.Entity(tx)
 		if !ok {
 			t.Fatal("entity was not added to the End")
@@ -205,6 +207,7 @@ func TestEntTravelsThroughEndPortal(t *testing.T) {
 		if got := e.Position(); !got.ApproxEqual(want) {
 			t.Fatalf("entity position after End travel = %v, want %v", got, want)
 		}
+
 		// Spawn platform: 5x5 obsidian at y=48 around x=100, z=0.
 		for dx := -2; dx <= 2; dx++ {
 			for dz := -2; dz <= 2; dz++ {
@@ -219,12 +222,11 @@ func TestEntTravelsThroughEndPortal(t *testing.T) {
 
 func TestEndReturnSpawnSelection(t *testing.T) {
 	t.Run("overworld uses configured spawn point", func(t *testing.T) {
-		w := world.New()
-		t.Cleanup(func() { _ = w.Close() })
+		w := testkit.NewWorld(t, world.Config{})
 		want := mgl64.Vec3{12.5, 70, -3.5}
 		tc := &PortalTravelComputer{SpawnPoint: func(*world.Tx) mgl64.Vec3 { return want }}
 
-		mustDo(t, w, func(tx *world.Tx) {
+		testkit.Do(t, w, func(tx *world.Tx) {
 			got, ok := tc.destinationSpawn(tx, world.End, cube.Pos{})
 			if !ok || !got.ApproxEqual(want) {
 				t.Fatalf("destinationSpawn() = %v, %v, want %v, true", got, ok, want)
@@ -233,11 +235,10 @@ func TestEndReturnSpawnSelection(t *testing.T) {
 	})
 
 	t.Run("overworld falls back to world spawn", func(t *testing.T) {
-		w := world.New()
-		t.Cleanup(func() { _ = w.Close() })
+		w := testkit.NewWorld(t, world.Config{})
 		tc := &PortalTravelComputer{}
 
-		mustDo(t, w, func(tx *world.Tx) {
+		testkit.Do(t, w, func(tx *world.Tx) {
 			want := tx.World().Spawn().Vec3Middle()
 			got, ok := tc.destinationSpawn(tx, world.End, cube.Pos{})
 			if !ok || !got.ApproxEqual(want) {
@@ -247,11 +248,10 @@ func TestEndReturnSpawnSelection(t *testing.T) {
 	})
 
 	t.Run("nether searches for a portal", func(t *testing.T) {
-		w := world.Config{Dim: world.Nether}.New()
-		t.Cleanup(func() { _ = w.Close() })
+		w := testkit.NewWorld(t, world.Config{Dim: world.Nether})
 		tc := &PortalTravelComputer{}
 
-		mustDo(t, w, func(tx *world.Tx) {
+		testkit.Do(t, w, func(tx *world.Tx) {
 			if _, ok := tc.destinationSpawn(tx, world.End, cube.Pos{}); ok {
 				t.Fatal("destinationSpawn() ok = true without a linked Nether portal, want false")
 			}
@@ -285,7 +285,7 @@ func TestPortalTravelComputerDelayedTravel(t *testing.T) {
 	_ = nether
 
 	tc := &PortalTravelComputer{}
-	mustDo(t, overworld, func(tx *world.Tx) {
+	testkit.Do(t, overworld, func(tx *world.Tx) {
 		if destination := tc.enterPortal(tx, world.Nether); destination != nil {
 			t.Fatal("enterPortal() started travel before the portal timer finished")
 		}
@@ -306,7 +306,7 @@ func TestPortalTravelComputerCooldown(t *testing.T) {
 	_ = nether
 
 	tc := NewPortalTravelComputer()
-	mustDo(t, overworld, func(tx *world.Tx) {
+	testkit.Do(t, overworld, func(tx *world.Tx) {
 		tc.cooldownUntil = time.Now().Add(time.Hour)
 		if destination := tc.enterPortal(tx, world.Nether); destination != nil {
 			t.Fatal("enterPortal() started travel during the portal cooldown")
@@ -328,26 +328,18 @@ func TestEntPortalTravelWithoutDestinationPortal(t *testing.T) {
 	sourcePos := mgl64.Vec3{80.5, 64, 80.5}
 	handle := world.EntitySpawnOpts{Position: sourcePos}.New(EnderPearlType, enderPearlConf)
 	var tc *PortalTravelComputer
-	mustDo(t, overworld, func(tx *world.Tx) {
+	testkit.Do(t, overworld, func(tx *world.Tx) {
 		e := tx.AddEntity(handle)
 		tc = e.(*Ent).Behaviour().(*ProjectileBehaviour).PortalTravelComputer()
 		(block.Portal{Axis: cube.Z}).EntityInside(cube.PosFromVec3(sourcePos), tx, e)
 	})
 
 	// The cooldown is stamped once the travel attempt finishes, after the entity was returned to the source world.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
+	testkit.Eventually(t, 2*time.Second, func() bool {
 		tc.mu.Lock()
-		done := !tc.cooldownUntil.IsZero()
-		tc.mu.Unlock()
-		if done {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("timed out waiting for the travel attempt to finish")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		defer tc.mu.Unlock()
+		return !tc.cooldownUntil.IsZero()
+	})
 
 	if !entityInWorld(handle, overworld) {
 		t.Fatal("entity did not return to the source world after failing to find a destination portal")
@@ -355,13 +347,14 @@ func TestEntPortalTravelWithoutDestinationPortal(t *testing.T) {
 	if spawnRecorder.called {
 		t.Fatal("entity was spawned in the destination world without a linked portal")
 	}
-	mustDo(t, overworld, func(tx *world.Tx) {
+	testkit.Do(t, overworld, func(tx *world.Tx) {
 		e, _ := handle.Entity(tx)
 		if got := e.Position(); !got.ApproxEqual(sourcePos) {
 			t.Fatalf("entity position after failed portal travel = %v, want %v", got, sourcePos)
 		}
 	})
-	mustDo(t, nether, func(tx *world.Tx) {
+
+	testkit.Do(t, nether, func(tx *world.Tx) {
 		if _, ok := portal.FindNetherPortal(tx, cube.Pos{10, 64, 10}, 16); ok {
 			t.Fatal("a portal was created in the destination world by a non-player entity")
 		}
@@ -374,12 +367,13 @@ func TestPortalTravelClosesHandleWhenBothWorldsClose(t *testing.T) {
 
 	origin := mgl64.Vec3{80.5, 64, 80.5}
 	handle := world.EntitySpawnOpts{Position: origin}.New(EnderPearlType, enderPearlConf)
-	mustDo(t, source, func(tx *world.Tx) {
+	testkit.Do(t, source, func(tx *world.Tx) {
 		e := tx.AddEntity(handle)
 		if removed := tx.RemoveEntity(e); removed != handle {
 			t.Fatal("RemoveEntity() did not return the entity handle")
 		}
 	})
+
 	if err := destination.Close(); err != nil {
 		t.Fatalf("close destination world: %v", err)
 	}
@@ -396,17 +390,13 @@ func TestPortalTravelClosesHandleWhenBothWorldsClose(t *testing.T) {
 }
 
 func TestPortalTravelRethrowsDestinationPanic(t *testing.T) {
-	source := world.Config{Synchronous: true}.New()
-	destination := world.Config{Dim: world.Nether, Synchronous: true}.New()
-	t.Cleanup(func() {
-		_ = source.Close()
-		_ = destination.Close()
-	})
+	source := testkit.NewWorld(t, world.Config{Synchronous: true})
+	destination := testkit.NewWorld(t, world.Config{Dim: world.Nether, Synchronous: true})
 	destination.Handle(panicSpawnHandler{})
 
 	origin := mgl64.Vec3{80.5, 64, 80.5}
 	handle := world.EntitySpawnOpts{Position: origin}.New(testMovingEntType{}, testPortalCreatorConfig{})
-	mustDo(t, source, func(tx *world.Tx) {
+	testkit.Do(t, source, func(tx *world.Tx) {
 		e := tx.AddEntity(handle)
 		if removed := tx.RemoveEntity(e); removed != handle {
 			t.Fatal("RemoveEntity() did not return the entity handle")
@@ -430,13 +420,13 @@ func TestFallingBlockDoesNotTravelThroughPortal(t *testing.T) {
 	nether.Handle(spawnRecorder)
 
 	targetPortal := cube.Pos{10, 64, 10}
-	mustDo(t, nether, func(tx *world.Tx) {
+	testkit.Do(t, nether, func(tx *world.Tx) {
 		buildActivePortal(tx, targetPortal)
 	})
 
 	sourcePos := mgl64.Vec3{80.5, 64, 80.5}
 	handle := NewFallingBlock(world.EntitySpawnOpts{Position: sourcePos}, block.Sand{})
-	mustDo(t, overworld, func(tx *world.Tx) {
+	testkit.Do(t, overworld, func(tx *world.Tx) {
 		e := tx.AddEntity(handle)
 		(block.Portal{Axis: cube.Z}).EntityInside(cube.PosFromVec3(sourcePos), tx, e)
 	})
@@ -456,13 +446,13 @@ func TestEntPortalTravelCreatesPortal(t *testing.T) {
 
 	sourcePos := mgl64.Vec3{80.5, 64, 80.5}
 	handle := world.EntitySpawnOpts{Position: sourcePos}.New(testMovingEntType{}, testPortalCreatorConfig{})
-	mustDo(t, overworld, func(tx *world.Tx) {
+	testkit.Do(t, overworld, func(tx *world.Tx) {
 		e := tx.AddEntity(handle)
 		(block.Portal{Axis: cube.Z}).EntityInside(cube.PosFromVec3(sourcePos), tx, e)
 	})
 
 	waitForEntityWorld(t, handle, nether)
-	mustDo(t, nether, func(tx *world.Tx) {
+	testkit.Do(t, nether, func(tx *world.Tx) {
 		if _, ok := portal.FindNetherPortal(tx, cube.Pos{10, 64, 10}, 16); !ok {
 			t.Fatal("no portal was created in the destination world for a portal-creating entity")
 		}
@@ -491,13 +481,6 @@ func portalWorlds(t *testing.T) (overworld, nether *world.World) {
 	return overworld, nether
 }
 
-func mustDo(t *testing.T, w *world.World, f func(tx *world.Tx)) {
-	t.Helper()
-	if err := w.Do(f).Wait(context.Background()); err != nil {
-		t.Fatalf("world task failed: %v", err)
-	}
-}
-
 // testPortalCreatorConfig configures a test entity that may create destination portals, like a player.
 type testPortalCreatorConfig struct{}
 
@@ -510,14 +493,7 @@ func (testPortalCreatorConfig) Apply(data *world.EntityData) {
 
 func waitForEntityWorld(t *testing.T, handle *world.EntityHandle, w *world.World) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if entityInWorld(handle, w) {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("timed out waiting for entity to change worlds")
+	testkit.Eventually(t, 2*time.Second, func() bool { return entityInWorld(handle, w) })
 }
 
 func entityInWorld(handle *world.EntityHandle, w *world.World) bool {
