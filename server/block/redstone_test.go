@@ -1,17 +1,21 @@
 package block
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/df-mc/dragonfly/internal/testkit"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/sound"
 	"github.com/go-gl/mathgl/mgl64"
 )
+
+func runWorld(w *world.World, f func(*world.Tx)) {
+	w.Do(f).Wait(context.Background())
+}
 
 func TestRedstoneWirePowersBlockBelowButNotAbove(t *testing.T) {
 	wire := RedstoneWire{Power: 15}
@@ -47,11 +51,12 @@ func TestRedstoneWireVerticalTravel(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			w := testkit.NewWorld(t, world.Config{Synchronous: true})
+			w := world.Config{Synchronous: true}.New()
+			defer w.Close()
 
 			low, high := cube.Pos{1, 64, 0}, cube.Pos{0, 65, 0}
 			var neighbours []cube.Pos
-			testkit.Do(t, w, func(tx *world.Tx) {
+			runWorld(w, func(tx *world.Tx) {
 				tx.SetBlock(low.Side(cube.FaceDown), Stone{}, nil)
 				tx.SetBlock(high.Side(cube.FaceDown), test.upperSupport, nil)
 				tx.SetBlock(low, RedstoneWire{}, nil)
@@ -76,19 +81,19 @@ func TestRedstoneWireVerticalTravel(t *testing.T) {
 }
 
 func TestRedstoneWireBreaksWhenSupportRemoved(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true, Entities: redstoneBreakDropTestEntityRegistry()})
+	w := world.Config{Synchronous: true, Entities: redstoneBreakDropTestEntityRegistry()}.New()
+	defer w.Close()
 
 	wirePos := cube.Pos{0, 64, 0}
 	supportPos := wirePos.Side(cube.FaceDown)
 	var blockAfter world.Block
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(supportPos, Stone{}, nil)
 		tx.SetBlock(wirePos, RedstoneWire{}, nil)
 		tx.SetBlock(supportPos, nil, nil)
 	})
-
 	w.AdvanceTick()
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		blockAfter = tx.Block(wirePos)
 	})
 
@@ -111,12 +116,13 @@ func TestRedstoneWireGlowstoneLadderDoesNotOscillateAfterNeighbourBlockUpdate(t 
 		{name: "break diagonal top dust", updatePos: cube.Pos{1, 67, -1}, breaking: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			w := testkit.NewWorld(t, world.Config{Dim: world.End, Synchronous: true})
+			w := world.Config{Dim: world.End, Synchronous: true}.New()
+			defer w.Close()
 
 			viewer := &redstoneWireTestBlockUpdateViewer{}
 			loader := world.NewLoader(2, w, viewer)
 			defer func() {
-				testkit.Do(t, w, func(tx *world.Tx) {
+				runWorld(w, func(tx *world.Tx) {
 					loader.Close(tx)
 				})
 			}()
@@ -135,11 +141,10 @@ func TestRedstoneWireGlowstoneLadderDoesNotOscillateAfterNeighbourBlockUpdate(t 
 				{0, 66, 0},
 			}
 			topDustPos := dustPositions[len(dustPositions)-1]
-			testkit.Do(t, w, func(tx *world.Tx) {
+			runWorld(w, func(tx *world.Tx) {
 				loader.Move(tx, mgl64.Vec3{0, 64, 0})
 				loader.Load(tx, 16)
 			})
-
 			redstoneWireTestSetBlockAndWait(t, w, sourcePos, RedstoneBlock{})
 			for i, supportPos := range supportPositions {
 				if i == 0 {
@@ -162,7 +167,7 @@ func TestRedstoneWireGlowstoneLadderDoesNotOscillateAfterNeighbourBlockUpdate(t 
 			viewer.reset()
 
 			var initialPower int
-			testkit.Do(t, w, func(tx *world.Tx) {
+			runWorld(w, func(tx *world.Tx) {
 				initialPower = tx.Block(topDustPos).(RedstoneWire).Power
 				if test.breaking {
 					tx.SetBlock(test.updatePos, nil, nil)
@@ -177,10 +182,9 @@ func TestRedstoneWireGlowstoneLadderDoesNotOscillateAfterNeighbourBlockUpdate(t 
 			for range 12 {
 				lastTick = redstoneWireTestWaitNextTick(t, w, lastTick)
 				var power int
-				testkit.Do(t, w, func(tx *world.Tx) {
+				runWorld(w, func(tx *world.Tx) {
 					power = tx.Block(topDustPos).(RedstoneWire).Power
 				})
-
 				if power != lastPower {
 					powerChanges++
 					lastPower = power
@@ -228,12 +232,13 @@ func TestRedstoneTorchAttachmentPower(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			w := testkit.NewWorld(t, world.Config{Synchronous: true})
+			w := world.Config{Synchronous: true}.New()
+			defer w.Close()
 
 			torchPos := cube.Pos{1, 64, 0}
 			attachmentPos := torchPos.Side(cube.FaceWest)
 			var powered bool
-			testkit.Do(t, w, func(tx *world.Tx) {
+			runWorld(w, func(tx *world.Tx) {
 				test.setup(tx, attachmentPos)
 
 				torch := RedstoneTorch{Facing: cube.FaceWest, Lit: true}
@@ -269,13 +274,14 @@ func TestRedstoneTorchUnknownFacingDoesNotPowerAttachmentFace(t *testing.T) {
 }
 
 func TestRedstoneTorchUnknownFacingUsesBlockBelowAsAttachment(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	torchPos := cube.Pos{1, 64, 0}
 	attachmentPos := torchPos.Side(cube.FaceDown)
 	inputPos := attachmentPos.Side(cube.FaceNorth)
 	var unpoweredAttachment, poweredAttachment, supported bool
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(torchPos, RedstoneTorch{Facing: unknownFace, Lit: true}, nil)
 
@@ -302,14 +308,15 @@ func TestRedstoneTorchUnknownFacingUsesBlockBelowAsAttachment(t *testing.T) {
 }
 
 func TestRedstoneBlockPowersAdjacentComponentsButNotThroughStone(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	sourcePos := cube.Pos{0, 64, 0}
 	adjacentDustPos := sourcePos.Side(cube.FaceEast)
 	stonePos := sourcePos.Side(cube.FaceWest)
 	farDustPos := stonePos.Side(cube.FaceWest)
 	var adjacentPower, farPower int
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(sourcePos, RedstoneBlock{}, nil)
 		tx.SetBlock(adjacentDustPos, RedstoneWire{}, nil)
 		tx.SetBlock(adjacentDustPos.Side(cube.FaceDown), Stone{}, nil)
@@ -330,12 +337,13 @@ func TestRedstoneBlockPowersAdjacentComponentsButNotThroughStone(t *testing.T) {
 }
 
 func TestRedstoneBlockDoesNotPowerTorchThroughStone(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	torchPos := cube.Pos{1, 64, 0}
 	attachmentPos := torchPos.Side(cube.FaceWest)
 	var powered bool
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(attachmentPos.Side(cube.FaceNorth), RedstoneBlock{}, nil)
 
@@ -349,13 +357,14 @@ func TestRedstoneBlockDoesNotPowerTorchThroughStone(t *testing.T) {
 }
 
 func TestLeverStrongPowersAttachedBlockFace(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	leverPos := cube.Pos{1, 64, 0}
 	attachedPos := leverPos.Side(cube.FaceWest)
 	unattachedPos := leverPos.Side(cube.FaceEast)
 	var attachedPower, unattachedPower int
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachedPos, Stone{}, nil)
 		tx.SetBlock(unattachedPos, Stone{}, nil)
 		tx.SetBlock(leverPos, Lever{Powered: true, Facing: cube.FaceEast}, nil)
@@ -373,19 +382,19 @@ func TestLeverStrongPowersAttachedBlockFace(t *testing.T) {
 }
 
 func TestLeverBreaksWhenSupportRemoved(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true, Entities: redstoneBreakDropTestEntityRegistry()})
+	w := world.Config{Synchronous: true, Entities: redstoneBreakDropTestEntityRegistry()}.New()
+	defer w.Close()
 
 	leverPos := cube.Pos{1, 64, 0}
 	supportPos := leverPos.Side(cube.FaceWest)
 	var blockAfter world.Block
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(supportPos, Stone{}, nil)
 		tx.SetBlock(leverPos, Lever{Facing: cube.FaceEast}, nil)
 		tx.SetBlock(supportPos, nil, nil)
 	})
-
 	w.AdvanceTick()
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		blockAfter = tx.Block(leverPos)
 	})
 
@@ -395,14 +404,14 @@ func TestLeverBreaksWhenSupportRemoved(t *testing.T) {
 }
 
 func TestLeverUpdatesConsumerBehindAttachedBlock(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 	loader := world.NewLoader(1, w, world.NopViewer{})
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		loader.Load(tx, 1)
 	})
-
 	defer func() {
-		testkit.Do(t, w, func(tx *world.Tx) {
+		runWorld(w, func(tx *world.Tx) {
 			loader.Close(tx)
 		})
 	}()
@@ -410,7 +419,7 @@ func TestLeverUpdatesConsumerBehindAttachedBlock(t *testing.T) {
 	leverPos := cube.Pos{0, 64, 0}
 	attachmentPos := leverPos.Side(cube.FaceWest)
 	notePos := attachmentPos.Side(cube.FaceWest)
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(notePos, Note{}, nil)
 		tx.SetBlock(leverPos, Lever{Facing: cube.FaceEast}, nil)
@@ -419,17 +428,17 @@ func TestLeverUpdatesConsumerBehindAttachedBlock(t *testing.T) {
 	redstoneWireTestSetBlockAndWait(t, w, leverPos, Lever{Powered: true, Facing: cube.FaceEast})
 
 	var powered bool
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		powered = tx.Block(notePos).(Note).Powered
 	})
-
 	if !powered {
 		t.Fatal("lever did not update consumer behind its attached block")
 	}
 }
 
 func TestNoteBlockPlaysOnRedstoneRisingEdgeOnly(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	handler := &redstoneSoundTestHandler{}
 	w.Handle(handler)
@@ -437,7 +446,7 @@ func TestNoteBlockPlaysOnRedstoneRisingEdgeOnly(t *testing.T) {
 	leverPos := cube.Pos{0, 64, 0}
 	attachmentPos := leverPos.Side(cube.FaceWest)
 	notePos := attachmentPos.Side(cube.FaceWest)
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(notePos, Note{}, nil)
 		tx.SetBlock(leverPos, Lever{Facing: cube.FaceEast}, nil)
@@ -447,10 +456,9 @@ func TestNoteBlockPlaysOnRedstoneRisingEdgeOnly(t *testing.T) {
 	redstoneWireTestSetBlockAndWait(t, w, leverPos, Lever{Powered: false, Facing: cube.FaceEast})
 
 	var powered bool
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		powered = tx.Block(notePos).(Note).Powered
 	})
-
 	if handler.noteSounds != 1 {
 		t.Fatalf("note sounds after rising and falling edge = %d, want 1", handler.noteSounds)
 	}
@@ -460,13 +468,14 @@ func TestNoteBlockPlaysOnRedstoneRisingEdgeOnly(t *testing.T) {
 }
 
 func TestTNTDoesNotConductRedstonePower(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	sourcePos := cube.Pos{0, 64, 0}
 	tntPos := sourcePos.Side(cube.FaceEast)
 	dustPos := tntPos.Side(cube.FaceEast)
 	var power int
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(sourcePos, RedstoneWire{Power: 15}, nil)
 		tx.SetBlock(sourcePos.Side(cube.FaceDown), Stone{}, nil)
 		tx.SetBlock(tntPos, TNT{}, nil)
@@ -482,26 +491,25 @@ func TestTNTDoesNotConductRedstonePower(t *testing.T) {
 }
 
 func TestTNTRedstoneEngineRisingEdgePrimes(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true, Entities: redstoneTNTTestEntityRegistry()})
+	w := world.Config{Synchronous: true, Entities: redstoneTNTTestEntityRegistry()}.New()
+	defer w.Close()
 
 	sourcePos := cube.Pos{0, 64, 0}
 	tntPos := sourcePos.Side(cube.FaceEast)
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(tntPos, TNT{}, nil)
 		tx.SetBlock(sourcePos, RedstoneBlock{}, nil)
 	})
-
 	w.AdvanceTick()
 
 	var blockAfter world.Block
 	entities := 0
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		blockAfter = tx.Block(tntPos)
 		for range tx.Entities() {
 			entities++
 		}
 	})
-
 	if _, ok := blockAfter.(Air); !ok {
 		t.Fatalf("TNT after engine redstone update = %T, want Air", blockAfter)
 	}
@@ -523,12 +531,13 @@ func TestTNTRedstonePowerAction(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			w := testkit.NewWorld(t, world.Config{Synchronous: true, Entities: redstoneTNTTestEntityRegistry()})
+			w := world.Config{Synchronous: true, Entities: redstoneTNTTestEntityRegistry()}.New()
+			defer w.Close()
 
 			pos := cube.Pos{1, 64, 0}
 			var blockAfter world.Block
 			entities := 0
-			testkit.Do(t, w, func(tx *world.Tx) {
+			runWorld(w, func(tx *world.Tx) {
 				tx.SetBlock(pos, TNT{}, nil)
 
 				(TNT{}).RedstonePowerAction(pos, tx, test.oldPower, test.newPower)
@@ -550,14 +559,15 @@ func TestTNTRedstonePowerAction(t *testing.T) {
 }
 
 func TestRedstoneTorchBurnsOutAfterRapidSelfTriggeredTurnOffs(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	torchPos := cube.Pos{1, 64, 0}
 	attachmentPos := torchPos.Side(cube.FaceWest)
 	inputPos := attachmentPos.Side(cube.FaceNorth)
 	var lit bool
 	var burnedOut, recoverable bool
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(torchPos, RedstoneTorch{Facing: cube.FaceWest, Lit: true}, nil)
 
@@ -576,14 +586,15 @@ func TestRedstoneTorchBurnsOutAfterRapidSelfTriggeredTurnOffs(t *testing.T) {
 }
 
 func TestRedstoneTorchExternalTurnOffsDoNotBurnOut(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	torchPos := cube.Pos{1, 64, 0}
 	attachmentPos := torchPos.Side(cube.FaceWest)
 	inputPos := attachmentPos.Side(cube.FaceNorth)
 	var lit bool
 	var burnedOut bool
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(torchPos, RedstoneTorch{Facing: cube.FaceWest, Lit: true}, nil)
 
@@ -602,12 +613,13 @@ func TestRedstoneTorchExternalTurnOffsDoNotBurnOut(t *testing.T) {
 }
 
 func TestRedstoneTorchScheduledTickReloadsLiveState(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	torchPos := cube.Pos{1, 64, 0}
 	attachmentPos := torchPos.Side(cube.FaceWest)
 	var lit bool
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(torchPos, RedstoneTorch{Facing: cube.FaceWest}, &world.SetOpts{DisableRedstoneUpdates: true})
 
@@ -622,14 +634,14 @@ func TestRedstoneTorchScheduledTickReloadsLiveState(t *testing.T) {
 }
 
 func TestBurnedOutRedstoneTorchRelightsWhenInputIsRemoved(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 	loader := world.NewLoader(1, w, world.NopViewer{})
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		loader.Load(tx, 1)
 	})
-
 	defer func() {
-		testkit.Do(t, w, func(tx *world.Tx) {
+		runWorld(w, func(tx *world.Tx) {
 			loader.Close(tx)
 		})
 	}()
@@ -639,7 +651,7 @@ func TestBurnedOutRedstoneTorchRelightsWhenInputIsRemoved(t *testing.T) {
 	inputPos := attachmentPos.Side(cube.FaceNorth)
 	var lit bool
 	var burnedOutTick int64
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(torchPos, RedstoneTorch{Facing: cube.FaceWest, Lit: true}, nil)
 
@@ -647,9 +659,8 @@ func TestBurnedOutRedstoneTorchRelightsWhenInputIsRemoved(t *testing.T) {
 
 		burnedOutTick = tx.CurrentTick()
 	})
-
 	redstoneWireTestWaitTick(t, w, burnedOutTick)
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(inputPos, nil, nil)
 		torch := tx.Block(torchPos).(RedstoneTorch)
 		torch.RedstonePowerActionUpdate(torchPos, tx, world.RedstoneUpdate{ChangedNeighbour: inputPos, HasChangedNeighbour: true, ChangedRedstoneRelevant: true})
@@ -663,14 +674,14 @@ func TestBurnedOutRedstoneTorchRelightsWhenInputIsRemoved(t *testing.T) {
 }
 
 func TestBurnedOutRedstoneTorchRecoversFromExternalScheduledUpdate(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 	loader := world.NewLoader(1, w, world.NopViewer{})
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		loader.Load(tx, 1)
 	})
-
 	defer func() {
-		testkit.Do(t, w, func(tx *world.Tx) {
+		runWorld(w, func(tx *world.Tx) {
 			loader.Close(tx)
 		})
 	}()
@@ -681,7 +692,7 @@ func TestBurnedOutRedstoneTorchRecoversFromExternalScheduledUpdate(t *testing.T)
 	sourcePos := inputPos.Side(cube.FaceNorth)
 	var lit bool
 	var burnedOutTick int64
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(torchPos, RedstoneTorch{Facing: cube.FaceWest, Lit: true}, nil)
 
@@ -689,9 +700,8 @@ func TestBurnedOutRedstoneTorchRecoversFromExternalScheduledUpdate(t *testing.T)
 
 		burnedOutTick = tx.CurrentTick()
 	})
-
 	redstoneWireTestWaitTick(t, w, burnedOutTick)
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(inputPos, nil, nil)
 		torch := tx.Block(torchPos).(RedstoneTorch)
 		torch.RedstonePowerActionUpdate(torchPos, tx, world.RedstoneUpdate{
@@ -712,14 +722,15 @@ func TestBurnedOutRedstoneTorchRecoversFromExternalScheduledUpdate(t *testing.T)
 }
 
 func TestBurnedOutRedstoneTorchDoesNotRecoverFromInputWirePowerDrop(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	torchPos := cube.Pos{1, 64, 0}
 	attachmentPos := torchPos.Side(cube.FaceWest)
 	inputPos := attachmentPos.Side(cube.FaceNorth)
 	var lit bool
 	var burnedOut bool
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(torchPos, RedstoneTorch{Facing: cube.FaceWest, Lit: true}, nil)
 
@@ -739,13 +750,14 @@ func TestBurnedOutRedstoneTorchDoesNotRecoverFromInputWirePowerDrop(t *testing.T
 }
 
 func TestBurnedOutRedstoneTorchRecoversFromZeroPositionInputUpdate(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	torchPos := cube.Pos{1, 0, 0}
 	attachmentPos := cube.Pos{0, 0, 0}
 	inputPos := attachmentPos.Side(cube.FaceNorth)
 	var lit bool
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(torchPos, RedstoneTorch{Facing: cube.FaceWest, Lit: true}, nil)
 
@@ -764,14 +776,14 @@ func TestBurnedOutRedstoneTorchRecoversFromZeroPositionInputUpdate(t *testing.T)
 }
 
 func TestBurnedOutRedstoneTorchDoesNotRelightFromDisconnectedUpdate(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 	loader := world.NewLoader(1, w, world.NopViewer{})
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		loader.Load(tx, 1)
 	})
-
 	defer func() {
-		testkit.Do(t, w, func(tx *world.Tx) {
+		runWorld(w, func(tx *world.Tx) {
 			loader.Close(tx)
 		})
 	}()
@@ -781,7 +793,7 @@ func TestBurnedOutRedstoneTorchDoesNotRelightFromDisconnectedUpdate(t *testing.T
 	inputPos := attachmentPos.Side(cube.FaceNorth)
 	var lit, recoverable bool
 	var burnedOutTick int64
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(torchPos, RedstoneTorch{Facing: cube.FaceWest, Lit: true}, nil)
 
@@ -789,9 +801,8 @@ func TestBurnedOutRedstoneTorchDoesNotRelightFromDisconnectedUpdate(t *testing.T
 
 		burnedOutTick = tx.CurrentTick()
 	})
-
 	redstoneWireTestWaitTick(t, w, burnedOutTick)
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(inputPos, nil, &world.SetOpts{DisableBlockUpdates: true, DisableRedstoneUpdates: true})
 		torch := tx.Block(torchPos).(RedstoneTorch)
 		torch.RedstonePowerActionUpdate(torchPos, tx, world.RedstoneUpdate{ChangedNeighbour: inputPos.Side(cube.FaceNorth).Side(cube.FaceNorth), HasChangedNeighbour: true})
@@ -806,13 +817,14 @@ func TestBurnedOutRedstoneTorchDoesNotRelightFromDisconnectedUpdate(t *testing.T
 }
 
 func TestBurnedOutRedstoneTorchDoesNotSelfRecoverWhenLoopUnpowersInput(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Synchronous: true})
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
 
 	torchPos := cube.Pos{1, 64, 0}
 	attachmentPos := torchPos.Side(cube.FaceWest)
 	inputPos := attachmentPos.Side(cube.FaceNorth)
 	var lit bool
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(attachmentPos, Stone{}, nil)
 		tx.SetBlock(torchPos, RedstoneTorch{Facing: cube.FaceWest, Lit: true}, nil)
 
@@ -832,52 +844,57 @@ func TestBurnedOutRedstoneTorchDoesNotSelfRecoverWhenLoopUnpowersInput(t *testin
 
 func redstoneWireTestWaitTick(t *testing.T, w *world.World, tick int64) {
 	t.Helper()
-	if !testkit.AdvanceUntil(w, 200, func() bool {
+	for range 200 {
+		w.AdvanceTick()
 		var current int64
-		testkit.Do(t, w, func(tx *world.Tx) {
+		runWorld(w, func(tx *world.Tx) {
 			current = tx.CurrentTick()
 		})
-		return current > tick
-	}) {
-		t.Fatalf("world tick did not advance past %d", tick)
+		if current > tick {
+			return
+		}
 	}
+	t.Fatalf("world tick did not advance past %d", tick)
 }
 
 func redstoneWireTestWaitNextTick(t *testing.T, w *world.World, tick int64) int64 {
 	t.Helper()
-	var current int64
-	if !testkit.AdvanceUntil(w, 200, func() bool {
-		testkit.Do(t, w, func(tx *world.Tx) {
+	for range 200 {
+		w.AdvanceTick()
+		var current int64
+		runWorld(w, func(tx *world.Tx) {
 			current = tx.CurrentTick()
 		})
-		return current > tick
-	}) {
-		t.Fatalf("world tick did not advance past %d", tick)
+		if current > tick {
+			return current
+		}
 	}
-	return current
+	t.Fatalf("world tick did not advance past %d", tick)
+	return tick
 }
 
 func redstoneWireTestWaitFor(t *testing.T, w *world.World, ready func(tx *world.Tx) bool) {
 	t.Helper()
-	if !testkit.AdvanceUntil(w, 200, func() bool {
+	for range 200 {
+		w.AdvanceTick()
 		done := false
-		testkit.Do(t, w, func(tx *world.Tx) {
+		runWorld(w, func(tx *world.Tx) {
 			done = ready(tx)
 		})
-		return done
-	}) {
-		t.Fatal("condition was not reached")
+		if done {
+			return
+		}
 	}
+	t.Fatal("condition was not reached")
 }
 
 func redstoneWireTestSetBlockAndWait(t *testing.T, w *world.World, pos cube.Pos, b world.Block) {
 	t.Helper()
 	var tick int64
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tick = tx.CurrentTick()
 		tx.SetBlock(pos, b, nil)
 	})
-
 	redstoneWireTestWaitTick(t, w, tick)
 }
 
@@ -986,11 +1003,12 @@ func (e redstoneTNTTestEntity) Rotation() cube.Rotation {
 	return e.data.Rot
 }
 func TestRedstoneTorchLoopBurnsOutThroughWorldScheduler(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Dim: world.End, Synchronous: true})
+	w := world.Config{Dim: world.End, Synchronous: true}.New()
+	defer w.Close()
 
 	loader := world.NewLoader(2, w, world.NopViewer{})
 	defer func() {
-		testkit.Do(t, w, func(tx *world.Tx) {
+		runWorld(w, func(tx *world.Tx) {
 			loader.Close(tx)
 		})
 	}()
@@ -1001,7 +1019,7 @@ func TestRedstoneTorchLoopBurnsOutThroughWorldScheduler(t *testing.T) {
 		{1, 66, 0},
 		{0, 65, 0},
 	}
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		loader.Move(tx, mgl64.Vec3{0, 64, 0})
 		loader.Load(tx, 16)
 
@@ -1020,7 +1038,7 @@ func TestRedstoneTorchLoopBurnsOutThroughWorldScheduler(t *testing.T) {
 
 	for range 200 {
 		w.AdvanceTick()
-		redstoneTorchBurnoutTestSnapshot(t, w, torchPos, dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
+		redstoneTorchBurnoutTestSnapshot(w, torchPos, dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
 		if burnedOut && !lit {
 			burnedOutTick = currentTick
 			break
@@ -1031,7 +1049,7 @@ func TestRedstoneTorchLoopBurnsOutThroughWorldScheduler(t *testing.T) {
 	}
 	for currentTick < burnedOutTick+100 {
 		w.AdvanceTick()
-		redstoneTorchBurnoutTestSnapshot(t, w, torchPos, dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
+		redstoneTorchBurnoutTestSnapshot(w, torchPos, dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
 		if !burnedOut || lit {
 			t.Fatalf("redstone torch loop recovered without an external update; tick=%d burnedOutTick=%d lit=%t burnedOut=%t attachmentPowered=%t dust=%v", currentTick, burnedOutTick, lit, burnedOut, attachmentPowered, dustPower)
 		}
@@ -1039,11 +1057,12 @@ func TestRedstoneTorchLoopBurnsOutThroughWorldScheduler(t *testing.T) {
 }
 
 func TestBurnedOutRedstoneTorchRelightsWhenLoopWireBreaks(t *testing.T) {
-	w := testkit.NewWorld(t, world.Config{Dim: world.End, Synchronous: true})
+	w := world.Config{Dim: world.End, Synchronous: true}.New()
+	defer w.Close()
 
 	loader := world.NewLoader(2, w, world.NopViewer{})
 	defer func() {
-		testkit.Do(t, w, func(tx *world.Tx) {
+		runWorld(w, func(tx *world.Tx) {
 			loader.Close(tx)
 		})
 	}()
@@ -1055,7 +1074,7 @@ func TestBurnedOutRedstoneTorchRelightsWhenLoopWireBreaks(t *testing.T) {
 		{1, 66, 0},
 		loopWirePos,
 	}
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		loader.Move(tx, mgl64.Vec3{0, 64, 0})
 		loader.Load(tx, 16)
 
@@ -1073,17 +1092,17 @@ func TestBurnedOutRedstoneTorchRelightsWhenLoopWireBreaks(t *testing.T) {
 	dustPower := make(map[cube.Pos]int, len(dustPositions))
 
 	redstoneTorchBurnoutTestWaitFor(t, w, func() bool {
-		redstoneTorchBurnoutTestSnapshot(t, w, torchPos, dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
+		redstoneTorchBurnoutTestSnapshot(w, torchPos, dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
 		return burnedOut && !lit
 	}, func() string {
 		return fmt.Sprintf("torch did not burn out before wire break; tick=%d lit=%t burnedOut=%t attachmentPowered=%t dust=%v", currentTick, lit, burnedOut, attachmentPowered, dustPower)
 	})
-	testkit.Do(t, w, func(tx *world.Tx) {
+	runWorld(w, func(tx *world.Tx) {
 		tx.SetBlock(loopWirePos, nil, nil)
 	})
 
 	redstoneTorchBurnoutTestWaitFor(t, w, func() bool {
-		redstoneTorchBurnoutTestSnapshot(t, w, torchPos, dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
+		redstoneTorchBurnoutTestSnapshot(w, torchPos, dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
 		return lit && !burnedOut && !attachmentPowered
 	}, func() string {
 		return fmt.Sprintf("torch did not relight after loop wire broke; tick=%d lit=%t burnedOut=%t attachmentPowered=%t dust=%v", currentTick, lit, burnedOut, attachmentPowered, dustPower)
@@ -1209,16 +1228,17 @@ func TestBurnedOutRedstoneTorchRecoveryUpdates(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			w := testkit.NewWorld(t, world.Config{Dim: world.End, Synchronous: true})
+			w := world.Config{Dim: world.End, Synchronous: true}.New()
+			defer w.Close()
 
 			loader := world.NewLoader(2, w, world.NopViewer{})
 			defer func() {
-				testkit.Do(t, w, func(tx *world.Tx) {
+				runWorld(w, func(tx *world.Tx) {
 					loader.Close(tx)
 				})
 			}()
 
-			testkit.Do(t, w, func(tx *world.Tx) {
+			runWorld(w, func(tx *world.Tx) {
 				loader.Move(tx, mgl64.Vec3{0, 64, 0})
 				loader.Load(tx, 16)
 
@@ -1237,35 +1257,33 @@ func TestBurnedOutRedstoneTorchRecoveryUpdates(t *testing.T) {
 
 			if test.waitRecoverable {
 				redstoneTorchBurnoutTestWaitFor(t, w, func() bool {
-					testkit.Do(t, w, func(tx *world.Tx) {
+					runWorld(w, func(tx *world.Tx) {
 						currentTick = tx.CurrentTick()
 						burnedOut, recoverable = tx.Redstone().Torch(torchPos).BurnoutStatus()
 					})
-
 					return burnedOut && recoverable
 				}, func() string {
 					return fmt.Sprintf("torch did not become recoverable; tick=%d burnedOut=%t recoverable=%t", currentTick, burnedOut, recoverable)
 				})
 			} else {
-				testkit.Do(t, w, func(tx *world.Tx) {
+				runWorld(w, func(tx *world.Tx) {
 					currentTick = tx.CurrentTick()
 					burnedOut, recoverable = tx.Redstone().Torch(torchPos).BurnoutStatus()
 				})
-
 				if !burnedOut || recoverable {
 					t.Fatalf("torch was not in immediate burnout window; tick=%d burnedOut=%t recoverable=%t", currentTick, burnedOut, recoverable)
 				}
 			}
 
 			var updateTick int64
-			testkit.Do(t, w, func(tx *world.Tx) {
+			runWorld(w, func(tx *world.Tx) {
 				updateTick = tx.CurrentTick()
 				test.update(tx)
 			})
 
 			if test.wantRecover {
 				redstoneTorchBurnoutTestWaitFor(t, w, func() bool {
-					redstoneTorchBurnoutTestSnapshot(t, w, torchPos, test.dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
+					redstoneTorchBurnoutTestSnapshot(w, torchPos, test.dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
 					return lit && !burnedOut && !attachmentPowered
 				}, func() string {
 					return fmt.Sprintf("torch did not recover; tick=%d lit=%t burnedOut=%t attachmentPowered=%t dust=%v", currentTick, lit, burnedOut, attachmentPowered, dustPower)
@@ -1275,7 +1293,7 @@ func TestBurnedOutRedstoneTorchRecoveryUpdates(t *testing.T) {
 
 			for currentTick <= updateTick+10 {
 				w.AdvanceTick()
-				redstoneTorchBurnoutTestSnapshot(t, w, torchPos, test.dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
+				redstoneTorchBurnoutTestSnapshot(w, torchPos, test.dustPositions, &currentTick, &lit, &burnedOut, &attachmentPowered, dustPower)
 				if lit || !burnedOut {
 					t.Fatalf("torch recovered from non-local update; tick=%d updateTick=%d lit=%t burnedOut=%t attachmentPowered=%t dust=%v", currentTick, updateTick, lit, burnedOut, attachmentPowered, dustPower)
 				}
@@ -1283,8 +1301,8 @@ func TestBurnedOutRedstoneTorchRecoveryUpdates(t *testing.T) {
 		})
 	}
 }
-func redstoneTorchBurnoutTestSnapshot(t testing.TB, w *world.World, torchPos cube.Pos, dustPositions []cube.Pos, currentTick *int64, lit, burnedOut, attachmentPowered *bool, dustPower map[cube.Pos]int) {
-	testkit.Do(t, w, func(tx *world.Tx) {
+func redstoneTorchBurnoutTestSnapshot(w *world.World, torchPos cube.Pos, dustPositions []cube.Pos, currentTick *int64, lit, burnedOut, attachmentPowered *bool, dustPower map[cube.Pos]int) {
+	runWorld(w, func(tx *world.Tx) {
 		*currentTick = tx.CurrentTick()
 		if torch, ok := tx.Block(torchPos).(RedstoneTorch); ok {
 			*lit = torch.Lit
@@ -1335,7 +1353,11 @@ func redstoneTorchBurnoutTestToggle(tx *world.Tx, torchPos, inputPos cube.Pos, u
 
 func redstoneTorchBurnoutTestWaitFor(t *testing.T, w *world.World, ready func() bool, fail func() string) {
 	t.Helper()
-	if !testkit.AdvanceUntil(w, 200, ready) {
-		t.Fatal(fail())
+	for range 200 {
+		w.AdvanceTick()
+		if ready() {
+			return
+		}
 	}
+	t.Fatal(fail())
 }

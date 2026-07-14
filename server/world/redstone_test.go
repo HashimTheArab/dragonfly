@@ -1,6 +1,7 @@
 package world
 
 import (
+	"context"
 	"math/rand/v2"
 	"slices"
 	"testing"
@@ -14,11 +15,8 @@ var _ Handler = minimalRedstoneTestHandler{}
 
 type minimalRedstoneTestHandler struct{}
 
-func runWorld(t testing.TB, w *World, f func(*Tx)) {
-	t.Helper()
-	if err := w.Do(f).Wait(testContext(t)); err != nil {
-		t.Fatalf("world task failed: %v", err)
-	}
+func runWorld(w *World, f func(*Tx)) {
+	w.Do(f).Wait(context.Background())
 }
 
 func (minimalRedstoneTestHandler) HandleRedstoneUpdate(*Context, RedstoneUpdate)                {}
@@ -264,7 +262,7 @@ func TestRedstoneCancelledSourceDoesNotPropagate(t *testing.T) {
 	w.Handle(&redstoneCancellationHandler{cancel: map[cube.Pos]struct{}{sourcePos: {}}})
 	var sinkPowered bool
 	var sourceOutput int
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(sourcePos, redstoneCancellationSource{Power: 15}, nil)
 		tx.SetBlock(sinkPos, redstoneCancellationConsumer{}, nil)
 		tx.World().redstone.tick(tx, 1)
@@ -272,7 +270,6 @@ func TestRedstoneCancelledSourceDoesNotPropagate(t *testing.T) {
 		sinkPowered = tx.Block(sinkPos).(redstoneCancellationConsumer).Powered
 		sourceOutput = tx.World().redstone.output[sourcePos]
 	})
-
 	if sinkPowered {
 		t.Fatalf("sink powered after cancelling source update")
 	}
@@ -289,7 +286,7 @@ func TestRedstoneCancelledSourceKeepsPreviousOutputDuringEvaluation(t *testing.T
 	w.Handle(&redstoneCancellationHandler{cancel: map[cube.Pos]struct{}{sourcePos: {}}})
 
 	var sourceOutput int
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(sourcePos, redstoneCancellationSource{}, &SetOpts{DisableRedstoneUpdates: true})
 		tx.World().redstone.output[sourcePos] = 15
 		tx.World().redstone.invalidate(sourcePos, redstoneDirty{changed: sourcePos, hasChanged: true, source: sourcePos, hasSource: true, cause: RedstoneUpdateCauseBlockUpdate}, tx.Range())
@@ -297,7 +294,6 @@ func TestRedstoneCancelledSourceKeepsPreviousOutputDuringEvaluation(t *testing.T
 
 		sourceOutput = tx.World().redstone.output[sourcePos]
 	})
-
 	if sourceOutput != 15 {
 		t.Fatalf("stored source output after cancelled update = %d, want 15", sourceOutput)
 	}
@@ -310,14 +306,13 @@ func TestRedstoneCancelledConsumerDoesNotUpdate(t *testing.T) {
 
 	w.Handle(&redstoneCancellationHandler{cancel: map[cube.Pos]struct{}{sinkPos: {}}})
 	var sinkPowered bool
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(sourcePos, redstoneCancellationSource{Power: 15}, nil)
 		tx.SetBlock(sinkPos, redstoneCancellationConsumer{}, nil)
 		tx.World().redstone.tick(tx, 1)
 
 		sinkPowered = tx.Block(sinkPos).(redstoneCancellationConsumer).Powered
 	})
-
 	if sinkPowered {
 		t.Fatalf("sink powered after cancelling consumer update")
 	}
@@ -330,12 +325,11 @@ func TestRedstoneUpdateIncludesContextMetadata(t *testing.T) {
 
 	handler := &redstoneRecordingHandler{pos: sinkPos}
 	w.Handle(handler)
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(sinkPos, redstoneCancellationConsumer{}, &SetOpts{DisableRedstoneUpdates: true})
 		tx.SetBlock(sourcePos, redstoneCancellationSource{Power: 15}, nil)
 		tx.World().redstone.tick(tx, 7)
 	})
-
 	if len(handler.updates) == 0 {
 		t.Fatal("no redstone update recorded for consumer")
 	}
@@ -375,11 +369,10 @@ func TestRedstoneRecursiveSourceEvaluationReturnsZero(t *testing.T) {
 	defer w.Close()
 
 	var power int
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(sourcePos, redstoneRecursiveSource{Target: targetPos}, nil)
 		power = tx.RedstonePower(targetPos)
 	})
-
 	if power != 0 {
 		t.Fatalf("recursive source power = %d, want 0", power)
 	}
@@ -396,12 +389,11 @@ func TestRedstoneCancelledActionDoesNotRun(t *testing.T) {
 		redstoneCancellationActions = nil
 	})
 	w.Handle(&redstoneCancellationHandler{cancel: map[cube.Pos]struct{}{actionPos: {}}})
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(sourcePos, redstoneCancellationSource{Power: 15}, nil)
 		tx.SetBlock(actionPos, redstoneCancellationAction{}, nil)
 		tx.World().redstone.tick(tx, 1)
 	})
-
 	if actions != 0 {
 		t.Fatalf("actions = %d, want 0", actions)
 	}
@@ -417,14 +409,13 @@ func TestRedstoneActionOnlyRunsOnPowerChange(t *testing.T) {
 	t.Cleanup(func() {
 		redstoneCancellationActions = nil
 	})
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(sourcePos, redstoneCancellationSource{Power: 15}, nil)
 		tx.SetBlock(actionPos, redstoneCancellationAction{}, nil)
 		tx.World().redstone.tick(tx, 1)
 		tx.World().redstone.invalidate(actionPos, redstoneDirty{cause: RedstoneUpdateCauseBlockUpdate}, tx.Range())
 		tx.World().redstone.tick(tx, 2)
 	})
-
 	if actions != 1 {
 		t.Fatalf("actions after same-power dirty evaluation = %d, want 1", actions)
 	}
@@ -436,7 +427,7 @@ func TestRedstoneRelayerToSinkDoesNotLosePower(t *testing.T) {
 	defer w.Close()
 
 	var directPower, sinkPower int
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(sourcePos, redstoneLossSource{Power: 15}, nil)
 		tx.SetBlock(relayerPos, redstoneLossRelayer{}, nil)
 		tx.SetBlock(sinkPos, redstoneLossConsumer{}, nil)
@@ -447,7 +438,6 @@ func TestRedstoneRelayerToSinkDoesNotLosePower(t *testing.T) {
 			sinkPower = sink.Power
 		}
 	})
-
 	if directPower != 15 {
 		t.Fatalf("powerFrom through relayer into sink = %d, want 15", directPower)
 	}
@@ -474,7 +464,7 @@ func TestRedstoneVerticalRelayerPropagation(t *testing.T) {
 			defer w.Close()
 
 			var got int
-			runWorld(t, w, func(tx *Tx) {
+			runWorld(w, func(tx *Tx) {
 				low, high := cube.Pos{1, 64, 0}, cube.Pos{0, 65, 0}
 				source := test.from.Side(cube.FaceNorth)
 				tx.SetBlock(low, redstoneVerticalRelayer{Power: 0}, nil)
@@ -485,7 +475,6 @@ func TestRedstoneVerticalRelayerPropagation(t *testing.T) {
 				tx.World().redstone.tick(tx, 1)
 				got = tx.Block(test.to).(redstoneVerticalRelayer).Power
 			})
-
 			if got != test.want {
 				t.Fatalf("propagated power = %d, want %d", got, test.want)
 			}
@@ -500,7 +489,7 @@ func TestPlacedRedstoneTorchTurnsOffWhenAttachmentBecomesPowered(t *testing.T) {
 	torchPos := cube.Pos{1, 64, 0}
 	attachmentPos := torchPos.Side(cube.FaceWest)
 	var lit bool
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(attachmentPos, redstoneSolidBlock{}, nil)
 		tx.SetBlock(torchPos, redstoneAttachmentTorch{Facing: cube.FaceWest, Lit: true}, nil)
 		tx.SetBlock(attachmentPos.Side(cube.FaceNorth), redstoneWeakBlockSource{}, nil)
@@ -521,7 +510,7 @@ func TestRedstoneConsumerUpdatesBehindPoweredConductor(t *testing.T) {
 
 	sourcePos, conductorPos, consumerPos := cube.Pos{0, 64, 0}, cube.Pos{1, 64, 0}, cube.Pos{2, 64, 0}
 	var powered bool
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(sourcePos, redstoneStrongSource{}, nil)
 		tx.SetBlock(conductorPos, redstoneSolidBlock{}, nil)
 		tx.SetBlock(consumerPos, redstoneCancellationConsumer{}, nil)
@@ -545,7 +534,7 @@ func TestWeaklyPoweredConductorActivatesConsumerButNotDust(t *testing.T) {
 	dustPos := conductorPos.Side(cube.FaceSouth)
 	var consumerPowered bool
 	var dustPower int
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(sourcePos, redstoneWeakBlockSource{}, nil)
 		tx.SetBlock(conductorPos, redstoneSolidBlock{}, nil)
 		tx.SetBlock(consumerPos, redstoneCancellationConsumer{}, nil)
@@ -570,7 +559,7 @@ func TestDirectSourceDoesNotWeakPowerConductor(t *testing.T) {
 
 	sourcePos, conductorPos, consumerPos := cube.Pos{0, 64, 0}, cube.Pos{1, 64, 0}, cube.Pos{2, 64, 0}
 	var powered bool
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(sourcePos, redstoneCancellationSource{Power: 15}, nil)
 		tx.SetBlock(conductorPos, redstoneSolidBlock{}, nil)
 		tx.SetBlock(consumerPos, redstoneCancellationConsumer{}, nil)
@@ -671,7 +660,7 @@ func TestScheduledTickQueueExecutesEarlierDueTickBeforeLaterTick(t *testing.T) {
 		furthestAfterFirst                  int64
 		hasFurthestAfterFirst               bool
 	)
-	runWorld(t, w, func(tx *Tx) {
+	runWorld(w, func(tx *Tx) {
 		tx.SetBlock(pos, b, nil)
 		queue.schedule(registry, pos, b, time.Second/20)
 		queue.schedule(registry, pos, b, time.Second/10)
@@ -685,7 +674,6 @@ func TestScheduledTickQueueExecutesEarlierDueTickBeforeLaterTick(t *testing.T) {
 		ticksAfterSecond = ticks
 		activeAfterSecond = queue.fromChunk(chunkPosFromBlockPos(pos))
 	})
-
 	if ticksAfterFirst != 1 {
 		t.Fatalf("earlier due tick executed %d time(s), want 1", ticksAfterFirst)
 	}
