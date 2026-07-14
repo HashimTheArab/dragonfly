@@ -386,7 +386,7 @@ func (taskTestEntity) Position() mgl64.Vec3 { return mgl64.Vec3{} }
 
 func (taskTestEntity) Rotation() cube.Rotation { return cube.Rotation{} }
 
-func testContext(t *testing.T) context.Context {
+func testContext(t testing.TB) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
