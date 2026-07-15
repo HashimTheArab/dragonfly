@@ -228,7 +228,9 @@ func valueToParamType(i cmd.ParamInfo, source cmd.Source) (t uint32, enum comman
 			Options: enum.Options(source),
 		}
 	}
-	return protocol.CommandArgTypeValue, enum
+	// Custom parameters are parsed from text. CommandArgTypeValue was removed
+	// from the current Bedrock command grammar, so advertise them as strings.
+	return protocol.CommandArgTypeString, enum
 }
 
 // resendCommands resends all commands that a Session has access to if the map of runnable commands passed does not
