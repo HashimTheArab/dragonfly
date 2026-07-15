@@ -4,7 +4,6 @@ import (
 	"math/rand/v2"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
-	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 )
@@ -39,15 +38,10 @@ func (b BambooSapling) FlammabilityInfo() FlammabilityInfo {
 // NeighbourUpdateTick ...
 func (b BambooSapling) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 	down := tx.Block(pos.Side(cube.FaceDown))
-	if canSupportBamboo(down) {
+	if supportsVegetation(b, down) {
 		return
 	}
 	breakBlock(b, pos, tx)
-}
-
-// Model returns the collision model used for client interaction targeting.
-func (BambooSapling) Model() world.BlockModel {
-	return model.Bamboo{}
 }
 
 // RandomTick ...

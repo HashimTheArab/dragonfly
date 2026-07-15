@@ -1,6 +1,7 @@
 package block
 
 import (
+	"errors"
 	"image/color"
 	"testing"
 
@@ -85,7 +86,7 @@ func TestWallMountedHangingSignSurvivesWithDirectWallSupport(t *testing.T) {
 
 		sign.NeighbourUpdateTick(signPos, supportPos, tx)
 		if _, ok := tx.Block(signPos).(HangingSign); !ok {
-			testErr = errString("wall-mounted hanging sign broke despite direct wall support")
+			testErr = errors.New("wall-mounted hanging sign broke despite direct wall support")
 		}
 	})
 	if testErr != nil {
@@ -107,11 +108,11 @@ func TestHangingSignUseOnBlockPlacesWallSignOnClickedFace(t *testing.T) {
 		_ = (HangingSign{Wood: OakWood()}).UseOnBlock(supportPos, cube.FaceEast, mgl64.Vec3{}, tx, nil, ctx)
 		sign, ok := tx.Block(signPos).(HangingSign)
 		if !ok {
-			testErr = errString("hanging sign was not placed on clicked east face")
+			testErr = errors.New("hanging sign was not placed on clicked east face")
 			return
 		}
 		if sign.Attach != WallHangingAttachment(cube.East) {
-			testErr = errString("wall hanging sign attachment did not face the clicked face")
+			testErr = errors.New("wall hanging sign attachment did not face the clicked face")
 		}
 	})
 	if testErr != nil {

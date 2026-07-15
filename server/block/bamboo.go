@@ -88,7 +88,7 @@ func (b Bamboo) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 	case BambooSapling, Bamboo:
 		return
 	}
-	if canSupportBamboo(down) {
+	if supportsVegetation(b, down) {
 		return
 	}
 	breakBlock(b, pos, tx)
@@ -114,18 +114,11 @@ func (b Bamboo) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world
 		return false
 	}
 	s := BambooSapling{}
-	if !canSupportBamboo(tx.Block(pos.Sub(cube.Pos{0, 1}))) {
+	if !supportsVegetation(s, tx.Block(pos.Sub(cube.Pos{0, 1}))) {
 		return false
 	}
 	place(tx, pos, s, user, ctx)
 	return placed(ctx)
-}
-
-// canSupportBamboo reports whether block is a non-air support. The fork permits
-// bamboo on arbitrary solid builds used by practice arenas.
-func canSupportBamboo(block world.Block) bool {
-	_, air := block.(Air)
-	return !air
 }
 
 // maxHeight returns the maximum height, between 12 and 16, of the bamboo
