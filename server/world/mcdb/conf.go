@@ -42,7 +42,9 @@ func (conf Config) Open(dir string) (*DB, error) {
 		conf.LDBOptions.BlockSize = 16 * opt.KiB
 	}
 
-	_ = os.MkdirAll(filepath.Join(dir, "db"), 0777)
+	if !conf.LDBOptions.GetReadOnly() {
+		_ = os.MkdirAll(filepath.Join(dir, "db"), 0777)
+	}
 
 	db := &DB{conf: conf, dir: dir, ldat: &leveldat.Data{}}
 	db.SetBlockRegistry(conf.Blocks)

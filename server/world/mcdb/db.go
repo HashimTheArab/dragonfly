@@ -495,6 +495,9 @@ func (db *DB) NewColumnIterator(r *IteratorRange) *ColumnIterator {
 
 // Close closes the provider, saving any file that might need to be saved, such as the level.dat.
 func (db *DB) Close() error {
+	if db.conf.LDBOptions.GetReadOnly() {
+		return db.ldb.Close()
+	}
 	db.ldat.LastPlayed = time.Now().Unix()
 
 	var ldat leveldat.LevelDat
