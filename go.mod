@@ -5,12 +5,13 @@ go 1.26.1
 require (
 	github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/df-mc/go-nethernet v1.0.19-0.20260713035212-0d451757ec09
 	github.com/df-mc/goleveldb v1.1.9
 	github.com/df-mc/worldupgrader v1.0.21
 	github.com/go-gl/mathgl v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml v1.9.5
-	github.com/sandertv/gophertunnel v1.57.0
+	github.com/sandertv/gophertunnel v1.57.1
 	github.com/segmentio/fasthash v1.0.3
 	golang.org/x/exp v0.0.0-20260611194520-c48552f49976
 	golang.org/x/mod v0.37.0
@@ -21,7 +22,6 @@ require (
 require (
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
-	github.com/df-mc/go-nethernet v1.0.19-0.20260713035212-0d451757ec09 // indirect
 	github.com/df-mc/go-playfab/v2 v2.0.2-0.20260618232935-6d86fc87875f // indirect
 	github.com/df-mc/go-xsapi/v2 v2.0.2 // indirect
 	github.com/df-mc/jsonc v1.0.5 // indirect

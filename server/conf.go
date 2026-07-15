@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 	_ "unsafe"
 
@@ -199,6 +200,7 @@ func (conf Config) New() *Server {
 		l, err := lf(conf)
 		if err != nil {
 			conf.Log.Error("create listener: " + err.Error())
+			continue
 		}
 		srv.listeners = append(srv.listeners, l)
 	}
@@ -223,6 +225,16 @@ type UserConfig struct {
 		// Address is the address on which the server should listen. Players may
 		// connect to this address in order to join.
 		Address string
+		// Transport controls which network transports are listened on. Valid values
+		// are "raknet", "nethernet" and "both". If empty, "raknet" is used.
+		Transport string
+		// NetherNet holds settings for the NetherNet HTTP signaling listener.
+		NetherNet struct {
+			// Address is the TCP address used for NetherNet HTTP signaling. If empty,
+			// Network.Address is used. The listener serves plaintext HTTP; HTTPS
+			// should be terminated by a reverse proxy.
+			Address string
+		}
 	}
 	Server struct {
 		// Name is the name of the server as it shows up in the server list.
@@ -293,6 +305,10 @@ func (uc UserConfig) Config(log *slog.Logger) (Config, error) {
 		MaxChunkRadius:          uc.Players.MaximumChunkRadius,
 		DisableResourceBuilding: !uc.Resources.AutoBuildPack,
 	}
+	transport, err := parseNetworkTransport(uc.Network.Transport)
+	if err != nil {
+		return conf, err
+	}
 	if !uc.Server.DisableJoinQuitMessages {
 		conf.JoinMessage, conf.QuitMessage = chat.MessageJoin, chat.MessageQuit
 	}
@@ -312,8 +328,30 @@ func (uc UserConfig) Config(log *slog.Logger) (Config, error) {
 			return conf, fmt.Errorf("create player provider: %w", err)
 		}
 	}
-	conf.Listeners = append(conf.Listeners, uc.listenerFunc)
+	if transport.raknet {
+		conf.Listeners = append(conf.Listeners, uc.listenerFunc)
+	}
+	if transport.nethernet {
+		conf.Listeners = append(conf.Listeners, uc.netherNetListenerFunc)
+	}
 	return conf, nil
+}
+
+type networkTransport struct {
+	raknet, nethernet bool
+}
+
+func parseNetworkTransport(s string) (networkTransport, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "raknet":
+		return networkTransport{raknet: true}, nil
+	case "nethernet":
+		return networkTransport{nethernet: true}, nil
+	case "both":
+		return networkTransport{raknet: true, nethernet: true}, nil
+	default:
+		return networkTransport{}, fmt.Errorf("unknown network transport %q", s)
+	}
 }
 
 // loadResources loads all resource packs found in a directory passed.
@@ -353,6 +391,7 @@ func loadGenerator(dim world.Dimension) world.Generator {
 func DefaultConfig() UserConfig {
 	c := UserConfig{}
 	c.Network.Address = ":19132"
+	c.Network.Transport = "raknet"
 	c.Server.Name = "Dragonfly Server"
 	c.Server.AuthEnabled = true
 	c.World.SaveData = true
