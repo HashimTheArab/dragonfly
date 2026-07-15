@@ -170,6 +170,9 @@ type Config struct {
 	Log *slog.Logger
 
 	MaxChunkRadius int
+	// MaxPendingChunkBlobs is the maximum number of unacknowledged client-cache
+	// blobs retained by this session. If zero, 4096 is used.
+	MaxPendingChunkBlobs int
 
 	EmoteChatMuted bool
 
@@ -181,6 +184,13 @@ type Config struct {
 	HandleStop func(*world.Tx, Controllable)
 	// BlockRegistry overrides the registry used for network serialization. If nil, world.DefaultBlockRegistry is used.
 	BlockRegistry world.BlockRegistry
+}
+
+func (conf Config) maxPendingChunkBlobs() int {
+	if conf.MaxPendingChunkBlobs <= 0 {
+		return 4096
+	}
+	return conf.MaxPendingChunkBlobs
 }
 
 func (conf Config) New(conn Conn) *Session {
@@ -376,22 +386,6 @@ func (s *Session) Latency() time.Duration {
 	return s.conn.Latency()
 }
 
-// Flush implements world.Flushable. Called by the world ticker at the
-// end of every tick to push packets queued during the tick — entity
-// movement, block updates, sounds, particles, inventory updates — to
-// the network immediately. Without this hook those packets would sit
-// in the connection's internal buffer until gophertunnel's auto-flush
-// goroutine (or a wrapping anti-cheat ticker) drained them on its
-// independent 50ms timer, drifting against the world clock and
-// surfacing as up-to-50ms variance per packet — visible to players
-// as projectile / entity jitter. Errors from the underlying conn
-// are returned for callers that care; the world tick discards them
-// because a flush failure on a session that's about to close isn't
-// actionable from inside the tick.
-func (s *Session) Flush() error {
-	return s.conn.Flush()
-}
-
 // withControllable runs f with the current Controllable on its world owner.
 // It is for off-owner session goroutines; callbacks that already have a
 // *world.Tx should use it directly instead.
@@ -413,13 +407,7 @@ func (s *Session) ClientData() login.ClientData {
 	return s.conn.ClientData()
 }
 
-const maxQueuedIncomingPackets = 65536
-
-// handlePackets continuously drains incoming packets from the connection. Packet
-// processing may need to enter the world transaction queue, which can be blocked
-// for a long time by large build commands. Keep the network reader separate from
-// the world-processing worker so a long command does not stop RakNet/gophertunnel
-// from reading ACKs, cache replies, movement/input, etc. while the command runs.
+// handlePackets continuously handles incoming packets from the connection. It processes them accordingly.
 // Once the connection is closed, handlePackets will return.
 func (s *Session) handlePackets() {
 	defer func() {
@@ -442,93 +430,19 @@ func (s *Session) handlePackets() {
 		}
 	}()
 
-	incoming := make(chan packet.Packet, maxQueuedIncomingPackets)
-	processErr := make(chan packetProcessError, 1)
-	processDone := make(chan struct{})
-	processStop := make(chan struct{})
-	go s.processPackets(incoming, processErr, processDone, processStop)
-	defer func() {
-		close(processStop)
-		close(incoming)
-		<-processDone
-	}()
-
-	incomingDropLogged := false
 	for {
-		if incomingDropLogged && len(incoming) == 0 {
-			incomingDropLogged = false
-		}
 		pk, err := s.conn.ReadPacket()
 		if err != nil {
-			s.conf.Log.Warn("read packet failed, closing session", "err", err)
 			return
 		}
-		select {
-		case incoming <- pk:
-		case err := <-processErr:
-			s.conf.Log.Warn("process packet failed, closing session", "packet_id", err.packetID, "err", err.err)
-			return
-		default:
-			// If this ever fills, the client is sending far faster than we can
-			// process while the world is busy. Drop the oldest queued packet
-			// rather than blocking the reader and causing a RakNet timeout/close
-			// cascade. Newer movement/input/cache status packets are more useful
-			// after a long world edit than stale ones.
-			if !incomingDropLogged {
-				incomingDropLogged = true
-				s.conf.Log.Warn("incoming packet queue full, dropping oldest queued packets", "queued", len(incoming), "capacity", cap(incoming), "incoming_packet_id", pk.ID())
-			}
-			select {
-			case <-incoming:
-			default:
-			}
-			select {
-			case incoming <- pk:
-			case err := <-processErr:
-				s.conf.Log.Warn("process packet failed, closing session", "packet_id", err.packetID, "err", err.err)
-				return
-			}
-		}
-
-		select {
-		case err := <-processErr:
-			s.conf.Log.Warn("process packet failed, closing session", "packet_id", err.packetID, "err", err.err)
-			return
-		default:
-		}
-	}
-}
-
-type packetProcessError struct {
-	packetID uint32
-	err      error
-}
-
-func (s *Session) processPackets(incoming <-chan packet.Packet, processErr chan<- packetProcessError, done chan<- struct{}, stop <-chan struct{}) {
-	defer close(done)
-	for {
-		var pk packet.Packet
-		select {
-		case <-stop:
-			return
-		case p, ok := <-incoming:
-			if !ok {
-				return
-			}
-			pk = p
-		}
-
-		err := s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
+		err = s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
 			return s.handlePacket(pk, tx, c)
 		})
 		if err != nil {
 			if sessionOwnerStopped(err) {
 				return
 			}
-			select {
-			case processErr <- packetProcessError{packetID: pk.ID(), err: err}:
-			default:
-			}
+			s.conf.Log.Debug("process packet: " + err.Error())
 			return
 		}
 	}

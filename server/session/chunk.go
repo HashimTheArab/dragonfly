@@ -22,9 +22,6 @@ const (
 	// and sub-chunks. Keep it enabled so cached chunk/sub-chunk updates are sent
 	// through the normal Bedrock cache-miss/status path.
 	clientChunkBlobCache = true
-
-	// maxPendingBlobs is the maximum number of client-cache blobs that may be pending for a session. Raised high for large/fast chunk sends.
-	maxPendingBlobs = 1 << 20
 )
 
 func (s *Session) chunkBlobCacheEnabled() bool {
@@ -303,16 +300,11 @@ func (s *Session) sendBlobHashes(pos world.ChunkPos, dim world.Dimension, c *chu
 		hashes[i], m[h] = h, struct{}{}
 	}
 
-	s.blobMu.Lock()
-	s.openChunkTransactions = append(s.openChunkTransactions, m)
-	if l := len(s.blobs); l > maxPendingBlobs {
-		s.blobMu.Unlock()
-		s.conf.Log.Error("too many blobs pending", "n", l)
+	if !s.trackBlobs(hashes, blobs) {
 		return
 	}
-	for i := range hashes {
-		s.blobs[hashes[i]] = blobs[i]
-	}
+	s.blobMu.Lock()
+	s.openChunkTransactions = append(s.openChunkTransactions, m)
 	s.blobMu.Unlock()
 
 	// Length of 1 byte for the border block count.
@@ -389,16 +381,35 @@ func (s *Session) sendFullNetworkChunk(pos world.ChunkPos, dim world.Dimension, 
 	})
 }
 
-// trackBlob attempts to track the given blob. If the player has too many pending blobs, it returns false and closes the
-// connection.
+// trackBlob attempts to track the given blob. It returns false if the player
+// already has too many pending blobs.
 func (s *Session) trackBlob(hash uint64, blob []byte) bool {
+	return s.trackBlobs([]uint64{hash}, [][]byte{blob})
+}
+
+// trackBlobs attempts to track a batch of blobs atomically. Existing hashes do
+// not consume additional capacity.
+func (s *Session) trackBlobs(hashes []uint64, blobs [][]byte) bool {
 	s.blobMu.Lock()
-	if l := len(s.blobs); l > maxPendingBlobs {
+	additional := 0
+	seen := make(map[uint64]struct{}, len(hashes))
+	for _, hash := range hashes {
+		if _, ok := s.blobs[hash]; ok {
+			continue
+		}
+		if _, ok := seen[hash]; !ok {
+			seen[hash] = struct{}{}
+			additional++
+		}
+	}
+	if l := len(s.blobs); l+additional > s.conf.maxPendingChunkBlobs() {
 		s.blobMu.Unlock()
-		s.conf.Log.Error("too many blobs pending", "n", l)
+		s.conf.Log.Error("too many blobs pending", "n", l, "additional", additional)
 		return false
 	}
-	s.blobs[hash] = blob
+	for i, hash := range hashes {
+		s.blobs[hash] = blobs[i]
+	}
 	s.blobMu.Unlock()
 	return true
 }

@@ -69,6 +69,9 @@ type Config struct {
 	// MaxChunkRadius is the maximum view distance that each player may have,
 	// measured in chunks. A chunk radius generally leads to more memory usage.
 	MaxChunkRadius int
+	// MaxPendingChunkBlobs is the maximum number of unacknowledged client-cache
+	// blobs retained for each session. If zero, 4096 is used.
+	MaxPendingChunkBlobs int
 	// JoinMessage, QuitMessage and ShutdownMessage are the messages to send for
 	// when a player joins or quits the server and when the server shuts down,
 	// kicking all online players. If set, JoinMessage and QuitMessage must have
@@ -166,6 +169,9 @@ func (conf Config) New() *Server {
 	}
 	if conf.MaxChunkRadius == 0 {
 		conf.MaxChunkRadius = 12
+	}
+	if conf.MaxPendingChunkBlobs == 0 {
+		conf.MaxPendingChunkBlobs = 4096
 	}
 	if conf.ShutdownMessage.Zero() {
 		conf.ShutdownMessage = chat.MessageServerDisconnect
