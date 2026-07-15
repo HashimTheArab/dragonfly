@@ -13,9 +13,21 @@ type customCommandParameter struct{}
 func (customCommandParameter) Parse(*cmd.Line, reflect.Value) error { return nil }
 func (customCommandParameter) Type() string                         { return "custom" }
 
-func TestValueToParamTypeUsesStringForCustomParameter(t *testing.T) {
-	typ, _ := valueToParamType(cmd.ParamInfo{Value: customCommandParameter{}}, nil)
-	if typ != protocol.CommandArgTypeString {
-		t.Fatalf("custom parameter type = %d, want string type %d", typ, protocol.CommandArgTypeString)
+func TestValueToParamTypeUsesSemanticParserSymbols(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+		want  uint32
+	}{
+		{"float", float64(0), protocol.CommandArgTypeValue},
+		{"generic value", customCommandParameter{}, protocol.CommandArgTypeRValue},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _ := valueToParamType(cmd.ParamInfo{Value: tt.value}, nil)
+			if got != tt.want {
+				t.Fatalf("valueToParamType() = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
