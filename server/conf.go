@@ -86,6 +86,10 @@ type Config struct {
 	// Compression is the packet compression used for connections accepted by
 	// the default listener. If nil, gophertunnel's default compression is used.
 	Compression packet.Compression
+	// FlushAfterClientBatch specifies if preserved client batches should be read
+	// when supported and responses flushed once after each batch. It is false by
+	// default.
+	FlushAfterClientBatch bool
 	// PlayerProvider is the player.Provider used for storing and loading player
 	// data. If left as nil, player data will be newly created every time a
 	// player joins the server and no data will be stored.

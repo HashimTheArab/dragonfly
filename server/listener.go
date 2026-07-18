@@ -98,6 +98,7 @@ func listenerConfig(conf Config) minecraft.ListenConfig {
 		TexturePacksRequired:       conf.ResourcesRequired,
 		ForceDisableVibrantVisuals: conf.DisableVibrantVisuals,
 		Compression:                conf.Compression,
+		EnableBatchReading:         conf.FlushAfterClientBatch,
 	}
 	if conf.Log.Enabled(context.Background(), slog.LevelDebug) {
 		cfg.ErrorLog = conf.Log.With("net origin", "gophertunnel")

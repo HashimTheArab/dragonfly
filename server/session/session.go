@@ -119,6 +119,14 @@ type Session struct {
 	br world.BlockRegistry
 }
 
+// flushRequest is queued after response packets so the writer flushes them in
+// FIFO order. The embedded Packet exists only to satisfy packet.Packet; a
+// flushRequest is intercepted before it reaches the connection.
+type flushRequest struct {
+	packet.Packet
+	result chan<- error
+}
+
 // debugShapeUpdate represents a pending debug shape mutation. If shape is nil, the update removes the
 // debug shape with the matching ID. Updates are applied in order when the session sends debug shapes.
 type debugShapeUpdate struct {
@@ -170,6 +178,10 @@ type Config struct {
 	Log *slog.Logger
 
 	MaxChunkRadius int
+	// FlushAfterClientBatch specifies if preserved client batches should be read
+	// when supported and responses flushed once after each batch. It is false by
+	// default.
+	FlushAfterClientBatch bool
 	// MaxPendingChunkBlobs is the maximum number of unacknowledged client-cache
 	// blobs retained by this session. If zero, 4096 is used.
 	MaxPendingChunkBlobs int
@@ -256,6 +268,10 @@ func (conf Config) New(conn Conn) *Session {
 			case <-s.closeBackground:
 				return
 			case pk := <-s.packets:
+				if request, ok := pk.(*flushRequest); ok {
+					request.result <- conn.Flush()
+					continue
+				}
 				if err := conn.WritePacket(pk); err != nil {
 					s.conf.Log.Warn("write packet failed", "packet_id", pk.ID(), "err", err)
 				}
@@ -263,6 +279,24 @@ func (conf Config) New(conn Conn) *Session {
 		}
 	}()
 	return s
+}
+
+func (s *Session) flushPackets() error {
+	if s == Nop {
+		return nil
+	}
+	result := make(chan error, 1)
+	select {
+	case s.packets <- &flushRequest{result: result}:
+	case <-s.closeBackground:
+		return nil
+	}
+	select {
+	case err := <-result:
+		return err
+	case <-s.closeBackground:
+		return nil
+	}
 }
 
 // SetHandle sets the world.EntityHandle of the Session and attaches a skin to
@@ -431,18 +465,26 @@ func (s *Session) handlePackets() {
 	}()
 
 	for {
-		pk, err := s.conn.ReadPacket()
+		packets, batched, err := readPacketBatch(s.conn, s.conf.FlushAfterClientBatch)
 		if err != nil {
 			return
 		}
-		err = s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
-			return s.handlePacket(pk, tx, c)
-		})
+		for _, pk := range packets {
+			err = s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
+				return s.handlePacket(pk, tx, c)
+			})
+			if err != nil {
+				break
+			}
+		}
+		if err == nil && batched {
+			err = s.flushPackets()
+		}
 		if err != nil {
 			if sessionOwnerStopped(err) {
 				return
 			}
-			s.conf.Log.Debug("process packet: " + err.Error())
+			s.conf.Log.Debug("process packet batch: " + err.Error())
 			return
 		}
 	}
