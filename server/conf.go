@@ -16,6 +16,7 @@ import (
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/player/chat"
 	"github.com/df-mc/dragonfly/server/player/playerdb"
+	"github.com/df-mc/dragonfly/server/session"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/biome"
 	"github.com/df-mc/dragonfly/server/world/generator"
@@ -90,6 +91,15 @@ type Config struct {
 	// when supported and responses flushed once after each batch. It is false by
 	// default.
 	FlushAfterClientBatch bool
+	// ClientBatchFunc is called with statistics for each preserved client batch.
+	// It should be fast and non-blocking.
+	ClientBatchFunc session.ClientBatchFunc
+	// PacketBatchFunc is called with encoder statistics for each outbound packet
+	// batch. It should be fast and non-blocking.
+	PacketBatchFunc packet.BatchEncodeObserver
+	// WorldTickFunc is called with the dimension and duration of each world tick.
+	// It should be fast and non-blocking.
+	WorldTickFunc func(world.Dimension, time.Duration)
 	// PlayerProvider is the player.Provider used for storing and loading player
 	// data. If left as nil, player data will be newly created every time a
 	// player joins the server and no data will be stored.

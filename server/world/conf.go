@@ -91,6 +91,10 @@ type Config struct {
 	// AdvanceTick are not safe to call concurrently, including from delayed
 	// item or death callbacks.
 	Synchronous bool
+
+	// TickFunc is called with the duration of each world tick. It should be fast
+	// and non-blocking.
+	TickFunc func(time.Duration)
 }
 
 // New creates a new World using the Config conf. The World returned will start

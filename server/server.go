@@ -557,6 +557,7 @@ func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Con
 		Log:                   srv.conf.Log,
 		MaxChunkRadius:        srv.conf.MaxChunkRadius,
 		FlushAfterClientBatch: srv.conf.FlushAfterClientBatch,
+		ClientBatchFunc:       srv.conf.ClientBatchFunc,
 		MaxPendingChunkBlobs:  srv.conf.MaxPendingChunkBlobs,
 		EmoteChatMuted:        srv.conf.MuteEmoteChat,
 		JoinMessage:           srv.conf.JoinMessage,
@@ -606,6 +607,11 @@ func (srv *Server) createWorld(dim world.Dimension, nether, end **world.World) *
 				return nil
 			}
 		},
+	}
+	if f := srv.conf.WorldTickFunc; f != nil {
+		conf.TickFunc = func(duration time.Duration) {
+			f(dim, duration)
+		}
 	}
 	w := conf.New()
 	logger.Info("Opened dimension.", "name", w.Name())

@@ -59,6 +59,10 @@ func (t ticker) tick(tx *Tx) {
 		w.set.Unlock()
 		return
 	}
+	if f := w.conf.TickFunc; f != nil {
+		start := time.Now()
+		defer func() { f(time.Since(start)) }()
+	}
 	if w.advance {
 		w.set.CurrentTick++
 		if w.set.TimeCycle {

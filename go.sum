@@ -1,5 +1,5 @@
-github.com/HashimTheArab/gophertunnel v1.25.3-0.20260715074019-617c6898198d h1:Ny8Br1MBcUeZAlzALd+TrmrFtpjVO4dEJRtlcdUp8/c=
-github.com/HashimTheArab/gophertunnel v1.25.3-0.20260715074019-617c6898198d/go.mod h1:BHr17c5+172v/bAgfcUEMaPHm+o+9s/pFl9ZyfVWB04=
+github.com/HashimTheArab/gophertunnel v1.25.3-0.20260715180036-5b095a451f0c h1:7klViWpyeSw8x3DUyC6OCOYGpVj3Nywr6Kp+q0FhPvU=
+github.com/HashimTheArab/gophertunnel v1.25.3-0.20260715180036-5b095a451f0c/go.mod h1:BHr17c5+172v/bAgfcUEMaPHm+o+9s/pFl9ZyfVWB04=
 github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479 h1:UZbbt19ACBOFO+CiDQFjaEoPJkBhj7GNGtIq59WR6Os=
 github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479/go.mod h1:TOk10ahXejq9wkEaym3KPRNeuR/h5Jx+s8QRWIa2oTM=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=

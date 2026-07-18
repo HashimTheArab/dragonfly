@@ -182,6 +182,9 @@ type Config struct {
 	// when supported and responses flushed once after each batch. It is false by
 	// default.
 	FlushAfterClientBatch bool
+	// ClientBatchFunc is called with statistics for each preserved client batch.
+	// It should be fast and non-blocking.
+	ClientBatchFunc ClientBatchFunc
 	// MaxPendingChunkBlobs is the maximum number of unacknowledged client-cache
 	// blobs retained by this session. If zero, 4096 is used.
 	MaxPendingChunkBlobs int
@@ -469,6 +472,14 @@ func (s *Session) handlePackets() {
 		if err != nil {
 			return
 		}
+		var stats ClientBatchStats
+		observe := batched && s.conf.ClientBatchFunc != nil
+		var processingStart time.Time
+		if observe {
+			stats.PacketCount = len(packets)
+			stats.Latency = s.conn.Latency()
+			processingStart = time.Now()
+		}
 		for _, pk := range packets {
 			err = s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
 				return s.handlePacket(pk, tx, c)
@@ -477,8 +488,20 @@ func (s *Session) handlePackets() {
 				break
 			}
 		}
+		if observe {
+			stats.ProcessingDuration = time.Since(processingStart)
+			stats.OutboundQueueDepth = len(s.packets)
+		}
 		if err == nil && batched {
+			var flushStart time.Time
+			if observe {
+				flushStart = time.Now()
+			}
 			err = s.flushPackets()
+			if observe {
+				stats.ImmediateFlushDuration = time.Since(flushStart)
+				s.conf.ClientBatchFunc(stats)
+			}
 		}
 		if err != nil {
 			if sessionOwnerStopped(err) {
