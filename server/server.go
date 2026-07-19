@@ -470,28 +470,32 @@ func (srv *Server) finaliseConn(ctx context.Context, conn session.Conn, l Listen
 	if mcConn, ok := conn.(*minecraft.Conn); ok {
 		err = mcConn.SendStartGame(data)
 		if err == nil {
-			_ = conn.WritePacket(&packet.ItemRegistry{Items: srv.customItems})
-			s := srv.createSession(conn, w, 1)
-			<-w.Exec(func(tx *world.Tx) {
-				s.PrepareSpawn(d.Position, tx)
-			})
-			err = mcConn.DoSpawnContext(ctx)
-			if err != nil {
+			err = conn.WritePacket(&packet.ItemRegistry{Items: srv.customItems})
+			if err == nil {
+				s := srv.createSession(conn, w, 1)
 				<-w.Exec(func(tx *world.Tx) {
-					s.ClosePreparedSpawn(tx)
+					s.PrepareSpawn(d.Position, tx)
 				})
-			} else {
-				<-w.Exec(func(tx *world.Tx) {
-					s.SyncChunkRadius(tx, d.Position)
-				})
-				inc = srv.createPlayer(id, conn, d, w, s)
+				err = mcConn.DoSpawnContext(ctx)
+				if err != nil {
+					<-w.Exec(func(tx *world.Tx) {
+						s.ClosePreparedSpawn(tx)
+					})
+				} else {
+					<-w.Exec(func(tx *world.Tx) {
+						s.SyncChunkRadius(tx, d.Position)
+					})
+					inc = srv.createPlayer(id, conn, d, w, s)
+				}
 			}
 		}
 	} else {
 		err = conn.StartGameContext(ctx, data)
 		if err == nil {
-			_ = conn.WritePacket(&packet.ItemRegistry{Items: srv.customItems})
-			inc = srv.createPlayer(id, conn, d, w, srv.createSession(conn, w, conn.ChunkRadius()))
+			err = conn.WritePacket(&packet.ItemRegistry{Items: srv.customItems})
+			if err == nil {
+				inc = srv.createPlayer(id, conn, d, w, srv.createSession(conn, w, conn.ChunkRadius()))
+			}
 		}
 	}
 	if err != nil {

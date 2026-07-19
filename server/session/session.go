@@ -559,7 +559,7 @@ func (s *Session) ChunkRadius() int32 {
 func (s *Session) SyncChunkRadius(tx *world.Tx, pos mgl64.Vec3) {
 	radius := int32(s.conn.ChunkRadius())
 	if radius <= 0 {
-		return
+		radius = s.chunkRadius
 	}
 	if radius > s.maxChunkRadius {
 		radius = s.maxChunkRadius
