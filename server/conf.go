@@ -61,7 +61,9 @@ type Config struct {
 	// a security hazard.
 	AuthDisabled bool
 	// DisablePacketEncryption disables packet encryption for accepted
-	// connections. Authentication is unaffected.
+	// connections. Authentication is unaffected. This is useful when
+	// encryption is already handled elsewhere, such as by a proxy in front of
+	// the server or when using NetherNet, to avoid encrypting twice.
 	DisablePacketEncryption bool
 	// MuteEmoteChat specifies if the player emote chat should be muted or not.
 	MuteEmoteChat bool
@@ -226,7 +228,9 @@ type UserConfig struct {
 		// in order to join the server.
 		AuthEnabled bool
 		// DisablePacketEncryption disables packet encryption for accepted
-		// connections. Authentication is unaffected.
+		// connections. Authentication is unaffected. This is useful when
+		// encryption is already handled elsewhere, such as by a proxy in front
+		// of the server or when using NetherNet, to avoid encrypting twice.
 		DisablePacketEncryption bool
 		// DisableJoinQuitMessages specifies if default join and quit messages
 		// for players should be disabled.
