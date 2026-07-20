@@ -11,7 +11,7 @@
   # AuthEnabled controls whether players must be connected to Xbox Live in order to join the server.
   AuthEnabled = true
   # DisablePacketEncryption disables packet encryption for accepted connections. Authentication is
-  # unaffected. Only use this on trusted networks.
+  # unaffected.
   DisablePacketEncryption = false
   # DisableJoinQuitMessages specifies if join/quit messages should be broadcast when players join the server.
   DisableJoinQuitMessages = false
