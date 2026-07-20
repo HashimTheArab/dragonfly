@@ -35,6 +35,7 @@ func (d *DataDrivenScreenClosedHandler) Handle(p packet.Packet, s *Session, _ *w
 		return nil
 	}
 
+	af.unbind()
 	af.form.OnClose(closeReasonToDDUI(pk.CloseReason))
 
 	s.writePacket(&packet.ClientBoundDataDrivenUICloseScreen{

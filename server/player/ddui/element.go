@@ -17,7 +17,7 @@ func WithDescription(description string) TextFieldOption {
 // SliderOption configures optional properties of a Slider element.
 type SliderOption struct {
 	description string
-	step        float64
+	step        int64
 }
 
 // WithSliderDescription sets the description tooltip for a Slider.
@@ -26,7 +26,7 @@ func WithSliderDescription(description string) SliderOption {
 }
 
 // WithStep sets the step increment for a Slider.
-func WithStep(step float64) SliderOption {
+func WithStep(step int64) SliderOption {
 	return SliderOption{step: step}
 }
 
@@ -34,25 +34,25 @@ func WithStep(step float64) SliderOption {
 type element interface {
 	describe() ElementDescriptor
 	handleUpdate(property string, value UpdateValue)
-	bindSend(pathPrefix string, fn func(UpdateNotification))
+	bindSend(pathPrefix string, fn func(UpdateNotification)) func()
 }
 
 type spacerElement struct{}
 
-func (s spacerElement) describe() ElementDescriptor                   { return ElementDescriptor{Kind: ElementSpacer} }
-func (s spacerElement) handleUpdate(_ string, _ UpdateValue)          {}
-func (s spacerElement) bindSend(_ string, _ func(UpdateNotification)) {}
-func (s spacerElement) applyForm(f *CustomForm)                       { f.elements = append(f.elements, s) }
+func (s spacerElement) describe() ElementDescriptor                          { return ElementDescriptor{Kind: ElementSpacer} }
+func (s spacerElement) handleUpdate(_ string, _ UpdateValue)                 {}
+func (s spacerElement) bindSend(_ string, _ func(UpdateNotification)) func() { return func() {} }
+func (s spacerElement) applyForm(f *CustomForm)                              { f.elements = append(f.elements, s) }
 
 // Spacer adds a blank vertical spacer element.
 func Spacer() FormOption { return spacerElement{} }
 
 type dividerElement struct{}
 
-func (d dividerElement) describe() ElementDescriptor                   { return ElementDescriptor{Kind: ElementDivider} }
-func (d dividerElement) handleUpdate(_ string, _ UpdateValue)          {}
-func (d dividerElement) bindSend(_ string, _ func(UpdateNotification)) {}
-func (d dividerElement) applyForm(f *CustomForm)                       { f.elements = append(f.elements, d) }
+func (d dividerElement) describe() ElementDescriptor                          { return ElementDescriptor{Kind: ElementDivider} }
+func (d dividerElement) handleUpdate(_ string, _ UpdateValue)                 {}
+func (d dividerElement) bindSend(_ string, _ func(UpdateNotification)) func() { return func() {} }
+func (d dividerElement) applyForm(f *CustomForm)                              { f.elements = append(f.elements, d) }
 
 // Divider adds a horizontal divider line element.
 func Divider() FormOption { return dividerElement{} }
@@ -63,8 +63,8 @@ func (l *labelElement) describe() ElementDescriptor {
 	return ElementDescriptor{Kind: ElementLabel, StringValue: l.text.Get()}
 }
 func (l *labelElement) handleUpdate(_ string, _ UpdateValue) {}
-func (l *labelElement) bindSend(pathPrefix string, fn func(UpdateNotification)) {
-	l.text.bindSend(func(v string) {
+func (l *labelElement) bindSend(pathPrefix string, fn func(UpdateNotification)) func() {
+	return l.text.bindSend(func(v string) {
 		fn(UpdateNotification{Path: pathPrefix + ".text", Value: UpdateValue{Kind: UpdateKindString, String: v}})
 	})
 }
@@ -96,8 +96,8 @@ func (t *textFieldElement) handleUpdate(property string, u UpdateValue) {
 	}
 }
 
-func (t *textFieldElement) bindSend(pathPrefix string, fn func(UpdateNotification)) {
-	t.value.bindSend(func(v string) {
+func (t *textFieldElement) bindSend(pathPrefix string, fn func(UpdateNotification)) func() {
+	return t.value.bindSend(func(v string) {
 		fn(UpdateNotification{
 			Path:  pathPrefix + ".text",
 			Value: UpdateValue{Kind: UpdateKindString, String: v},
@@ -139,8 +139,8 @@ func (d *dropdownElement) handleUpdate(property string, u UpdateValue) {
 	}
 }
 
-func (d *dropdownElement) bindSend(pathPrefix string, fn func(UpdateNotification)) {
-	d.value.bindSend(func(v int) {
+func (d *dropdownElement) bindSend(pathPrefix string, fn func(UpdateNotification)) func() {
+	return d.value.bindSend(func(v int) {
 		fn(UpdateNotification{
 			Path:  pathPrefix + ".value",
 			Value: UpdateValue{Kind: UpdateKindFloat, Float: float64(v)},
@@ -174,8 +174,8 @@ func (t *toggleElement) handleUpdate(property string, u UpdateValue) {
 	}
 }
 
-func (t *toggleElement) bindSend(pathPrefix string, fn func(UpdateNotification)) {
-	t.value.bindSend(func(v bool) {
+func (t *toggleElement) bindSend(pathPrefix string, fn func(UpdateNotification)) func() {
+	return t.value.bindSend(func(v bool) {
 		fn(UpdateNotification{
 			Path:  pathPrefix + ".toggled",
 			Value: UpdateValue{Kind: UpdateKindBool, Bool: v},
@@ -192,8 +192,8 @@ func Toggle(label string, value *Observable[bool]) FormOption {
 
 type sliderElement struct {
 	label, description string
-	value              *Observable[float64]
-	min, max, step     float64
+	value              *Observable[int64]
+	min, max, step     int64
 }
 
 func (s *sliderElement) describe() ElementDescriptor {
@@ -201,7 +201,7 @@ func (s *sliderElement) describe() ElementDescriptor {
 		Kind:        ElementSlider,
 		Label:       s.label,
 		Description: s.description,
-		FloatValue:  s.value.Get(),
+		Int64Value:  s.value.Get(),
 		Min:         s.min,
 		Max:         s.max,
 		Step:        s.step,
@@ -209,16 +209,17 @@ func (s *sliderElement) describe() ElementDescriptor {
 }
 
 func (s *sliderElement) handleUpdate(property string, u UpdateValue) {
-	if property == "value" && s.value.clientWritable {
-		s.value.update(u.Float)
+	value := int64(u.Float)
+	if property == "value" && u.Kind == UpdateKindFloat && float64(value) == u.Float && s.value.clientWritable {
+		s.value.update(value)
 	}
 }
 
-func (s *sliderElement) bindSend(pathPrefix string, fn func(UpdateNotification)) {
-	s.value.bindSend(func(v float64) {
+func (s *sliderElement) bindSend(pathPrefix string, fn func(UpdateNotification)) func() {
+	return s.value.bindSend(func(v int64) {
 		fn(UpdateNotification{
 			Path:  pathPrefix + ".value",
-			Value: UpdateValue{Kind: UpdateKindFloat, Float: v},
+			Value: UpdateValue{Kind: UpdateKindFloat, Float: float64(v)},
 		})
 	})
 }
@@ -226,7 +227,7 @@ func (s *sliderElement) bindSend(pathPrefix string, fn func(UpdateNotification))
 func (s *sliderElement) applyForm(f *CustomForm) { f.elements = append(f.elements, s) }
 
 // Slider adds a numeric slider element bound to value. min and max define the range.
-func Slider(label string, value *Observable[float64], min, max float64, opts ...SliderOption) FormOption {
+func Slider(label string, value *Observable[int64], min, max int64, opts ...SliderOption) FormOption {
 	e := &sliderElement{label: label, value: value, min: min, max: max, step: 1}
 	for _, o := range opts {
 		if o.description != "" {
@@ -254,7 +255,7 @@ func (b *buttonElement) handleUpdate(property string, _ UpdateValue) {
 	}
 }
 
-func (b *buttonElement) bindSend(_ string, _ func(UpdateNotification)) {}
+func (b *buttonElement) bindSend(_ string, _ func(UpdateNotification)) func() { return func() {} }
 
 func (b *buttonElement) applyForm(f *CustomForm) { f.elements = append(f.elements, b) }
 

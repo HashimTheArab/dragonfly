@@ -58,9 +58,9 @@ type ElementDescriptor struct {
 	Description    string
 	StringValue    string
 	IntValue       int
-	FloatValue     float64
+	Int64Value     int64
 	BoolValue      bool
-	Min, Max, Step float64
+	Min, Max, Step int64
 	Options        []DropdownOption
 }
 
@@ -92,8 +92,8 @@ type Form interface {
 	// HandleUpdate processes a client-initiated field change at path.
 	// It returns true if the form should be closed as a result of the update.
 	HandleUpdate(path string, value UpdateValue) bool
-	// BindSend registers the callback the session uses to receive server-side Observable changes.
-	BindSend(fn func(UpdateNotification))
+	// BindSend registers the callback the session uses to receive server-side Observable changes and returns a function that removes the binding.
+	BindSend(fn func(UpdateNotification)) func()
 }
 
 // HandlerOption is returned by Handler and satisfies both FormOption and MessageBoxOption.

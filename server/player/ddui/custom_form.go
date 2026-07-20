@@ -52,6 +52,9 @@ func (f *CustomForm) Describe() FormDescriptor {
 
 // HandleUpdate ...
 func (f *CustomForm) HandleUpdate(path string, value UpdateValue) bool {
+	if path == "closeButton.onClick" && f.hasClose {
+		return true
+	}
 	idx, property, ok := parseLayoutPath(path)
 	if !ok || idx < 0 || idx >= len(f.elements) {
 		return false
@@ -61,9 +64,15 @@ func (f *CustomForm) HandleUpdate(path string, value UpdateValue) bool {
 }
 
 // BindSend ...
-func (f *CustomForm) BindSend(fn func(UpdateNotification)) {
+func (f *CustomForm) BindSend(fn func(UpdateNotification)) func() {
+	unbinds := make([]func(), 0, len(f.elements))
 	for i, e := range f.elements {
-		e.bindSend("layout["+strconv.Itoa(i)+"]", fn)
+		unbinds = append(unbinds, e.bindSend("layout["+strconv.Itoa(i)+"]", fn))
+	}
+	return func() {
+		for _, unbind := range unbinds {
+			unbind()
+		}
 	}
 }
 

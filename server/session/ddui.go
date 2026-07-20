@@ -26,6 +26,7 @@ type activeDDUIForm struct {
 	instanceID          uint32
 	property            string
 	propertyUpdateCount uint32
+	unbind              func()
 }
 
 // SendDDUIForm sends f to the client via s, registering it as an active form.
@@ -43,11 +44,7 @@ func (h *DDUIFormHandler) SendDDUIForm(f ddui.Form, s *Session) {
 		propertyUpdateCount: 1,
 	}
 
-	h.mu.Lock()
-	h.forms[instanceID] = af
-	h.mu.Unlock()
-
-	f.BindSend(func(_ ddui.UpdateNotification) {
+	af.unbind = f.BindSend(func(_ ddui.UpdateNotification) {
 		h.mu.Lock()
 		if _, active := h.forms[instanceID]; !active {
 			h.mu.Unlock()
@@ -65,12 +62,16 @@ func (h *DDUIFormHandler) SendDDUIForm(f ddui.Form, s *Session) {
 						DataStoreName: "minecraft",
 						Property:      property,
 						UpdateCount:   count,
-						NewValue:      serializeForm(f.Describe()),
+						NewValue:      serializeForm(f.ScreenID(), f.Describe()),
 					},
 				},
 			},
 		})
 	})
+
+	h.mu.Lock()
+	h.forms[instanceID] = af
+	h.mu.Unlock()
 
 	s.writePacket(&packet.ClientBoundDataStore{
 		Updates: []protocol.DataStoreChangeEntry{
@@ -80,7 +81,7 @@ func (h *DDUIFormHandler) SendDDUIForm(f ddui.Form, s *Session) {
 					DataStoreName: "minecraft",
 					Property:      property,
 					UpdateCount:   1,
-					NewValue:      serializeForm(f.Describe()),
+					NewValue:      serializeForm(f.ScreenID(), f.Describe()),
 				},
 			},
 		},
@@ -109,8 +110,21 @@ func (h *DDUIFormHandler) CloseDDUIForms(s *Session) {
 	s.writePacket(&packet.ClientBoundDataDrivenUICloseScreen{})
 
 	for _, af := range active {
+		af.unbind()
 		af.form.OnClose(ddui.CloseReasonProgrammaticAll)
 		sendDataStoreCleanup(s, af)
+	}
+}
+
+// discardDDUIForms removes all active forms without writing to the connection.
+func (h *DDUIFormHandler) discardDDUIForms() {
+	h.mu.Lock()
+	active := h.forms
+	h.forms = make(map[uint32]*activeDDUIForm)
+	h.mu.Unlock()
+
+	for _, af := range active {
+		af.unbind()
 	}
 }
 
@@ -139,8 +153,8 @@ func deriveProperty(screenID string, instanceID uint32) string {
 }
 
 // serializeForm converts a ddui.FormDescriptor to a DataStorePropertyValue map.
-func serializeForm(desc ddui.FormDescriptor) protocol.DataStorePropertyValue {
-	if desc.Body != "" || desc.Button1.Label != "" || desc.Button2.Label != "" {
+func serializeForm(screenID string, desc ddui.FormDescriptor) protocol.DataStorePropertyValue {
+	if screenID == "minecraft:message_box" {
 		return serializeMessageBox(desc)
 	}
 	return serializeCustomForm(desc)
@@ -245,10 +259,10 @@ func serializeElement(e ddui.ElementDescriptor) protocol.DataStorePropertyValue 
 			dsEntry("description", dsStr(e.Description)),
 			dsEntry("slider_visible", dsBool(true)),
 			dsEntry("label", dsStr(e.Label)),
-			dsEntry("maxValue", dsInt(int64(e.Max))),
-			dsEntry("minValue", dsInt(int64(e.Min))),
-			dsEntry("step", dsInt(int64(e.Step))),
-			dsEntry("value", dsInt(int64(e.FloatValue))),
+			dsEntry("maxValue", dsInt(e.Max)),
+			dsEntry("minValue", dsInt(e.Min)),
+			dsEntry("step", dsInt(e.Step)),
+			dsEntry("value", dsInt(e.Int64Value)),
 		)
 	case ddui.ElementButton:
 		return dsMap(

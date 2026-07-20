@@ -16,6 +16,9 @@ type ServerBoundDataStoreHandler struct {
 
 func (d *ServerBoundDataStoreHandler) Handle(p packet.Packet, s *Session, _ *world.Tx, _ Controllable) error {
 	pk := p.(*packet.ServerBoundDataStore)
+	if pk.Update.DataStoreName != "minecraft" {
+		return nil
+	}
 
 	property := pk.Update.Property
 	if !strings.HasPrefix(property, "custom_form_data_") && !strings.HasPrefix(property, "message_box_data_") {
@@ -34,9 +37,19 @@ func (d *ServerBoundDataStoreHandler) Handle(p packet.Packet, s *Session, _ *wor
 
 	d.h.mu.Lock()
 	af := d.h.forms[uint32(id)]
+	active := true
+	for instanceID := range d.h.forms {
+		if instanceID > uint32(id) {
+			active = false
+			break
+		}
+	}
 	d.h.mu.Unlock()
 
-	if af == nil {
+	if af == nil || !active {
+		return nil
+	}
+	if property != af.property {
 		return nil
 	}
 
@@ -44,6 +57,7 @@ func (d *ServerBoundDataStoreHandler) Handle(p packet.Packet, s *Session, _ *wor
 		d.h.mu.Lock()
 		delete(d.h.forms, af.instanceID)
 		d.h.mu.Unlock()
+		af.unbind()
 		af.form.OnClose(ddui.Closed)
 		s.writePacket(&packet.ClientBoundDataDrivenUICloseScreen{
 			FormID: protocol.Option(af.formID),

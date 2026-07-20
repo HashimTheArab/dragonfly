@@ -128,14 +128,15 @@ func (m *MessageBox) HandleUpdate(path string, _ UpdateValue) bool {
 }
 
 // BindSend implements Form.
-func (m *MessageBox) BindSend(fn func(UpdateNotification)) {
+func (m *MessageBox) BindSend(fn func(UpdateNotification)) func() {
+	unbinds := make([]func(), 0, 6)
 	bind := func(obs *Observable[string], path string) {
 		if obs == nil {
 			return
 		}
-		obs.bindSend(func(v string) {
+		unbinds = append(unbinds, obs.bindSend(func(v string) {
 			fn(UpdateNotification{Path: path, Value: UpdateValue{Kind: UpdateKindString, String: v}})
-		})
+		}))
 	}
 	bind(m.title, "title")
 	bind(m.body, "body")
@@ -143,12 +144,19 @@ func (m *MessageBox) BindSend(fn func(UpdateNotification)) {
 	bind(m.btn1.tooltip, "button1.tooltip")
 	bind(m.btn2.label, "button2.label")
 	bind(m.btn2.tooltip, "button2.tooltip")
+	return func() {
+		for _, unbind := range unbinds {
+			unbind()
+		}
+	}
 }
 
 // OnClose implements Form.
 func (m *MessageBox) OnClose(_ int) {
+	selection := m.selection
+	m.selection = 0
 	if m.handler != nil {
-		m.handler(m.selection)
+		m.handler(selection)
 	}
 }
 

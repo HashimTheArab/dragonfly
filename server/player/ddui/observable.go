@@ -3,10 +3,11 @@ package ddui
 import "sync"
 
 // Observable holds a value that can be observed for changes. When Set is called,
-// all registered listeners and the bound send function are notified.
-type Observable[T string | int | float64 | bool] struct {
+// all registered listeners and bound send functions are notified.
+type Observable[T string | int | int64 | bool] struct {
 	listeners      []func(value T)
-	sendFn         func(value T)
+	sendFns        map[uint64]func(value T)
+	nextSendID     uint64
 	clientWritable bool
 	value          T
 	mut            sync.RWMutex
@@ -15,7 +16,7 @@ type Observable[T string | int | float64 | bool] struct {
 // NewObservable creates a new Observable with the given initial value.
 // clientWritable controls whether client-originated packets may write back into
 // this observable. Set it to false for server-authoritative values.
-func NewObservable[T string | int | float64 | bool](initialValue T, clientWritable bool) *Observable[T] {
+func NewObservable[T string | int | int64 | bool](initialValue T, clientWritable bool) *Observable[T] {
 	return &Observable[T]{
 		listeners:      make([]func(value T), 0),
 		clientWritable: clientWritable,
@@ -23,19 +24,22 @@ func NewObservable[T string | int | float64 | bool](initialValue T, clientWritab
 	}
 }
 
-// Set updates the current value and notifies all listeners and the send function.
+// Set updates the current value and notifies all listeners and bound send functions.
 func (o *Observable[T]) Set(value T) {
 	o.mut.Lock()
 	o.value = value
 	listeners := o.listeners
-	sendFn := o.sendFn
+	sendFns := make([]func(value T), 0, len(o.sendFns))
+	for _, fn := range o.sendFns {
+		sendFns = append(sendFns, fn)
+	}
 	o.mut.Unlock()
 
 	for _, fn := range listeners {
 		fn(value)
 	}
-	if sendFn != nil {
-		sendFn(value)
+	for _, fn := range sendFns {
+		fn(value)
 	}
 }
 
@@ -68,8 +72,19 @@ func (o *Observable[T]) update(value T) {
 
 // bindSend registers the send callback. It is called by form types after the
 // session attaches a send function via BindSend.
-func (o *Observable[T]) bindSend(fn func(T)) {
+func (o *Observable[T]) bindSend(fn func(T)) func() {
 	o.mut.Lock()
-	o.sendFn = fn
+	if o.sendFns == nil {
+		o.sendFns = make(map[uint64]func(value T))
+	}
+	o.nextSendID++
+	id := o.nextSendID
+	o.sendFns[id] = fn
 	o.mut.Unlock()
+
+	return func() {
+		o.mut.Lock()
+		delete(o.sendFns, id)
+		o.mut.Unlock()
+	}
 }
