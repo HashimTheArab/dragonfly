@@ -10,6 +10,9 @@
   Name = "Dragonfly Server"
   # AuthEnabled controls whether players must be connected to Xbox Live in order to join the server.
   AuthEnabled = true
+  # DisablePacketEncryption disables packet encryption for accepted connections. Authentication is
+  # unaffected. Useful when a proxy in front of the server already handles encryption.
+  DisablePacketEncryption = false
   # DisableJoinQuitMessages specifies if join/quit messages should be broadcast when players join the server.
   DisableJoinQuitMessages = false
   # MuteEmoteChat specifies if the player emote chat should be muted or not.
