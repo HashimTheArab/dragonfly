@@ -60,6 +60,10 @@ type Config struct {
 	// local games. Allowing players to join without authentication is generally
 	// a security hazard.
 	AuthDisabled bool
+	// DisablePacketEncryption disables packet encryption for accepted
+	// connections. Authentication is unaffected. Only use this on trusted
+	// networks.
+	DisablePacketEncryption bool
 	// MuteEmoteChat specifies if the player emote chat should be muted or not.
 	MuteEmoteChat bool
 	// MaxPlayers is the maximum amount of players allowed to join the server at
@@ -222,6 +226,10 @@ type UserConfig struct {
 		// AuthEnabled controls whether players must be connected to Xbox Live
 		// in order to join the server.
 		AuthEnabled bool
+		// DisablePacketEncryption disables packet encryption for accepted
+		// connections. Authentication is unaffected. Only use this on trusted
+		// networks.
+		DisablePacketEncryption bool
 		// DisableJoinQuitMessages specifies if default join and quit messages
 		// for players should be disabled.
 		DisableJoinQuitMessages bool
@@ -280,6 +288,7 @@ func (uc UserConfig) Config(log *slog.Logger) (Config, error) {
 		Name:                    uc.Server.Name,
 		ResourcesRequired:       uc.Resources.Required,
 		AuthDisabled:            !uc.Server.AuthEnabled,
+		DisablePacketEncryption: uc.Server.DisablePacketEncryption,
 		MuteEmoteChat:           uc.Server.MuteEmoteChat,
 		MaxPlayers:              uc.Players.MaxCount,
 		MaxChunkRadius:          uc.Players.MaximumChunkRadius,

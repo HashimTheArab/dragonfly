@@ -25,12 +25,13 @@ type Listener interface {
 // is the standard listener used when UserConfig.Config() is called.
 func (uc UserConfig) listenerFunc(conf Config) (Listener, error) {
 	cfg := minecraft.ListenConfig{
-		MaximumPlayers:         conf.MaxPlayers,
-		StatusProvider:         conf.StatusProvider,
-		AuthenticationDisabled: conf.AuthDisabled,
-		ResourcePacks:          conf.Resources,
-		TexturePacksRequired:   conf.ResourcesRequired,
-		Compression:            conf.Compression,
+		MaximumPlayers:          conf.MaxPlayers,
+		StatusProvider:          conf.StatusProvider,
+		AuthenticationDisabled:  conf.AuthDisabled,
+		DisablePacketEncryption: conf.DisablePacketEncryption,
+		ResourcePacks:           conf.Resources,
+		TexturePacksRequired:    conf.ResourcesRequired,
+		Compression:             conf.Compression,
 	}
 	if conf.Log.Enabled(context.Background(), slog.LevelDebug) {
 		cfg.ErrorLog = conf.Log.With("net origin", "gophertunnel")
