@@ -17,7 +17,8 @@ const (
 type UpdateKind int8
 
 const (
-	UpdateKindFloat UpdateKind = iota
+	UpdateKindInvalid UpdateKind = iota
+	UpdateKindFloat
 	UpdateKindBool
 	UpdateKindString
 )
@@ -37,6 +38,12 @@ type UpdateNotification struct {
 	Value UpdateValue
 }
 
+// UpdateResult describes the action a form takes after a client update.
+type UpdateResult struct {
+	Close    bool
+	Complete func()
+}
+
 // ElementKind identifies the type of a form element.
 type ElementKind int8
 
@@ -44,6 +51,7 @@ const (
 	ElementSpacer ElementKind = iota
 	ElementDivider
 	ElementLabel
+	ElementHeader
 	ElementTextField
 	ElementDropdown
 	ElementToggle
@@ -56,11 +64,14 @@ type ElementDescriptor struct {
 	Kind           ElementKind
 	Label          string
 	Description    string
+	Tooltip        string
 	StringValue    string
 	IntValue       int
-	Int64Value     int64
+	FloatValue     float64
 	BoolValue      bool
-	Min, Max, Step int64
+	Visible        bool
+	Disabled       bool
+	Min, Max, Step float64
 	Options        []DropdownOption
 }
 
@@ -74,6 +85,7 @@ type ButtonDescriptor struct {
 type FormDescriptor struct {
 	Title          string
 	HasCloseButton bool
+	CloseButton    ElementDescriptor
 	Elements       []ElementDescriptor
 	// MessageBox fields:
 	Body    string
@@ -83,15 +95,16 @@ type FormDescriptor struct {
 
 // Form is implemented by any type that can be shown to a player as a data-driven UI.
 type Form interface {
-	// OnClose is called when this form closes. reason is one of the CloseReason constants.
+	// OnClose is called when this form closes without completing a form action.
+	// reason is one of the CloseReason constants.
 	OnClose(reason int)
 	// ScreenID returns the Bedrock data-driven UI screen identifier (e.g. "minecraft:custom_form").
 	ScreenID() string
 	// Describe returns the form's complete structure for serialization by the session.
 	Describe() FormDescriptor
 	// HandleUpdate processes a client-initiated field change at path.
-	// It returns true if the form should be closed as a result of the update.
-	HandleUpdate(path string, value UpdateValue) bool
+	// It returns the action that should be taken after the update.
+	HandleUpdate(path string, value UpdateValue) UpdateResult
 	// BindSend registers the callback the session uses to receive server-side Observable changes and returns a function that removes the binding.
 	BindSend(fn func(UpdateNotification)) func()
 }

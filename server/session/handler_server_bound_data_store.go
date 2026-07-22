@@ -53,16 +53,30 @@ func (d *ServerBoundDataStoreHandler) Handle(p packet.Packet, s *Session, _ *wor
 		return nil
 	}
 
-	if af.form.HandleUpdate(pk.Update.Path, dataStoreControlToUpdateValue(pk.Update)) {
+	result, accepted := af.handleUpdate(pk.Update.Path, dataStoreControlToUpdateValue(pk.Update))
+	if !accepted {
+		return nil
+	}
+	if result.Close {
+		af.sendMu.Lock()
+		af.sendMu.Unlock()
 		d.h.mu.Lock()
-		delete(d.h.forms, af.instanceID)
+		if d.h.forms[af.instanceID] == af {
+			delete(d.h.forms, af.instanceID)
+		}
 		d.h.mu.Unlock()
 		af.unbind()
-		af.form.OnClose(ddui.Closed)
+		if result.Complete == nil {
+			af.form.OnClose(ddui.Closed)
+		} else {
+			result.Complete()
+		}
 		s.writePacket(&packet.ClientBoundDataDrivenUICloseScreen{
 			FormID: protocol.Option(af.formID),
 		})
 		sendDataStoreCleanup(s, af)
+	} else if result.Complete != nil {
+		result.Complete()
 	}
 	return nil
 }
@@ -73,7 +87,9 @@ func dataStoreControlToUpdateValue(u protocol.DataStoreUpdate) ddui.UpdateValue 
 		return ddui.UpdateValue{Kind: ddui.UpdateKindFloat, Float: u.DoubleValue}
 	case protocol.DataStoreControlBoolean:
 		return ddui.UpdateValue{Kind: ddui.UpdateKindBool, Bool: u.BoolValue}
-	default:
+	case protocol.DataStoreControlString:
 		return ddui.UpdateValue{Kind: ddui.UpdateKindString, String: u.StringValue}
+	default:
+		return ddui.UpdateValue{Kind: ddui.UpdateKindInvalid}
 	}
 }
