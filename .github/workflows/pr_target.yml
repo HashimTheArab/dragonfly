@@ -6,7 +6,7 @@ jobs:
 
   deploy:
     name: Deploy
-    if: github.repository == 'df-mc/dragonfly' && github.event.action != 'closed'
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
 
@@ -32,7 +32,7 @@ jobs:
 
   cleanup:
     name: Cleanup
-    if: github.repository == 'df-mc/dragonfly' && github.event.action == 'closed'
+    if: github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
       - name: Delete test server
