@@ -597,15 +597,8 @@ func (br *BasicBlockRegistry) Air() Block {
 	return br.blocks[br.airRID]
 }
 
-// NetworkBlockHash returns the key a client sorts its block palette by. The client merges
-// its vanilla block list with the custom blocks a server sends and orders the result by
-// this hash, so a block's runtime ID is its index in that ordering. Finalize sorts by the
-// same key, which is what keeps the two in agreement.
-//
-// It is exported for callers that have to reason about palette ordering without building a
-// registry: a proxy appending its own blocks to another server's palette must know they
-// sort after every block already in it, or appending would shift runtime IDs the upstream
-// server is still using.
+// NetworkBlockHash returns the key a client sorts its block palette by, making a block's
+// runtime ID its index in that ordering. Finalize sorts by it too, so the two agree.
 func NetworkBlockHash(name string) uint64 {
 	return fnv1.HashString64(name)
 }

@@ -2,9 +2,7 @@ package world
 
 import "testing"
 
-// NetworkBlockHash is the key Finalize sorts by, so a caller reasoning about palette
-// ordering gets the same answer the registry does. The values are pinned because they are
-// a wire contract with the client, not an implementation detail either side may change.
+// The hashes are a wire contract with the client, so they are pinned rather than derived.
 func TestNetworkBlockHash_IsStable(t *testing.T) {
 	for name, want := range map[string]uint64{
 		"minecraft:air":   0xbd584baf00003448,
