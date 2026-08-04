@@ -8,11 +8,10 @@ type BlockSource interface {
 	Block(cube.Pos) Block
 }
 
-// LiquidSource is a BlockSource that can also resolve liquids, which not every source can:
-// one standing in for a hypothetical world may only know about blocks.
+// LiquidSource is a BlockSource that can also resolve liquids.
 type LiquidSource interface {
 	BlockSource
-	// Liquid returns the liquid at the given position, if there is one.
+	// Liquid returns the liquid at the given position, if any.
 	Liquid(cube.Pos) (Liquid, bool)
 }
 

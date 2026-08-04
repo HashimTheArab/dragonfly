@@ -8,7 +8,7 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 )
 
-// blockSource resolves a fixed set of positions, standing in for a world.
+// blockSource is a world of only the blocks it is given.
 type blockSource map[cube.Pos]world.Block
 
 func (s blockSource) Block(pos cube.Pos) world.Block {
@@ -44,8 +44,7 @@ func TestExposure(t *testing.T) {
 	}
 }
 
-// liquidSource answers for liquids as well as blocks, which is what
-// SuppressUnderwaterImpact needs.
+// liquidSource adds liquids to blockSource.
 type liquidSource struct {
 	blockSource
 	liquids map[cube.Pos]world.Liquid
@@ -56,8 +55,7 @@ func (s liquidSource) Liquid(pos cube.Pos) (world.Liquid, bool) {
 	return l, ok
 }
 
-// SuppressUnderwaterImpact is only honoured by a source that can resolve liquids, so a
-// plain BlockSource must not silently behave as though water were absent from the world.
+// Underwater suppression needs a source that knows about liquids.
 func TestExposure_UnderwaterSuppressionNeedsALiquidSource(t *testing.T) {
 	box := cube.Box(0, 0, 0, 1, 1, 1).Translate(mgl64.Vec3{10, 0, 0})
 	origin := mgl64.Vec3{0, 0.5, 0.5}
@@ -72,7 +70,7 @@ func TestExposure_UnderwaterSuppressionNeedsALiquidSource(t *testing.T) {
 	if got := cfg.Exposure(liquidSource{blockSource{}, water}, origin, box); got != 0 {
 		t.Fatalf("water wall with a LiquidSource = %v, want 0", got)
 	}
-	// The same wall through a block-only source: nothing to suppress against.
+	// The same wall, but the source cannot see liquids.
 	if got := cfg.Exposure(blockSource{}, origin, box); got != 1 {
 		t.Fatalf("block-only source = %v, want 1", got)
 	}

@@ -25,8 +25,7 @@ type ExplosionConfig struct {
 	// above opaque blocks.
 	SpawnFire bool
 	// SuppressUnderwaterImpact prevents the explosion from affecting entities through liquid layers. Bedrock Edition
-	// applies this to every explosion. Exposure only honours it for a world.LiquidSource,
-	// since a plain BlockSource cannot answer for liquids.
+	// applies this to every explosion.
 	SuppressUnderwaterImpact bool
 	// ItemDropChance specifies how item drops should be handled. By default,
 	// the item drop chance is 1/Size. If negative, no items will be dropped by
@@ -221,10 +220,8 @@ func (c ExplosionConfig) exposure(tx *world.Tx, origin mgl64.Vec3, e world.Entit
 	return c.Exposure(tx, origin, e.H().Type().BBox(e).Translate(e.Position()))
 }
 
-// Exposure returns the fraction of rays cast from origin to box that arrive without a block
-// in src stopping them, which is what scales an explosion's impact with cover. src only has
-// to resolve blocks, so a caller may substitute a hypothetical world for a real one; pass a
-// world.LiquidSource for SuppressUnderwaterImpact to apply.
+// Exposure returns the fraction of rays from origin to box that reach it without hitting a
+// block in src. SuppressUnderwaterImpact only applies if src is a world.LiquidSource.
 func (c ExplosionConfig) Exposure(src world.BlockSource, origin mgl64.Vec3, box cube.BBox) float64 {
 	boxMin, boxMax := box.Min(), box.Max()
 	diff := boxMax.Sub(boxMin).Mul(2.0).Add(mgl64.Vec3{1, 1, 1})
@@ -254,7 +251,7 @@ func (c ExplosionConfig) Exposure(src world.BlockSource, origin mgl64.Vec3, box 
 				}
 				checks++
 				if point.Sub(origin).LenSqr() == 0 {
-					// Nothing can stand between a point and itself.
+					// Nothing can block a ray of no length.
 					misses++
 					continue
 				}
