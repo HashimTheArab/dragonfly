@@ -43,3 +43,37 @@ func TestExposure(t *testing.T) {
 		t.Fatalf("point box at the origin = %v, want 1 (nothing can occlude it)", got)
 	}
 }
+
+// liquidSource answers for liquids as well as blocks, which is what
+// SuppressUnderwaterImpact needs.
+type liquidSource struct {
+	blockSource
+	liquids map[cube.Pos]world.Liquid
+}
+
+func (s liquidSource) Liquid(pos cube.Pos) (world.Liquid, bool) {
+	l, ok := s.liquids[pos]
+	return l, ok
+}
+
+// SuppressUnderwaterImpact is only honoured by a source that can resolve liquids, so a
+// plain BlockSource must not silently behave as though water were absent from the world.
+func TestExposure_UnderwaterSuppressionNeedsALiquidSource(t *testing.T) {
+	box := cube.Box(0, 0, 0, 1, 1, 1).Translate(mgl64.Vec3{10, 0, 0})
+	origin := mgl64.Vec3{0, 0.5, 0.5}
+	cfg := ExplosionConfig{SuppressUnderwaterImpact: true}
+
+	water := map[cube.Pos]world.Liquid{}
+	for y := -1; y <= 2; y++ {
+		for z := -1; z <= 2; z++ {
+			water[cube.Pos{5, y, z}] = Water{Depth: 8}
+		}
+	}
+	if got := cfg.Exposure(liquidSource{blockSource{}, water}, origin, box); got != 0 {
+		t.Fatalf("water wall with a LiquidSource = %v, want 0", got)
+	}
+	// The same wall through a block-only source: nothing to suppress against.
+	if got := cfg.Exposure(blockSource{}, origin, box); got != 1 {
+		t.Fatalf("block-only source = %v, want 1", got)
+	}
+}
