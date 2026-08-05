@@ -15,8 +15,9 @@ import (
 	"strings"
 )
 
-// defaultItemsURL is Allay's item table, extracted from the vanilla server.
-const defaultItemsURL = "https://raw.githubusercontent.com/AllayMC/Allay/master/data/resources/items.json"
+// defaultItemsURL is Allay's item table, extracted from the vanilla server. Pinned to a commit so
+// regenerating is reproducible; bumping it is a deliberate change.
+const defaultItemsURL = "https://raw.githubusercontent.com/AllayMC/Allay/1ce2686810255007ddc47129d025ce1a00099305/data/resources/items.json"
 
 func main() {
 	out := flag.String("o", "server/world/item_props.go", "generated Go output path")

@@ -15,8 +15,9 @@ import (
 	"strings"
 )
 
-// defaultStatesURL is Allay's block state table, extracted from the vanilla server.
-const defaultStatesURL = "https://raw.githubusercontent.com/AllayMC/Allay/master/data/resources/block_states.json"
+// defaultStatesURL is Allay's block state table, extracted from the vanilla server. Pinned to a commit so
+// regenerating is reproducible; bumping it is a deliberate change.
+const defaultStatesURL = "https://raw.githubusercontent.com/AllayMC/Allay/1ce2686810255007ddc47129d025ce1a00099305/data/resources/block_states.json"
 
 type state struct {
 	Name           string  `json:"name"`
