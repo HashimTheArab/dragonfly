@@ -62,3 +62,48 @@ func TestEncodeLevelChunkPayloadWithBlockEntitiesReturnsEncodeError(t *testing.T
 		t.Fatalf("error = %q, want block entity context", err)
 	}
 }
+
+// Protocol 2168 constrains SubChunkCount to 0..64, so announcing with the old MaxUint32
+// sentinel makes the client reject the column before it requests any sub-chunk.
+func TestRequestModeLevelChunkUsesZeroCount(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	t.Parallel()
+
+	ch := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	count, limit := chunk.RequestModeLevelChunk(ch)
+	if count != 0 {
+		t.Errorf("SubChunkCount = %d, want 0", count)
+	}
+	got, ok := limit.Value()
+	if !ok {
+		t.Fatal("SubChunkLimit is unset, so the client requests nothing and the column stays empty")
+	}
+	if want := int32(ch.HighestFilledSubChunk()); got != want {
+		t.Errorf("SubChunkLimit = %d, want %d", got, want)
+	}
+}
+
+// The client only draws a sub-chunk's block actors when their compounds trail the payload
+// carrying their position.
+func TestEncodeBlockEntitiesCarriesPositions(t *testing.T) {
+	t.Parallel()
+
+	raw, err := chunk.EncodeBlockEntities([]chunk.BlockEntity{
+		{Pos: cube.Pos{3, 64, 5}, Data: map[string]any{"id": "Chest"}},
+		{Pos: cube.Pos{1, 2, 3}, Data: nil},
+	})
+	if err != nil {
+		t.Fatalf("EncodeBlockEntities() error = %v", err)
+	}
+	if len(raw) == 0 {
+		t.Fatal("encoded nothing")
+	}
+	if !strings.Contains(string(raw), "Chest") {
+		t.Error("encoded data does not carry the block entity id")
+	}
+	for _, axis := range []string{"x", "y", "z"} {
+		if !strings.Contains(string(raw), axis) {
+			t.Errorf("encoded data is missing the %q position key", axis)
+		}
+	}
+}
