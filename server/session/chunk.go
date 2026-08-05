@@ -63,15 +63,19 @@ func (s *Session) ViewSubChunks(centre world.SubChunkPos, offsets []protocol.Sub
 
 func (s *Session) subChunkEntry(offset protocol.SubChunkOffset, ind int16, col *world.Column, transaction map[uint64]struct{}) protocol.SubChunkEntry {
 	subMapType, subMap := chunk.SubChunkHeightMap(col.Chunk, ind)
+	var subMapData protocol.Optional[[]int8]
+	if subMap != nil {
+		subMapData = protocol.Option(subMap)
+	}
 
 	sub := col.Sub()[ind]
 	if sub.Empty() {
 		return protocol.SubChunkEntry{
 			Result:              protocol.SubChunkResultSuccessAllAir,
 			HeightMapType:       subMapType,
-			HeightMapData:       subMap,
+			HeightMapData:       subMapData,
 			RenderHeightMapType: subMapType,
-			RenderHeightMapData: subMap,
+			RenderHeightMapData: subMapData,
 			Offset:              offset,
 		}
 	}
@@ -91,19 +95,18 @@ func (s *Session) subChunkEntry(offset protocol.SubChunkOffset, ind int16, col *
 
 	entry := protocol.SubChunkEntry{
 		Result:              protocol.SubChunkResultSuccess,
-		RawPayload:          append(serialisedSubChunk, blockEntityData...),
+		RawPayload:          protocol.Option(append(serialisedSubChunk, blockEntityData...)),
 		HeightMapType:       subMapType,
-		HeightMapData:       subMap,
+		HeightMapData:       subMapData,
 		RenderHeightMapType: subMapType,
-		RenderHeightMapData: subMap,
+		RenderHeightMapData: subMapData,
 		Offset:              offset,
 	}
 	if s.conn.ClientCacheEnabled() {
 		if hash := xxhash.Sum64(serialisedSubChunk); s.trackBlob(hash, serialisedSubChunk) {
 			transaction[hash] = struct{}{}
-
-			entry.BlobHash = hash
-			entry.RawPayload = blockEntityData
+			entry.BlobHash = protocol.Option(hash)
+			entry.RawPayload = protocol.Option(blockEntityData)
 		}
 	}
 	return entry
