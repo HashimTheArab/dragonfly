@@ -134,6 +134,7 @@ const (
 	hashMagma
 	hashMelon
 	hashMelonSeeds
+	hashMobSpawner
 	hashMossCarpet
 	hashMud
 	hashMudBricks
@@ -750,6 +751,10 @@ func (Melon) Hash() (uint64, uint64) {
 
 func (m MelonSeeds) Hash() (uint64, uint64) {
 	return hashMelonSeeds, uint64(m.Growth) | uint64(m.Direction)<<8
+}
+
+func (MobSpawner) Hash() (uint64, uint64) {
+	return hashMobSpawner, 0
 }
 
 func (MossCarpet) Hash() (uint64, uint64) {
