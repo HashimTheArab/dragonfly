@@ -7,7 +7,6 @@ import (
 
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
-	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
 // EncodeLevelChunkPayload builds the RawPayload for a LevelChunk packet from
@@ -62,20 +61,6 @@ func EncodeLevelChunkPayloadWithBlockNBTs(data SerialisedData, blockNBTs []map[s
 		_, _ = buf.Write(staging.Bytes())
 	}
 	return append([]byte(nil), buf.Bytes()...), nil
-}
-
-// RequestModeLevelChunk returns the SubChunkCount and SubChunkLimit a LevelChunk carries to
-// announce c without its terrain, which is what prompts the client to request the column a
-// sub-chunk at a time. Protocol 2168 constrains SubChunkCount to 0..64, so the limit alone
-// marks request mode and the older protocol.SubChunkRequestMode* sentinels are rejected.
-func RequestModeLevelChunk(c *Chunk) (subChunkCount uint32, subChunkLimit protocol.Optional[int32]) {
-	return 0, protocol.Option(int32(c.HighestFilledSubChunk()))
-}
-
-// RequestModeLevelChunkPayload returns the RawPayload for an uncached request-mode
-// announcement: the biomes, then the border block count servers leave empty.
-func RequestModeLevelChunkPayload(c *Chunk) []byte {
-	return append(EncodeBiomes(c, NetworkEncoding), 0)
 }
 
 // blockEntityNBTs copies each entity's data with its position injected, which is how the

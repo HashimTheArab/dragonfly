@@ -189,7 +189,7 @@ func (s *Session) sendNetworkChunk(pos world.ChunkPos, dim world.Dimension, c *c
 			SubChunkCount: count,
 			Position:      protocol.ChunkPos(pos),
 			SubChunkLimit: limit,
-			RawPayload:    chunk.RequestModeLevelChunkPayload(c),
+			RawPayload:    append(chunk.EncodeBiomes(c, chunk.NetworkEncoding), 0),
 		})
 		return
 	}
