@@ -88,9 +88,11 @@ type FormDescriptor struct {
 	CloseButton    ElementDescriptor
 	Elements       []ElementDescriptor
 	// MessageBox fields:
-	Body    string
-	Button1 ButtonDescriptor
-	Button2 ButtonDescriptor
+	Body       string
+	HasButton1 bool
+	Button1    ButtonDescriptor
+	HasButton2 bool
+	Button2    ButtonDescriptor
 }
 
 // Form is implemented by any type that can be shown to a player as a data-driven UI.
@@ -107,6 +109,14 @@ type Form interface {
 	HandleUpdate(path string, value UpdateValue) UpdateResult
 	// BindSend registers the callback the session uses to receive server-side Observable changes and returns a function that removes the binding.
 	BindSend(fn func(UpdateNotification)) func()
+}
+
+// BindingForm is implemented by built-in forms that can suppress updates only
+// for the screen that originated a client change.
+type BindingForm interface {
+	Form
+	BindSendFrom(bindingID uint64, fn func(UpdateNotification)) func()
+	HandleUpdateFrom(bindingID uint64, path string, value UpdateValue) UpdateResult
 }
 
 // HandlerOption is returned by Handler and satisfies both FormOption and MessageBoxOption.

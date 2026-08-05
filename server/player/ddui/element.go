@@ -1,5 +1,7 @@
 package ddui
 
+import "math"
+
 // DropdownOption is a selectable item in a Dropdown element.
 type DropdownOption struct {
 	Label       string
@@ -87,9 +89,6 @@ func WithDescription[T string | *Observable[string]](value T) descriptionOption 
 	return descriptionOption{value: toStringObs(value)}
 }
 
-// WithSliderDescription is kept as a more explicit alias for WithDescription.
-func WithSliderDescription(description string) descriptionOption { return WithDescription(description) }
-
 type tooltipOption struct{ value *Observable[string] }
 
 func (o tooltipOption) applyButton(c *elementConfig) { c.tooltip = o.value }
@@ -105,8 +104,8 @@ func WithStep[T int | float64 | *Observable[float64]](value T) stepOption {
 
 type element interface {
 	describe() ElementDescriptor
-	handleUpdate(property string, value UpdateValue) func()
-	bindSend(pathPrefix string, fn func(UpdateNotification)) func()
+	handleUpdate(property string, value UpdateValue, origin *sendOrigin) func()
+	bindSend(pathPrefix string, origin *sendOrigin, fn func(UpdateNotification)) func()
 }
 
 type spacerElement struct{ config elementConfig }
@@ -114,9 +113,9 @@ type spacerElement struct{ config elementConfig }
 func (s *spacerElement) describe() ElementDescriptor {
 	return ElementDescriptor{Kind: ElementSpacer, Visible: s.config.visible.Get()}
 }
-func (s *spacerElement) handleUpdate(_ string, _ UpdateValue) func() { return nil }
-func (s *spacerElement) bindSend(path string, fn func(UpdateNotification)) func() {
-	return bindVisible(s.config.visible, path, "spacer_visible", fn)
+func (s *spacerElement) handleUpdate(_ string, _ UpdateValue, _ *sendOrigin) func() { return nil }
+func (s *spacerElement) bindSend(path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
+	return bindVisible(s.config.visible, path, "spacer_visible", origin, fn)
 }
 func (s *spacerElement) applyForm(f *CustomForm) { f.elements = append(f.elements, s) }
 
@@ -134,9 +133,9 @@ type dividerElement struct{ config elementConfig }
 func (d *dividerElement) describe() ElementDescriptor {
 	return ElementDescriptor{Kind: ElementDivider, Visible: d.config.visible.Get()}
 }
-func (d *dividerElement) handleUpdate(_ string, _ UpdateValue) func() { return nil }
-func (d *dividerElement) bindSend(path string, fn func(UpdateNotification)) func() {
-	return bindVisible(d.config.visible, path, "divider_visible", fn)
+func (d *dividerElement) handleUpdate(_ string, _ UpdateValue, _ *sendOrigin) func() { return nil }
+func (d *dividerElement) bindSend(path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
+	return bindVisible(d.config.visible, path, "divider_visible", origin, fn)
 }
 func (d *dividerElement) applyForm(f *CustomForm) { f.elements = append(f.elements, d) }
 
@@ -158,15 +157,15 @@ type textElement struct {
 func (e *textElement) describe() ElementDescriptor {
 	return ElementDescriptor{Kind: e.kind, StringValue: e.text.Get(), Visible: e.config.visible.Get()}
 }
-func (e *textElement) handleUpdate(_ string, _ UpdateValue) func() { return nil }
-func (e *textElement) bindSend(path string, fn func(UpdateNotification)) func() {
+func (e *textElement) handleUpdate(_ string, _ UpdateValue, _ *sendOrigin) func() { return nil }
+func (e *textElement) bindSend(path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
 	specific := "label_visible"
 	if e.kind == ElementHeader {
 		specific = "header_visible"
 	}
 	return combineUnbinds(
-		bindString(e.text, path+".text", fn),
-		bindVisible(e.config.visible, path, specific, fn),
+		bindString(e.text, path+".text", origin, fn),
+		bindVisible(e.config.visible, path, specific, origin, fn),
 	)
 }
 func (e *textElement) applyForm(f *CustomForm) { f.elements = append(f.elements, e) }
@@ -175,9 +174,6 @@ func (e *textElement) applyForm(f *CustomForm) { f.elements = append(f.elements,
 func Label[T string | *Observable[string]](text T, opts ...TextOption) FormOption {
 	return newTextElement(ElementLabel, text, opts...)
 }
-
-// LabelObs is an alias for Label kept for compatibility with the original DDUI proposal.
-func LabelObs(obs *Observable[string]) FormOption { return Label(obs) }
 
 // Header adds prominent section text.
 func Header[T string | *Observable[string]](text T, opts ...TextOption) FormOption {
@@ -201,16 +197,16 @@ type textFieldElement struct {
 func (t *textFieldElement) describe() ElementDescriptor {
 	return valueElementDescriptor(ElementTextField, t.label.Get(), t.config, t.value.Get(), 0, false)
 }
-func (t *textFieldElement) handleUpdate(property string, value UpdateValue) func() {
+func (t *textFieldElement) handleUpdate(property string, value UpdateValue, origin *sendOrigin) func() {
 	if property == "text" && value.Kind == UpdateKindString && t.config.visible.Get() && !t.config.disabled.Get() && t.value.clientWritable {
-		t.value.Set(value.String)
+		t.value.setFromClient(value.String, origin)
 	}
 	return nil
 }
-func (t *textFieldElement) bindSend(path string, fn func(UpdateNotification)) func() {
+func (t *textFieldElement) bindSend(path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
 	return combineUnbinds(
-		bindValueFrame(t.label, t.config, path, "textfield_visible", fn),
-		bindString(t.value, path+".text", fn),
+		bindValueFrame(t.label, t.config, path, "textfield_visible", origin, fn),
+		bindString(t.value, path+".text", origin, fn),
 	)
 }
 func (t *textFieldElement) applyForm(f *CustomForm) { f.elements = append(f.elements, t) }
@@ -233,27 +229,26 @@ type dropdownElement struct {
 
 func (d *dropdownElement) describe() ElementDescriptor {
 	desc := valueElementDescriptor(ElementDropdown, d.label.Get(), d.config, "", d.value.Get(), false)
-	desc.Options = d.options
+	desc.Options = append([]DropdownOption(nil), d.options...)
 	return desc
 }
-func (d *dropdownElement) handleUpdate(property string, update UpdateValue) func() {
-	if property != "value" || update.Kind != UpdateKindFloat || update.Float != float64(int(update.Float)) ||
+func (d *dropdownElement) handleUpdate(property string, update UpdateValue, origin *sendOrigin) func() {
+	if property != "value" || update.Kind != UpdateKindFloat ||
 		!d.config.visible.Get() || d.config.disabled.Get() || !d.value.clientWritable {
 		return nil
 	}
-	value := int(update.Float)
 	for _, option := range d.options {
-		if option.Value == value {
-			d.value.Set(value)
+		if float64(option.Value) == update.Float {
+			d.value.setFromClient(option.Value, origin)
 			return nil
 		}
 	}
 	return nil
 }
-func (d *dropdownElement) bindSend(path string, fn func(UpdateNotification)) func() {
+func (d *dropdownElement) bindSend(path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
 	return combineUnbinds(
-		bindValueFrame(d.label, d.config, path, "dropdown_visible", fn),
-		d.value.bindSend(func(value int) {
+		bindValueFrame(d.label, d.config, path, "dropdown_visible", origin, fn),
+		d.value.bindSendFrom(origin, func(value int) {
 			fn(UpdateNotification{Path: path + ".value", Value: UpdateValue{Kind: UpdateKindFloat, Float: float64(value)}})
 		}),
 	)
@@ -278,16 +273,16 @@ type toggleElement struct {
 func (t *toggleElement) describe() ElementDescriptor {
 	return valueElementDescriptor(ElementToggle, t.label.Get(), t.config, "", 0, t.value.Get())
 }
-func (t *toggleElement) handleUpdate(property string, update UpdateValue) func() {
+func (t *toggleElement) handleUpdate(property string, update UpdateValue, origin *sendOrigin) func() {
 	if property == "toggled" && update.Kind == UpdateKindBool && t.config.visible.Get() && !t.config.disabled.Get() && t.value.clientWritable {
-		t.value.Set(update.Bool)
+		t.value.setFromClient(update.Bool, origin)
 	}
 	return nil
 }
-func (t *toggleElement) bindSend(path string, fn func(UpdateNotification)) func() {
+func (t *toggleElement) bindSend(path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
 	return combineUnbinds(
-		bindValueFrame(t.label, t.config, path, "toggle_visible", fn),
-		t.value.bindSend(func(value bool) {
+		bindValueFrame(t.label, t.config, path, "toggle_visible", origin, fn),
+		t.value.bindSendFrom(origin, func(value bool) {
 			fn(UpdateNotification{Path: path + ".toggled", Value: UpdateValue{Kind: UpdateKindBool, Bool: value}})
 		}),
 	)
@@ -315,20 +310,33 @@ func (s *sliderElement) describe() ElementDescriptor {
 	desc.FloatValue, desc.Min, desc.Max, desc.Step = s.value.Get(), s.min.Get(), s.max.Get(), s.step.Get()
 	return desc
 }
-func (s *sliderElement) handleUpdate(property string, update UpdateValue) func() {
-	if property == "value" && update.Kind == UpdateKindFloat && update.Float >= s.min.Get() && update.Float <= s.max.Get() &&
+func (s *sliderElement) handleUpdate(property string, update UpdateValue, origin *sendOrigin) func() {
+	if property == "value" && update.Kind == UpdateKindFloat && validSliderValue(update.Float, s.min.Get(), s.max.Get(), s.step.Get()) &&
 		s.config.visible.Get() && !s.config.disabled.Get() && s.value.clientWritable {
-		s.value.Set(update.Float)
+		s.value.setFromClient(update.Float, origin)
 	}
 	return nil
 }
-func (s *sliderElement) bindSend(path string, fn func(UpdateNotification)) func() {
+
+func validSliderValue(value, min, max, step float64) bool {
+	if math.IsNaN(value) || math.IsNaN(min) || math.IsNaN(max) || math.IsNaN(step) ||
+		math.IsInf(value, 0) || math.IsInf(min, 0) || math.IsInf(max, 0) || math.IsInf(step, 0) ||
+		value < min || value > max {
+		return false
+	}
+	if step <= 0 {
+		return true
+	}
+	position := (value - min) / step
+	return math.Abs(position-math.Round(position)) <= 1e-9*math.Max(1, math.Abs(position))
+}
+func (s *sliderElement) bindSend(path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
 	return combineUnbinds(
-		bindValueFrame(s.label, s.config, path, "slider_visible", fn),
-		bindFloat(s.value, path+".value", fn),
-		bindFloat(s.min, path+".minValue", fn),
-		bindFloat(s.max, path+".maxValue", fn),
-		bindFloat(s.step, path+".step", fn),
+		bindValueFrame(s.label, s.config, path, "slider_visible", origin, fn),
+		bindFloat(s.value, path+".value", origin, fn),
+		bindFloat(s.min, path+".minValue", origin, fn),
+		bindFloat(s.max, path+".maxValue", origin, fn),
+		bindFloat(s.step, path+".step", origin, fn),
 	)
 }
 func (s *sliderElement) applyForm(f *CustomForm) { f.elements = append(f.elements, s) }
@@ -366,23 +374,27 @@ func (b *buttonElement) describe() ElementDescriptor {
 		Disabled: b.config.disabled.Get(),
 	}
 }
-func (b *buttonElement) handleUpdate(property string, update UpdateValue) func() {
-	if property == "onClick" && update.Kind == UpdateKindFloat && b.config.visible.Get() && !b.config.disabled.Get() && b.onClick != nil {
+func (b *buttonElement) handleUpdate(property string, update UpdateValue, _ *sendOrigin) func() {
+	if property == "onClick" && validEventFloat(update) && b.config.visible.Get() && !b.config.disabled.Get() && b.onClick != nil {
 		return b.onClick
 	}
 	return nil
 }
-func (b *buttonElement) bindSend(path string, fn func(UpdateNotification)) func() {
+
+func validEventFloat(update UpdateValue) bool {
+	return update.Kind == UpdateKindFloat && !math.IsNaN(update.Float) && !math.IsInf(update.Float, 0)
+}
+func (b *buttonElement) bindSend(path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
 	return combineUnbinds(
-		bindString(b.label, path+".label", fn),
-		bindTooltip(b.config.tooltip, path, fn),
-		bindVisible(b.config.visible, path, "button_visible", fn),
-		bindBool(b.config.disabled, path+".disabled", fn),
+		bindString(b.label, path+".label", origin, fn),
+		bindTooltip(b.config.tooltip, path, origin, fn),
+		bindVisible(b.config.visible, path, "button_visible", origin, fn),
+		bindBool(b.config.disabled, path+".disabled", origin, fn),
 	)
 }
 
-func bindTooltip(obs *Observable[string], path string, fn func(UpdateNotification)) func() {
-	return obs.bindSend(func(value string) {
+func bindTooltip(obs *Observable[string], path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
+	return obs.bindSendFrom(origin, func(value string) {
 		fn(UpdateNotification{Path: path + ".tooltip", Value: UpdateValue{Kind: UpdateKindString, String: value}})
 		fn(UpdateNotification{Path: path + ".tooltip_visible", Value: UpdateValue{Kind: UpdateKindBool, Bool: value != ""}})
 	})
@@ -412,37 +424,37 @@ func valueElementDescriptor(kind ElementKind, label string, config elementConfig
 	}
 }
 
-func bindValueFrame(label *Observable[string], config elementConfig, path, specificVisible string, fn func(UpdateNotification)) func() {
+func bindValueFrame(label *Observable[string], config elementConfig, path, specificVisible string, origin *sendOrigin, fn func(UpdateNotification)) func() {
 	return combineUnbinds(
-		bindString(label, path+".label", fn),
-		bindString(config.description, path+".description", fn),
-		bindVisible(config.visible, path, specificVisible, fn),
-		bindBool(config.disabled, path+".disabled", fn),
+		bindString(label, path+".label", origin, fn),
+		bindString(config.description, path+".description", origin, fn),
+		bindVisible(config.visible, path, specificVisible, origin, fn),
+		bindBool(config.disabled, path+".disabled", origin, fn),
 	)
 }
 
-func bindVisible(obs *Observable[bool], path, specific string, fn func(UpdateNotification)) func() {
-	return obs.bindSend(func(value bool) {
+func bindVisible(obs *Observable[bool], path, specific string, origin *sendOrigin, fn func(UpdateNotification)) func() {
+	return obs.bindSendFrom(origin, func(value bool) {
 		update := UpdateValue{Kind: UpdateKindBool, Bool: value}
 		fn(UpdateNotification{Path: path + ".visible", Value: update})
 		fn(UpdateNotification{Path: path + "." + specific, Value: update})
 	})
 }
 
-func bindString(obs *Observable[string], path string, fn func(UpdateNotification)) func() {
-	return obs.bindSend(func(value string) {
+func bindString(obs *Observable[string], path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
+	return obs.bindSendFrom(origin, func(value string) {
 		fn(UpdateNotification{Path: path, Value: UpdateValue{Kind: UpdateKindString, String: value}})
 	})
 }
 
-func bindBool(obs *Observable[bool], path string, fn func(UpdateNotification)) func() {
-	return obs.bindSend(func(value bool) {
+func bindBool(obs *Observable[bool], path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
+	return obs.bindSendFrom(origin, func(value bool) {
 		fn(UpdateNotification{Path: path, Value: UpdateValue{Kind: UpdateKindBool, Bool: value}})
 	})
 }
 
-func bindFloat(obs *Observable[float64], path string, fn func(UpdateNotification)) func() {
-	return obs.bindSend(func(value float64) {
+func bindFloat(obs *Observable[float64], path string, origin *sendOrigin, fn func(UpdateNotification)) func() {
+	return obs.bindSendFrom(origin, func(value float64) {
 		fn(UpdateNotification{Path: path, Value: UpdateValue{Kind: UpdateKindFloat, Float: value}})
 	})
 }

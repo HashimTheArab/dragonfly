@@ -1,6 +1,7 @@
 package session
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,12 +18,14 @@ type DDUIFormHandler struct {
 	forms          map[uint32]*activeDDUIForm
 	nextFormID     atomic.Uint32
 	nextInstanceID atomic.Uint32
+	nextBindingID  atomic.Uint64
 }
 
 type activeDDUIForm struct {
 	form                ddui.Form
 	formID              uint32
 	instanceID          uint32
+	bindingID           uint64
 	property            string
 	propertyUpdateCount uint32
 	unbind              func()
@@ -30,36 +33,61 @@ type activeDDUIForm struct {
 	updateMu            sync.Mutex
 	sendMu              sync.Mutex
 	published           bool
-	pending             []ddui.UpdateNotification
+	pathUpdateCounts    map[string]uint32
+	pending             []pendingDDUIUpdate
+}
+
+type pendingDDUIUpdate struct {
+	update              ddui.UpdateNotification
+	propertyUpdateCount uint32
+	pathUpdateCount     uint32
 }
 
 // SendDDUIForm sends f to the client via s, registering it as an active form.
 func (h *DDUIFormHandler) SendDDUIForm(f ddui.Form, s *Session) {
 	instanceID := h.nextInstanceID.Add(1)
 	formID := h.nextFormID.Add(1)
+	screenID := f.ScreenID()
 
-	property := deriveProperty(f.ScreenID(), instanceID)
+	property := deriveProperty(screenID, instanceID)
+	bindingID := h.nextBindingID.Add(1)
 
 	af := &activeDDUIForm{
 		form:                f,
 		formID:              formID,
 		instanceID:          instanceID,
+		bindingID:           bindingID,
 		property:            property,
 		propertyUpdateCount: 1,
+		pathUpdateCounts:    make(map[string]uint32),
 	}
 
-	af.unbind = f.BindSend(func(update ddui.UpdateNotification) {
+	onUpdate := func(update ddui.UpdateNotification) {
 		af.sendMu.Lock()
 		defer af.sendMu.Unlock()
 		if af.closed.Load() {
 			return
 		}
+		propertyUpdateCount, pathUpdateCount := af.recordUpdate(update.Path)
 		if !af.published {
-			af.pending = append(af.pending, update)
+			af.pending = append(af.pending, pendingDDUIUpdate{
+				update:              update,
+				propertyUpdateCount: propertyUpdateCount,
+				pathUpdateCount:     pathUpdateCount,
+			})
 			return
 		}
-		sendDataStoreUpdate(s, property, update)
-	})
+		sendDataStoreUpdate(s, property, update, propertyUpdateCount, pathUpdateCount)
+	}
+	if bound, ok := f.(ddui.BindingForm); ok {
+		af.unbind = bound.BindSendFrom(bindingID, onUpdate)
+	} else {
+		af.unbind = f.BindSend(onUpdate)
+	}
+	if af.unbind == nil {
+		af.unbind = func() {}
+	}
+	desc := f.Describe()
 
 	h.mu.Lock()
 	h.forms[instanceID] = af
@@ -71,13 +99,13 @@ func (h *DDUIFormHandler) SendDDUIForm(f ddui.Form, s *Session) {
 					DataStoreName: "minecraft",
 					Property:      property,
 					UpdateCount:   1,
-					NewValue:      serializeForm(f.ScreenID(), f.Describe()),
+					NewValue:      serializeForm(screenID, desc),
 				},
 			},
 		},
 	})
 	s.writePacket(&packet.ClientBoundDataDrivenUIShowScreen{
-		ScreenID:       f.ScreenID(),
+		ScreenID:       screenID,
 		FormID:         formID,
 		DataInstanceID: protocol.Option(instanceID),
 	})
@@ -87,19 +115,19 @@ func (h *DDUIFormHandler) SendDDUIForm(f ddui.Form, s *Session) {
 	if !af.closed.Load() {
 		af.published = true
 		for _, update := range af.pending {
-			sendDataStoreUpdate(s, property, update)
+			sendDataStoreUpdate(s, property, update.update, update.propertyUpdateCount, update.pathUpdateCount)
 		}
 	}
 	af.pending = nil
 	af.sendMu.Unlock()
 }
 
-func sendDataStoreUpdate(s *Session, property string, update ddui.UpdateNotification) {
+func sendDataStoreUpdate(s *Session, property string, update ddui.UpdateNotification, propertyUpdateCount, pathUpdateCount uint32) {
 	s.writePacket(&packet.ClientBoundDataStore{
 		Updates: []protocol.DataStoreChangeEntry{
 			{
 				ChangeType: protocol.DataStoreChangeTypeUpdate,
-				Update:     serializeUpdate(property, update),
+				Update:     serializeUpdate(property, update, propertyUpdateCount, pathUpdateCount),
 			},
 		},
 	})
@@ -118,6 +146,9 @@ func (h *DDUIFormHandler) CloseDDUIForms(s *Session) {
 	if len(active) == 0 {
 		return
 	}
+	sort.Slice(active, func(i, j int) bool {
+		return active[i].instanceID > active[j].instanceID
+	})
 
 	claimed := active[:0]
 	for _, af := range active {
@@ -134,8 +165,10 @@ func (h *DDUIFormHandler) CloseDDUIForms(s *Session) {
 	s.writePacket(&packet.ClientBoundDataDrivenUICloseScreen{})
 
 	for _, af := range claimed {
-		af.form.OnClose(ddui.CloseReasonProgrammaticAll)
 		sendDataStoreCleanup(s, af)
+	}
+	for _, af := range claimed {
+		af.form.OnClose(ddui.CloseReasonProgrammaticAll)
 	}
 }
 
@@ -168,11 +201,24 @@ func (af *activeDDUIForm) handleUpdate(path string, value ddui.UpdateValue) (ddu
 	if af.closed.Load() {
 		return ddui.UpdateResult{}, false
 	}
+	if bound, ok := af.form.(ddui.BindingForm); ok {
+		result := bound.HandleUpdateFrom(af.bindingID, path, value)
+		if result.Close {
+			af.closed.Store(true)
+		}
+		return result, true
+	}
 	result := af.form.HandleUpdate(path, value)
 	if result.Close {
 		af.closed.Store(true)
 	}
 	return result, true
+}
+
+func (af *activeDDUIForm) recordUpdate(path string) (propertyUpdateCount, pathUpdateCount uint32) {
+	af.propertyUpdateCount++
+	af.pathUpdateCounts[path]++
+	return af.propertyUpdateCount, af.pathUpdateCounts[path]
 }
 
 func sendDataStoreCleanup(s *Session, af *activeDDUIForm) {
@@ -229,13 +275,13 @@ func serializeCustomForm(desc ddui.FormDescriptor) protocol.DataStorePropertyVal
 	return dsMap(entries...)
 }
 
-func serializeUpdate(property string, update ddui.UpdateNotification) protocol.DataStoreUpdate {
+func serializeUpdate(property string, update ddui.UpdateNotification, propertyUpdateCount, pathUpdateCount uint32) protocol.DataStoreUpdate {
 	u := protocol.DataStoreUpdate{
 		DataStoreName:       "minecraft",
 		Property:            property,
 		Path:                update.Path,
-		PropertyUpdateCount: 1,
-		PathUpdateCount:     1,
+		PropertyUpdateCount: propertyUpdateCount,
+		PathUpdateCount:     pathUpdateCount,
 	}
 	switch update.Value.Kind {
 	case ddui.UpdateKindFloat:
@@ -252,38 +298,33 @@ func serializeUpdate(property string, update ddui.UpdateNotification) protocol.D
 }
 
 func serializeMessageBox(desc ddui.FormDescriptor) protocol.DataStorePropertyValue {
-	btn1 := []protocol.DataStoreMapEntry{
-		dsEntry("button_visible", dsBool(true)),
-		dsEntry("label", dsStr(desc.Button1.Label)),
-		dsEntry("onClick", dsInt(0)),
-		dsEntry("visible", dsBool(true)),
-	}
-	if desc.Button1.Tooltip != "" {
-		btn1 = append(btn1,
-			dsEntry("tooltip", dsStr(desc.Button1.Tooltip)),
-			dsEntry("tooltip_visible", dsBool(true)),
-		)
-	}
-
-	btn2 := []protocol.DataStoreMapEntry{
-		dsEntry("button_visible", dsBool(true)),
-		dsEntry("label", dsStr(desc.Button2.Label)),
-		dsEntry("onClick", dsInt(0)),
-		dsEntry("visible", dsBool(true)),
-	}
-	if desc.Button2.Tooltip != "" {
-		btn2 = append(btn2,
-			dsEntry("tooltip", dsStr(desc.Button2.Tooltip)),
-			dsEntry("tooltip_visible", dsBool(true)),
-		)
-	}
-
-	return dsMap(
+	entries := []protocol.DataStoreMapEntry{
 		dsEntry("body", dsStr(desc.Body)),
-		dsEntry("button1", dsMap(btn1...)),
-		dsEntry("button2", dsMap(btn2...)),
-		dsEntry("title", dsStr(desc.Title)),
-	)
+	}
+	if desc.HasButton1 {
+		entries = append(entries, dsEntry("button1", serializeMessageBoxButton(desc.Button1)))
+	}
+	if desc.HasButton2 {
+		entries = append(entries, dsEntry("button2", serializeMessageBoxButton(desc.Button2)))
+	}
+	entries = append(entries, dsEntry("title", dsStr(desc.Title)))
+	return dsMap(entries...)
+}
+
+func serializeMessageBoxButton(button ddui.ButtonDescriptor) protocol.DataStorePropertyValue {
+	entries := []protocol.DataStoreMapEntry{
+		dsEntry("button_visible", dsBool(true)),
+		dsEntry("label", dsStr(button.Label)),
+		dsEntry("onClick", dsInt(0)),
+		dsEntry("visible", dsBool(true)),
+	}
+	if button.Tooltip != "" {
+		entries = append(entries,
+			dsEntry("tooltip", dsStr(button.Tooltip)),
+			dsEntry("tooltip_visible", dsBool(true)),
+		)
+	}
+	return dsMap(entries...)
 }
 
 func serializeElement(e ddui.ElementDescriptor) protocol.DataStorePropertyValue {

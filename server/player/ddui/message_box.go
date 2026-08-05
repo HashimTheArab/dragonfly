@@ -89,12 +89,14 @@ func (m *MessageBox) Describe() FormDescriptor {
 		desc.Body = m.body.Get()
 	}
 	if m.btn1.label != nil {
+		desc.HasButton1 = true
 		desc.Button1.Label = m.btn1.label.Get()
 	}
 	if m.btn1.tooltip != nil {
 		desc.Button1.Tooltip = m.btn1.tooltip.Get()
 	}
 	if m.btn2.label != nil {
+		desc.HasButton2 = true
 		desc.Button2.Label = m.btn2.label.Get()
 	}
 	if m.btn2.tooltip != nil {
@@ -104,14 +106,25 @@ func (m *MessageBox) Describe() FormDescriptor {
 }
 
 func (m *MessageBox) HandleUpdate(path string, value UpdateValue) UpdateResult {
-	if value.Kind != UpdateKindFloat {
+	return m.HandleUpdateFrom(0, path, value)
+}
+
+// HandleUpdateFrom processes a client change associated with a form binding.
+func (m *MessageBox) HandleUpdateFrom(_ uint64, path string, value UpdateValue) UpdateResult {
+	if !validEventFloat(value) {
 		return UpdateResult{}
 	}
 	selection := 0
 	switch path {
 	case "button1.onClick":
+		if m.btn1.label == nil {
+			return UpdateResult{}
+		}
 		selection = 1
 	case "button2.onClick":
+		if m.btn2.label == nil {
+			return UpdateResult{}
+		}
 		selection = 2
 	default:
 		return UpdateResult{}
@@ -124,12 +137,17 @@ func (m *MessageBox) HandleUpdate(path string, value UpdateValue) UpdateResult {
 }
 
 func (m *MessageBox) BindSend(fn func(UpdateNotification)) func() {
+	return m.BindSendFrom(0, fn)
+}
+
+// BindSendFrom binds server updates to a specific form screen.
+func (m *MessageBox) BindSendFrom(_ uint64, fn func(UpdateNotification)) func() {
 	unbinds := make([]func(), 0, 6)
 	bind := func(obs *Observable[string], path string) {
 		if obs == nil {
 			return
 		}
-		unbinds = append(unbinds, obs.bindSend(func(v string) {
+		unbinds = append(unbinds, obs.bindSendFrom(nil, func(v string) {
 			fn(UpdateNotification{Path: path, Value: UpdateValue{Kind: UpdateKindString, String: v}})
 		}))
 	}
@@ -140,7 +158,7 @@ func (m *MessageBox) BindSend(fn func(UpdateNotification)) func() {
 		if obs == nil {
 			return
 		}
-		unbinds = append(unbinds, obs.bindSend(func(value string) {
+		unbinds = append(unbinds, obs.bindSendFrom(nil, func(value string) {
 			fn(UpdateNotification{Path: path + ".tooltip", Value: UpdateValue{Kind: UpdateKindString, String: value}})
 			fn(UpdateNotification{Path: path + ".tooltip_visible", Value: UpdateValue{Kind: UpdateKindBool, Bool: value != ""}})
 		}))

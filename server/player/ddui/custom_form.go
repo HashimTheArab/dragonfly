@@ -1,6 +1,9 @@
 package ddui
 
-import "strconv"
+import (
+	"strconv"
+	"sync"
+)
 
 // FormOption configures a CustomForm.
 type FormOption interface {
@@ -45,6 +48,8 @@ type CustomForm struct {
 	closeButton  *closeButtonOption
 	elements     []element
 	closeHandler func(reason int)
+	originsMu    sync.RWMutex
+	origins      map[uint64][]*sendOrigin
 }
 
 // New creates a CustomForm with the given title and options.
@@ -77,33 +82,87 @@ func (f *CustomForm) Describe() FormDescriptor {
 }
 
 func (f *CustomForm) HandleUpdate(path string, value UpdateValue) UpdateResult {
-	if path == "closeButton.onClick" && value.Kind == UpdateKindFloat && f.closeButton != nil && f.closeButton.visible.Get() {
-		return UpdateResult{Close: true}
+	return f.handleUpdate(nil, path, value)
+}
+
+// HandleUpdateFrom processes a client change associated with a form binding.
+func (f *CustomForm) HandleUpdateFrom(bindingID uint64, path string, value UpdateValue) UpdateResult {
+	var origin *sendOrigin
+	if idx, _, ok := parseLayoutPath(path); ok {
+		origin = f.origin(bindingID, idx)
 	}
-	idx, property, ok := parseLayoutPath(path)
-	if !ok || idx < 0 || idx >= len(f.elements) {
-		return UpdateResult{}
-	}
-	return UpdateResult{Complete: f.elements[idx].handleUpdate(property, value)}
+	return f.handleUpdate(origin, path, value)
 }
 
 func (f *CustomForm) BindSend(fn func(UpdateNotification)) func() {
+	return f.bindSend(nil, fn)
+}
+
+// BindSendFrom binds server updates to a specific form screen.
+func (f *CustomForm) BindSendFrom(bindingID uint64, fn func(UpdateNotification)) func() {
+	origins := make([]*sendOrigin, len(f.elements))
+	for i := range origins {
+		origins[i] = &sendOrigin{}
+	}
+	f.originsMu.Lock()
+	if f.origins == nil {
+		f.origins = make(map[uint64][]*sendOrigin)
+	}
+	f.origins[bindingID] = origins
+	f.originsMu.Unlock()
+
+	unbind := f.bindSend(origins, fn)
+	return func() {
+		unbind()
+		f.originsMu.Lock()
+		delete(f.origins, bindingID)
+		f.originsMu.Unlock()
+	}
+}
+
+func (f *CustomForm) bindSend(origins []*sendOrigin, fn func(UpdateNotification)) func() {
 	unbinds := make([]func(), 0, len(f.elements)+3)
-	unbinds = append(unbinds, bindString(f.title, "title", fn))
+	var titleOrigin *sendOrigin
+	unbinds = append(unbinds, bindString(f.title, "title", titleOrigin, fn))
 	if f.closeButton != nil {
 		unbinds = append(unbinds,
-			bindString(f.closeButton.label, "closeButton.label", fn),
-			bindVisible(f.closeButton.visible, "closeButton", "button_visible", fn),
+			bindString(f.closeButton.label, "closeButton.label", titleOrigin, fn),
+			bindVisible(f.closeButton.visible, "closeButton", "button_visible", titleOrigin, fn),
 		)
 	}
 	for i, e := range f.elements {
-		unbinds = append(unbinds, e.bindSend("layout["+strconv.Itoa(i)+"]", fn))
+		path := "layout[" + strconv.Itoa(i) + "]"
+		var elementOrigin *sendOrigin
+		if i < len(origins) {
+			elementOrigin = origins[i]
+		}
+		unbinds = append(unbinds, e.bindSend(path, elementOrigin, fn))
 	}
 	return func() {
 		for _, unbind := range unbinds {
 			unbind()
 		}
 	}
+}
+
+func (f *CustomForm) handleUpdate(origin *sendOrigin, path string, value UpdateValue) UpdateResult {
+	if path == "closeButton.onClick" && validEventFloat(value) && f.closeButton != nil && f.closeButton.visible.Get() {
+		return UpdateResult{Close: true}
+	}
+	idx, property, ok := parseLayoutPath(path)
+	if !ok || idx < 0 || idx >= len(f.elements) {
+		return UpdateResult{}
+	}
+	return UpdateResult{Complete: f.elements[idx].handleUpdate(property, value, origin)}
+}
+
+func (f *CustomForm) origin(bindingID uint64, idx int) *sendOrigin {
+	f.originsMu.RLock()
+	defer f.originsMu.RUnlock()
+	if origins := f.origins[bindingID]; idx >= 0 && idx < len(origins) {
+		return origins[idx]
+	}
+	return nil
 }
 
 func (f *CustomForm) OnClose(reason int) {
