@@ -914,7 +914,7 @@ func (s *Session) SendDebugShapes(dim world.Dimension) {
 			continue
 		}
 		s.debugShapes[update.id] = update.shape
-		shapes = append(shapes, debugShapeToProtocol(update.shape, dim, s.shapeAttachedEntityRuntimeID(update.shape)))
+		shapes = append(shapes, debugShapeToProtocol(update.shape, dim, s.shapeAttachedEntityID(update.shape)))
 	}
 	s.debugShapeUpdates = s.debugShapeUpdates[:0]
 	s.debugShapesMu.Unlock()
@@ -1155,8 +1155,9 @@ func protocolToSkin(sk protocol.Skin) (s skin.Skin, err error) {
 	return
 }
 
-// shapeAttachedEntityRuntimeID returns the runtime ID of the entity attached to a debug shape.
-func (s *Session) shapeAttachedEntityRuntimeID(shape debug.Shape) uint64 {
+// shapeAttachedEntityID returns the ID of the entity attached to a debug shape. The shape field is an actor
+// unique ID, which for a Session is the same value as the runtime ID.
+func (s *Session) shapeAttachedEntityID(shape debug.Shape) uint64 {
 	var handle *world.EntityHandle
 	switch shape := shape.(type) {
 	case *debug.Arrow:
@@ -1195,7 +1196,6 @@ func debugShapeToProtocol(shape debug.Shape, dim world.Dimension, attachedEntity
 		DimensionID: protocol.Option(int32(dimID)),
 	}
 	if attachedEntityID > 0 {
-		// The field carries a runtime ID but is declared as an actor unique ID, so it goes out signed.
 		ps.AttachedToEntityID = protocol.Option(int64(attachedEntityID))
 	}
 	white := color.RGBA{R: 255, G: 255, B: 255, A: 255}
