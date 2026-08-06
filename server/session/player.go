@@ -1195,7 +1195,8 @@ func debugShapeToProtocol(shape debug.Shape, dim world.Dimension, attachedEntity
 		DimensionID: protocol.Option(int32(dimID)),
 	}
 	if attachedEntityID > 0 {
-		ps.AttachedToEntityID = protocol.Option(attachedEntityID)
+		// The field carries a runtime ID but is declared as an actor unique ID, so it goes out signed.
+		ps.AttachedToEntityID = protocol.Option(int64(attachedEntityID))
 	}
 	white := color.RGBA{R: 255, G: 255, B: 255, A: 255}
 	switch shape := shape.(type) {
