@@ -127,3 +127,45 @@ func TestNewCustomBlockRegistryPreservesVanillaRuntimeIDs(t *testing.T) {
 		t.Fatalf("AirRuntimeID() = %d, want %d", got, want)
 	}
 }
+
+// The connection trait ships enabled_states as a TAG_Int bitmask, not a map; it must
+// register the four directional boolean states instead of disabling custom blocks.
+func TestAddCustomBlocks_ConnectionTraitBitmask(t *testing.T) {
+	registry, err := NewCustomBlockRegistry([]protocol.BlockEntry{{
+		Name: "test:connectable",
+		Properties: map[string]any{
+			"traits": []any{map[string]any{
+				"name":           "minecraft:connection",
+				"enabled_states": int32(15),
+			}},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("NewCustomBlockRegistry() error = %v", err)
+	}
+	if _, ok := registry.StateToRuntimeID("test:connectable", map[string]any{
+		"minecraft:connection_north": uint8(0),
+		"minecraft:connection_south": uint8(1),
+		"minecraft:connection_west":  uint8(0),
+		"minecraft:connection_east":  uint8(1),
+	}); !ok {
+		t.Fatal("expected bitmask connection trait to register directional boolean states")
+	}
+}
+
+// A bitmask on any other trait is unknown wire data and must fail, keeping the
+// fall-back-to-vanilla-palette safety property.
+func TestAddCustomBlocks_UnknownBitmaskTraitErrors(t *testing.T) {
+	_, err := NewCustomBlockRegistry([]protocol.BlockEntry{{
+		Name: "test:oddtrait",
+		Properties: map[string]any{
+			"traits": []any{map[string]any{
+				"name":           "minecraft:placement_direction",
+				"enabled_states": int32(3),
+			}},
+		},
+	}})
+	if err == nil {
+		t.Fatal("expected an unknown bitmask trait to error")
+	}
+}
