@@ -122,7 +122,29 @@ func customBlockPropertySpace(entry protocol.BlockEntry) ([]string, [][]any, err
 	for _, trait := range traits {
 		enabledStates, ok := trait["enabled_states"].(map[string]any)
 		if !ok {
-			return nil, nil, fmt.Errorf("expected enabled_states to be map[string]any, got %T", trait["enabled_states"])
+			// minecraft:connection is the one trait whose enabled_states arrives as a
+			// TAG_Int bitmask instead of a map; it declares the four directional
+			// booleans. Byte values, so chunk-palette lookups match.
+			if _, isMask := trait["enabled_states"].(int32); isMask {
+				name, nameOK := trait["name"].(string)
+				if !nameOK {
+					return nil, nil, fmt.Errorf("expected trait name to be string, got %T", trait["name"])
+				}
+				if name != "minecraft:connection" {
+					return nil, nil, fmt.Errorf("unresolved bitmask trait %s", name)
+				}
+				for _, state := range []string{
+					"minecraft:connection_north",
+					"minecraft:connection_south",
+					"minecraft:connection_west",
+					"minecraft:connection_east",
+				} {
+					propertyNames = append(propertyNames, state)
+					propertyValues = append(propertyValues, []any{uint8(0), uint8(1)})
+				}
+				continue
+			}
+			return nil, nil, fmt.Errorf("expected enabled_states to be map[string]any or int32, got %T", trait["enabled_states"])
 		}
 		keys := make([]string, 0, len(enabledStates))
 		for k := range enabledStates {
