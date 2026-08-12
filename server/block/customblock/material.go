@@ -25,6 +25,7 @@ func NewMaterial(texture string, method Method) Material {
 		m.ambientOcclusion = 1
 	}
 	return m
+	return m
 }
 
 // WithFaceDimming returns a copy of the Material with face dimming enabled.
@@ -56,6 +57,7 @@ func (m Material) WithAmbientOcclusionIntensity(intensity float32) Material {
 
 // WithoutAmbientOcclusion returns a copy of the Material with ambient occlusion disabled.
 func (m Material) WithoutAmbientOcclusion() Material {
+	m.ambientOcclusion = 0
 	m.ambientOcclusion = 0
 	return m
 }
