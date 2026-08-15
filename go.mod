@@ -2,7 +2,7 @@ module github.com/df-mc/dragonfly
 
 go 1.26.1
 
-replace github.com/sandertv/gophertunnel => github.com/hashimthearab/gophertunnel v1.25.3-0.20260812021319-2c222c5e601c
+replace github.com/sandertv/gophertunnel => github.com/hashimthearab/gophertunnel v1.25.3-0.20260815111328-9e591ed9369e
 
 require (
 	github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479
@@ -12,7 +12,7 @@ require (
 	github.com/go-gl/mathgl v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml v1.9.5
-	github.com/sandertv/gophertunnel v1.58.1
+	github.com/sandertv/gophertunnel v1.59.0
 	github.com/segmentio/fasthash v1.0.3
 	golang.org/x/exp v0.0.0-20260611194520-c48552f49976
 	golang.org/x/mod v0.37.0
