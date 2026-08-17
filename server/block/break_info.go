@@ -55,6 +55,14 @@ const breakTick = time.Second / 20
 // the drift of summing a float32 twenty times a second does not cost the break an extra tick.
 const breakThreshold = float32(0.99999)
 
+// The status effect powers are raised in double precision, but the client holds their bases as float32
+// and widens them, so they are not the decimal doubles they read as.
+const (
+	fatigueSpeedBase    = float64(float32(0.3))
+	hasteProgressBase   = float64(float32(1.2))
+	fatigueProgressBase = float64(float32(0.7))
+)
+
 // BreakDuration returns the duration that breaking the block passed takes when being broken using the item
 // passed, accounting for the status effects and environment described by ctx. Blocks that never accumulate
 // enough progress to break with the item and context given take math.MaxInt64.
@@ -97,7 +105,7 @@ func BreakDuration(b world.Block, i item.Stack, ctx BreakContext) time.Duration 
 		speed *= float32(positive)*0.2 + 1
 	}
 	if ctx.MiningFatigueLevel > 0 {
-		speed = float32(float64(speed) * math.Pow(0.3, float64(ctx.MiningFatigueLevel)))
+		speed = float32(float64(speed) * math.Pow(fatigueSpeedBase, float64(ctx.MiningFatigueLevel)))
 	}
 	if ctx.Riding || (ctx.Airborne && !ctx.Flying) {
 		speed /= 5
@@ -113,10 +121,10 @@ func BreakDuration(b world.Block, i item.Stack, ctx BreakContext) time.Duration 
 		progress /= 100
 	}
 	if positive > 0 {
-		progress = float32(float64(progress) * math.Pow(1.2, float64(positive)))
+		progress = float32(float64(progress) * math.Pow(hasteProgressBase, float64(positive)))
 	}
 	if ctx.MiningFatigueLevel > 0 {
-		progress = float32(float64(progress) * math.Pow(0.7, float64(ctx.MiningFatigueLevel)))
+		progress = float32(float64(progress) * math.Pow(fatigueProgressBase, float64(ctx.MiningFatigueLevel)))
 	}
 
 	ticks, ok := breakTicks(progress)
