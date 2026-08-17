@@ -38,12 +38,21 @@ func (s Sword) EnchantmentValue() int {
 	return s.Tier.EnchantmentValue
 }
 
-// BaseMiningEfficiency always returns 1.5, unless the block passed is cobweb, in which case 15 is returned.
+// SwordMineable is implemented by blocks a sword cuts faster than a bare hand. Unlike a pickaxe or an
+// axe, a sword has no single speed: the block it is cutting decides, from cobweb down to the plants it
+// merely brushes aside.
+type SwordMineable interface {
+	// SwordMiningSpeed returns the speed a sword mines this block at.
+	SwordMiningSpeed() float64
+}
+
+// BaseMiningEfficiency returns the speed the block passed names for a sword, or 1 for a block that names
+// none.
 func (s Sword) BaseMiningEfficiency(b world.Block) float64 {
-	if _, ok := b.(interface{ Cobweb() }); ok {
-		return 15
+	if m, ok := b.(SwordMineable); ok {
+		return m.SwordMiningSpeed()
 	}
-	return 1.5
+	return 1
 }
 
 // DurabilityInfo ...

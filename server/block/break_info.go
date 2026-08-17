@@ -295,6 +295,14 @@ var nothingEffective = func(item.Tool) bool {
 	return false
 }
 
+// anyEffective is a convenience function for blocks that more than one type of tool mines faster than a
+// bare hand, such as the plants both an axe and a sword cut through.
+func anyEffective(types ...item.ToolType) func(item.Tool) bool {
+	return func(t item.Tool) bool {
+		return slices.Contains(types, t.ToolType())
+	}
+}
+
 // alwaysHarvestable is a convenience function for blocks that are harvestable using any item.
 var alwaysHarvestable = func(t item.Tool) bool {
 	return true
