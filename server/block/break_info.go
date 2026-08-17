@@ -51,13 +51,17 @@ type BreakContext struct {
 // breakTick is the interval the client accumulates destroy progress on.
 const breakTick = time.Second / 20
 
+// breakThreshold is the running total the client breaks the block at. It sits a shade under 1 so that
+// the drift of summing a float32 twenty times a second does not cost the break an extra tick.
+const breakThreshold = float32(0.99999)
+
 // BreakDuration returns the duration that breaking the block passed takes when being broken using the item
 // passed, accounting for the status effects and environment described by ctx. Blocks that never accumulate
 // enough progress to break with the item and context given take math.MaxInt64.
 //
 // The result is always a whole number of ticks: the client adds a destroy progress per tick and breaks the
-// block on the tick the running total reaches 1. The arithmetic is float32 throughout to match it.
-// See https://minecraft.wiki/w/Breaking#Calculation.
+// block on the tick the running total reaches breakThreshold. The arithmetic is float32 throughout to match
+// it. See https://minecraft.wiki/w/Breaking#Calculation.
 func BreakDuration(b world.Block, i item.Stack, ctx BreakContext) time.Duration {
 	breakable, ok := b.(Breakable)
 	if !ok {
@@ -122,9 +126,10 @@ func BreakDuration(b world.Block, i item.Stack, ctx BreakContext) time.Duration 
 	return time.Duration(ticks) * breakTick
 }
 
-// breakTicks returns the number of ticks a destroy progress of rate per tick needs to reach 1, summed in
-// float32 the way the client sums it. It reports false if the sum can never reach 1, either because rate is
-// not positive or because it is under half an ulp of the running total and rounds straight back off it.
+// breakTicks returns the number of ticks a destroy progress of rate per tick needs to reach breakThreshold,
+// summed in float32 the way the client sums it. It reports false if the sum can never get there, either
+// because rate is not positive or because it is under half an ulp of the running total and rounds straight
+// back off it.
 //
 // The count needs no ceiling of its own: the sum passes each of the roughly 150 binades below 1 at most
 // 2^23 additions at a time, so it cannot run past what a time.Duration holds.
@@ -140,7 +145,7 @@ func breakTicks(rate float32) (int64, bool) {
 			return 0, false
 		}
 		ticks++
-		if next >= 1 {
+		if next >= breakThreshold {
 			return ticks, true
 		}
 		progress = next
@@ -149,12 +154,12 @@ func breakTicks(rate float32) (int64, bool) {
 		// step the rest of the binade can be skipped with. On an exact tie the first addition of a binade
 		// still rounds the other way, so the step is measured off the second one.
 		first := next + rate
-		if first >= 1 || binade(first) != binade(next) {
+		if first >= breakThreshold || binade(first) != binade(next) {
 			continue
 		}
 		ticks++
 		second := first + rate
-		if second >= 1 || binade(second) != binade(first) {
+		if second >= breakThreshold || binade(second) != binade(first) {
 			progress = first
 			continue
 		}
@@ -165,7 +170,7 @@ func breakTicks(rate float32) (int64, bool) {
 			continue
 		}
 		// Stopping a step short of the boundary keeps every skipped addition inside the binade.
-		if skip := int64((min(nextBinade(second), 1)-second)/step) - 1; skip > 0 {
+		if skip := int64((min(nextBinade(second), breakThreshold)-second)/step) - 1; skip > 0 {
 			ticks, progress = ticks+skip, second+float32(skip)*step
 		}
 	}

@@ -14,7 +14,7 @@ func summedTicks(rate float32) (int64, bool) {
 		if next == total {
 			return 0, false
 		}
-		if total = next; total >= 1 {
+		if total = next; total >= breakThreshold {
 			return n, true
 		}
 	}

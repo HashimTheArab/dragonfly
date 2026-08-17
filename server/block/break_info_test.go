@@ -114,17 +114,16 @@ func TestBreakDuration(t *testing.T) {
 		},
 		{
 			// A wooden pickaxe mines diamond ore at its own speed of 2, not at the bare hand's 1, even
-			// though its tier is too low to harvest it. The extra tick over the 150 that 1/progress
-			// suggests is the float32 sum falling short of 1 on the 150th addition.
+			// though its tier is too low to harvest it.
 			name:      "a tool of too low a tier still mines at its own speed",
 			block:     block.DiamondOre{Type: block.StoneOre()},
 			stack:     woodPick,
-			wantTicks: 151,
+			wantTicks: 150,
 		},
 		{
 			// Efficiency counts at a tier too low to harvest as well, here giving a progress of 0.04 that
-			// sums to 1 in 25 additions where 1/0.04 rounds up to 26. The sum drifts either way, so the
-			// tick count has to come from the running total the client keeps, not from a division.
+			// the client's running total passes in 25 additions where 1/0.04 rounds up to 26. The tick
+			// count has to come from that total, not from a division.
 			name:      "efficiency applies at a tier too low to harvest",
 			block:     block.DiamondOre{Type: block.StoneOre()},
 			stack:     efficiencyWoodPick,
