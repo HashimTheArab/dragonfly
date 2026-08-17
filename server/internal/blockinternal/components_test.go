@@ -72,6 +72,32 @@ func TestComponents_DestructibleByMiningIsSeconds(t *testing.T) {
 	}
 }
 
+// unbreakableBlock is a custom block with the negative hardness Bedrock gives blocks that
+// mining never destroys.
+type unbreakableBlock struct{ breakableBlock }
+
+func (unbreakableBlock) EncodeBlock() (string, map[string]any) { return "test:unbreakable", nil }
+
+func (unbreakableBlock) BreakInfo() block.BreakInfo {
+	info := breakableBlock{}.BreakInfo()
+	info.Hardness = -1
+	return info
+}
+
+// A negative hardness has to reach the client as its own -1 sentinel: scaling it into seconds
+// like a normal hardness would send a duration the client cannot act on.
+func TestComponents_DestructibleByMiningUnbreakable(t *testing.T) {
+	components := Components("test:unbreakable", unbreakableBlock{}, 10001)["components"].(map[string]any)
+
+	raw, ok := components["minecraft:destructible_by_mining"]
+	if !ok {
+		t.Fatal("unbreakable block has no destructible_by_mining component")
+	}
+	if value := raw.(map[string]any)["value"].(float32); value != -1 {
+		t.Fatalf("destructible_by_mining = %v, want -1", value)
+	}
+}
+
 func TestComponents_BlockTags(t *testing.T) {
 	tags := []string{"minecraft:is_pickaxe_item_destructible", "minecraft:stone"}
 	components := Components("test:tagged", taggedBlock{tags: tags}, 10000)
