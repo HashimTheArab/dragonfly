@@ -23,11 +23,17 @@ func Components(identifier string, b world.CustomBlock, blockID int32) map[strin
 			"lightLevel": int32(diffuser.LightDiffusionLevel()),
 		})
 	}
-	if _, ok := b.(block.Breakable); ok {
+	if breakable, ok := b.(block.Breakable); ok {
 		// The component's value is the seconds the client takes to destroy the block, not
 		// its hardness. Bedrock has no per-tool speed component, so the bare-handed
-		// duration is the only one a static definition can carry.
-		seconds := block.BreakDuration(b, item.Stack{}, block.BreakContext{}).Seconds()
+		// duration is the only one a static definition can carry. It stays unrounded, since
+		// the client turns the value back into a hardness and quantises to ticks itself:
+		// 30 ticks per point of hardness when harvestable and 100 when not.
+		info := breakable.BreakInfo()
+		seconds := info.Hardness * 30 / 20
+		if !info.Harvestable(item.ToolNone{}) {
+			seconds = info.Hardness * 100 / 20
+		}
 		builder.AddComponent("minecraft:destructible_by_mining", map[string]any{"value": float32(seconds)})
 	}
 	if frictional, ok := b.(block.Frictional); ok {

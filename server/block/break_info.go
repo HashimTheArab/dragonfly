@@ -43,10 +43,20 @@ type BreakContext struct {
 	Flying bool
 	// Airborne is true if the player is not on the ground, which slows mining by 5x.
 	Airborne bool
+	// Riding is true if the player is in a vehicle, which slows mining by 5x. Flying does not suppress
+	// this penalty the way it suppresses the airborne one.
+	Riding bool
 }
 
+// breakTick is the interval the client accumulates destroy progress on.
+const breakTick = time.Second / 20
+
 // BreakDuration returns the duration that breaking the block passed takes when being broken using the item
-// passed, accounting for the status effects and environment described by ctx.
+// passed, accounting for the status effects and environment described by ctx. Blocks that never accumulate
+// enough progress to break with the item and context given take math.MaxInt64.
+//
+// The result is always a whole number of ticks: the client adds a destroy progress per tick and breaks the
+// block on the tick the running total reaches 1. The arithmetic is float32 throughout to match it.
 // See https://minecraft.wiki/w/Breaking#Calculation.
 func BreakDuration(b world.Block, i item.Stack, ctx BreakContext) time.Duration {
 	breakable, ok := b.(Breakable)
@@ -54,7 +64,11 @@ func BreakDuration(b world.Block, i item.Stack, ctx BreakContext) time.Duration 
 		return math.MaxInt64
 	}
 	info := breakable.BreakInfo()
-	if info.Hardness <= 0 {
+	hardness := float32(info.Hardness)
+	if hardness < 0 {
+		// Negative hardness yields no progress at all, rather than the instant break zero hardness gives.
+		return math.MaxInt64
+	} else if hardness == 0 {
 		return 0
 	}
 	t, ok := i.Item().(item.Tool)
@@ -62,16 +76,13 @@ func BreakDuration(b world.Block, i item.Stack, ctx BreakContext) time.Duration 
 		t = item.ToolNone{}
 	}
 
-	canHarvest := info.Harvestable(t)
-	speed := 1.0
+	speed := float32(1)
 	if info.Effective(t) {
-		speed = t.BaseMiningEfficiency(b)
-		if !canHarvest {
-			// A tool of the correct type but wrong tier (e.g. a wooden pickaxe on diamond ore) grants no
-			// speed bonus in Bedrock Edition.
-			speed = 1
-		} else if e, ok := i.Enchantment(enchantment.Efficiency); ok {
-			speed += enchantment.Efficiency.Addend(e.Level())
+		// A tool's speed and its Efficiency addend apply to every block of the tool's type, including
+		// blocks of a tier it cannot harvest: the tier only selects the divisor further down.
+		speed = float32(t.BaseMiningEfficiency(b))
+		if e, ok := i.Enchantment(enchantment.Efficiency); ok {
+			speed += float32(enchantment.Efficiency.Addend(e.Level()))
 		}
 	}
 
@@ -79,43 +90,99 @@ func BreakDuration(b world.Block, i item.Stack, ctx BreakContext) time.Duration 
 	// and the final destroy progress per tick.
 	positive := max(ctx.HasteLevel, ctx.ConduitPowerLevel)
 	if positive > 0 {
-		speed *= 0.2*float64(positive) + 1
+		speed *= float32(positive)*0.2 + 1
 	}
 	if ctx.MiningFatigueLevel > 0 {
-		speed *= math.Pow(0.3, float64(ctx.MiningFatigueLevel))
+		speed = float32(float64(speed) * math.Pow(0.3, float64(ctx.MiningFatigueLevel)))
+	}
+	if ctx.Riding || (ctx.Airborne && !ctx.Flying) {
+		speed /= 5
 	}
 	if ctx.Underwater && !ctx.AquaAffinity {
 		speed /= 5
 	}
-	if ctx.Airborne && !ctx.Flying {
-		speed /= 5
-	}
 
-	damage := speed / info.Hardness
-	if canHarvest {
-		damage /= 30
+	progress := speed / hardness
+	if info.Harvestable(t) {
+		progress /= 30
 	} else {
-		damage /= 100
+		progress /= 100
 	}
 	if positive > 0 {
-		damage *= math.Pow(1.2, float64(positive))
+		progress = float32(float64(progress) * math.Pow(1.2, float64(positive)))
 	}
 	if ctx.MiningFatigueLevel > 0 {
-		damage *= math.Pow(0.7, float64(ctx.MiningFatigueLevel))
+		progress = float32(float64(progress) * math.Pow(0.7, float64(ctx.MiningFatigueLevel)))
 	}
-	if damage >= 1 {
-		// The block breaks within a single tick.
-		return 0
+
+	ticks, ok := breakTicks(progress)
+	if !ok {
+		return math.MaxInt64
 	}
-	return time.Duration(math.Ceil(1/damage)) * time.Second / 20
+	return time.Duration(ticks) * breakTick
 }
+
+// breakTicks returns the number of ticks a destroy progress of rate per tick needs to reach 1, summed in
+// float32 the way the client sums it. It reports false if the sum can never reach 1, either because rate is
+// not positive or because it is under half an ulp of the running total and rounds straight back off it.
+//
+// The count needs no ceiling of its own: the sum passes each of the roughly 150 binades below 1 at most
+// 2^23 additions at a time, so it cannot run past what a time.Duration holds.
+func breakTicks(rate float32) (int64, bool) {
+	if !(rate > 0) {
+		return 0, false
+	}
+	var progress float32
+	var ticks int64
+	for {
+		next := progress + rate
+		if next == progress {
+			return 0, false
+		}
+		ticks++
+		if next >= 1 {
+			return ticks, true
+		}
+		progress = next
+
+		// Additions that stay inside one binade all round by the same amount, so the total climbs by a fixed
+		// step the rest of the binade can be skipped with. On an exact tie the first addition of a binade
+		// still rounds the other way, so the step is measured off the second one.
+		first := next + rate
+		if first >= 1 || binade(first) != binade(next) {
+			continue
+		}
+		ticks++
+		second := first + rate
+		if second >= 1 || binade(second) != binade(first) {
+			progress = first
+			continue
+		}
+		ticks++
+		progress = second
+		step := second - first
+		if step <= 0 {
+			continue
+		}
+		// Stopping a step short of the boundary keeps every skipped addition inside the binade.
+		if skip := int64((min(nextBinade(second), 1)-second)/step) - 1; skip > 0 {
+			ticks, progress = ticks+skip, second+float32(skip)*step
+		}
+	}
+}
+
+// binade returns the exponent bits of the float32 passed, identifying the power-of-two range it lies in.
+func binade(f float32) uint32 { return math.Float32bits(f) & 0x7f800000 }
+
+// nextBinade returns the smallest power of two above the positive float32 passed.
+func nextBinade(f float32) float32 { return math.Float32frombits(binade(f) + 1<<23) }
 
 // BreaksInstantly checks if the block passed breaks instantly, that is, it has zero hardness and so is
 // mined in a single tick with any item and without consuming tool durability. This is distinct from a
 // block that only breaks within one tick because of a high-speed tool or status effects.
 func BreaksInstantly(b world.Block) bool {
 	breakable, ok := b.(Breakable)
-	return ok && breakable.BreakInfo().Hardness <= 0
+	return ok && breakable.BreakInfo().Hardness == 0
 }
 
 // BreakInfo is a struct returned by every block. It holds information on block breaking related data, such as
