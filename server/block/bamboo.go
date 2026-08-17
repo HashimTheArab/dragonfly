@@ -56,7 +56,7 @@ func (b Bamboo) BreakInfo() BreakInfo {
 	return newBreakInfo(1, alwaysHarvestable, anyEffective(item.TypeAxe, item.TypeSword), oneOf(b))
 }
 
-// SwordMiningSpeed is high enough that a sword fells bamboo in a single tick, as it does in Bedrock.
+// SwordMiningSpeed ...
 func (Bamboo) SwordMiningSpeed() float64 { return 30 }
 
 // EncodeBlock ...

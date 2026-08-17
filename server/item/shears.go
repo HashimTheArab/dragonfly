@@ -43,16 +43,13 @@ func (s Shears) HarvestLevel() int {
 	return 1
 }
 
-// ShearsMineable is implemented by blocks shears cut faster than a bare hand. Bedrock sorts these into
-// three tiers rather than giving shears one speed: the leaves and cobweb they slice through, the wool
-// they were made for, and the greenery they only tug at.
+// ShearsMineable is implemented by blocks that shears mine faster than a bare hand.
 type ShearsMineable interface {
-	// ShearsMiningSpeed returns the speed shears mine this block at.
+	// ShearsMiningSpeed returns the speed shears mine the block at.
 	ShearsMiningSpeed() float64
 }
 
-// BaseMiningEfficiency returns the speed the block passed names for shears, or 1 for a block that names
-// none.
+// BaseMiningEfficiency returns the speed the block passed names for shears, or 1 if it names none.
 func (s Shears) BaseMiningEfficiency(b world.Block) float64 {
 	if m, ok := b.(ShearsMineable); ok {
 		return m.ShearsMiningSpeed()

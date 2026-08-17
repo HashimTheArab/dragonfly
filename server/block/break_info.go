@@ -295,8 +295,8 @@ var nothingEffective = func(item.Tool) bool {
 	return false
 }
 
-// anyEffective is a convenience function for blocks that more than one type of tool mines faster than a
-// bare hand, such as the plants both an axe and a sword cut through.
+// anyEffective is a convenience function for blocks that are effectively mined with more than one type
+// of tool.
 func anyEffective(types ...item.ToolType) func(item.Tool) bool {
 	return func(t item.Tool) bool {
 		return slices.Contains(types, t.ToolType())
