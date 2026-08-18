@@ -55,6 +55,9 @@ func NewHopper() Hopper {
 	}
 }
 
+// ContainerSize returns the number of slots in a hopper.
+func (Hopper) ContainerSize() int { return 5 }
+
 // Model ...
 func (Hopper) Model() world.BlockModel {
 	return model.Hopper{}

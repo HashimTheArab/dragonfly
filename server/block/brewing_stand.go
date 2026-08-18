@@ -30,6 +30,9 @@ func NewBrewingStand() BrewingStand {
 	return BrewingStand{brewer: newBrewer()}
 }
 
+// ContainerSize returns the number of slots in a brewing stand.
+func (BrewingStand) ContainerSize() int { return 5 }
+
 // Model ...
 func (b BrewingStand) Model() world.BlockModel {
 	return model.BrewingStand{}

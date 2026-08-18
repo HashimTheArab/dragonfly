@@ -35,6 +35,9 @@ func NewEnderChest() EnderChest {
 	return EnderChest{viewers: &atomic.Int64{}}
 }
 
+// ContainerSize returns the number of slots shown for an ender chest.
+func (EnderChest) ContainerSize() int { return 27 }
+
 // BreakInfo ...
 func (c EnderChest) BreakInfo() BreakInfo {
 	return newBreakInfo(22.5, pickaxeHarvestable, pickaxeEffective, silkTouchDrop(item.NewStack(Obsidian{}, 8), item.NewStack(NewEnderChest(), 1))).withBlastResistance(600)
