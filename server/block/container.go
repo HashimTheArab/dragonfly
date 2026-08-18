@@ -28,3 +28,10 @@ type Container interface {
 	RemoveViewer(v ContainerViewer, tx *world.Tx, pos cube.Pos)
 	Inventory(tx *world.Tx, pos cube.Pos) *inventory.Inventory
 }
+
+// ContainerSizer exposes the client-visible number of slots of a container
+// block without requiring a world transaction. It is useful to consumers that
+// mirror an already-loaded block state but do not own the server world.
+type ContainerSizer interface {
+	ContainerSize() int
+}

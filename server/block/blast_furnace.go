@@ -25,6 +25,9 @@ type BlastFurnace struct {
 	Lit bool
 }
 
+// ContainerSize returns the number of slots in a blast furnace.
+func (BlastFurnace) ContainerSize() int { return 3 }
+
 // NewBlastFurnace creates a new initialised blast furnace. The smelter is properly initialised.
 func NewBlastFurnace(face cube.Direction) BlastFurnace {
 	return BlastFurnace{

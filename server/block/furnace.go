@@ -32,6 +32,9 @@ func NewFurnace(face cube.Direction) Furnace {
 	}
 }
 
+// ContainerSize returns the number of slots in a furnace.
+func (Furnace) ContainerSize() int { return 3 }
+
 // Tick is called to check if the furnace should update and start or stop smelting.
 func (f Furnace) Tick(_ int64, pos cube.Pos, tx *world.Tx) {
 	if f.Lit && rand.Float64() <= 0.016 { // Every three or so seconds.
