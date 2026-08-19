@@ -215,7 +215,7 @@ func decodeSubChunk(buf *bytes.Buffer, c *Chunk, index *byte, e Encoding) (*SubC
 		if err != nil {
 			return nil, fmt.Errorf("error reading storage count: %w", err)
 		}
-		if storageCount > 2 {
+		if e.network() != 0 && storageCount > 2 {
 			return nil, fmt.Errorf("invalid storage count %d: client supports at most 2", storageCount)
 		}
 		if ver == 9 {

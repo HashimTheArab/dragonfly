@@ -148,6 +148,21 @@ func TestDecodeSubChunk_RejectsExcessStorageLayers(t *testing.T) {
 	}
 }
 
+func TestDiskDecode_AllowsMoreThanClientStorageLayers(t *testing.T) {
+	registry := testBlockRegistry{}
+	r := cube.Range{0, 15}
+	ch := New(registry, r)
+	ch.Sub()[0].Layer(2).Set(0, 0, 0, 1)
+
+	decoded, err := DiskDecode(registry, Encode(ch, DiskEncoding), r)
+	if err != nil {
+		t.Fatalf("DiskDecode rejected server-only storage layers: %v", err)
+	}
+	if got := len(decoded.Sub()[0].Layers()); got != 3 {
+		t.Fatalf("decoded %d storage layers, want 3", got)
+	}
+}
+
 func FuzzDecodeSubChunkRuntimeOperations(f *testing.F) {
 	f.Add([]byte{1, 0xff})
 	f.Add([]byte{8, 1, 0xff})
