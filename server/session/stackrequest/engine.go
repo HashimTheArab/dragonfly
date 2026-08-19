@@ -339,13 +339,14 @@ func (p *Plan) resolve(info protocol.StackRequestSlotInfo) (Container, int, item
 	}
 
 	expected := info.StackNetworkID
-	if expected >= 0 {
+	switch {
+	case expected >= 0:
 		p.engine.acknowledge(key)
-	} else if expected == p.requestID && staged != nil {
+	case expected == p.requestID && staged != nil:
 		// The client is predicting a change this same request already staged,
 		// so the slot carries the identity it expects by construction.
 		return container, slot, stack, nil
-	} else {
+	default:
 		change, ok := p.engine.history[expected][key]
 		if !ok {
 			return nil, 0, item.Stack{}, ErrStackNetworkID
