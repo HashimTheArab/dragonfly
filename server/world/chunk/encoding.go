@@ -191,14 +191,18 @@ func (networkEncoding) decodePalette(buf *bytes.Buffer, blockSize paletteSize, _
 }
 
 // validatePaletteCount checks a palette entry count read off the wire before it is used to
-// size an allocation. A storage's index width caps how many entries it can address, so a
-// larger count cannot describe a real storage and is rejected rather than allocated.
+// size an allocation. A storage's index width and 4096-cell volume cap how many entries
+// it can use, so a larger count cannot describe a real storage and is rejected before allocation.
 func validatePaletteCount(count int32, blockSize paletteSize) error {
 	if count <= 0 {
 		return fmt.Errorf("invalid palette entry count %v", count)
 	}
-	if capacity := int32(1) << blockSize; count > capacity {
-		return fmt.Errorf("palette entry count %v exceeds the %v entries a %v-bit storage can address", count, capacity, blockSize)
+	capacity := int64(1) << blockSize
+	if capacity > 4096 {
+		capacity = 4096
+	}
+	if int64(count) > capacity {
+		return fmt.Errorf("palette entry count %v exceeds the %v entries a %v-bit storage can use", count, capacity, blockSize)
 	}
 	return nil
 }
@@ -248,6 +252,9 @@ func (networkPersistentEncoding) decodePalette(buf *bytes.Buffer, blockSize pale
 		buf.UnreadByte()
 		if p != 0x0a {
 			break
+		}
+		if err := validatePaletteCount(paletteCount+1, blockSize); err != nil {
+			return nil, fmt.Errorf("invalid uncounted palette entry: %w", err)
 		}
 		block := blockEntry{}
 		if err := dec.Decode(&block); err != nil {

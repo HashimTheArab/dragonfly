@@ -2,9 +2,12 @@ package chunk
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
@@ -46,6 +49,16 @@ func TestDecodePalette_RejectsHostileCounts(t *testing.T) {
 				t.Fatalf("rejected only after allocating: %v", err)
 			}
 		})
+		t.Run(name+"/beyond the cell count", func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			// A storage has only 4096 cells, so it cannot use more unique entries even
+			// when its 16-bit indices could technically address them.
+			_ = protocol.WriteVarint32(buf, 4097)
+			_, err := e.decodePalette(buf, paletteSize(16), nil)
+			if err == nil || !strings.Contains(err.Error(), "exceeds") {
+				t.Fatalf("accepted a palette larger than the storage's cell count: %v", err)
+			}
+		})
 		t.Run(name+"/truncated count", func(t *testing.T) {
 			defer func() {
 				if r := recover(); r != nil {
@@ -64,4 +77,118 @@ func TestDecodePalette_RejectsHostileCounts(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNetworkPersistentEncodingDecodePalette_RejectsUncountedOverflow(t *testing.T) {
+	buf := &bytes.Buffer{}
+	_ = protocol.WriteVarint32(buf, 2)
+	enc := nbt.NewEncoderWithEncoding(buf, nbt.NetworkLittleEndian)
+	for range 3 {
+		if err := enc.Encode(blockEntry{Name: "test:block", State: map[string]any{}, Version: CurrentBlockVersion}); err != nil {
+			t.Fatalf("encode block entry: %v", err)
+		}
+	}
+
+	_, err := NetworkPersistentEncoding.decodePalette(buf, paletteSize(1), BlockPaletteEncoding{Blocks: testBlockRegistry{}})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("accepted an uncounted palette entry beyond the storage capacity: %v", err)
+	}
+}
+
+func TestDecodeSubChunk_RejectsPreviousBlockStorage(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload []byte
+	}{
+		{name: "version 1", payload: []byte{1, 0xff}},
+		{name: "version 8", payload: []byte{8, 1, 0xff}},
+		{name: "version 9", payload: []byte{9, 1, 0, 0xff}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ch := New(testBlockRegistry{}, cube.Range{0, 127})
+			index := byte(0)
+			sub, err := DecodeSubChunk(bytes.NewBuffer(tt.payload), ch, &index, NetworkEncoding)
+			if err == nil {
+				// These are the first operations Lunar performs after a successful
+				// streamed-subchunk decode. Before the decoder rejects the marker,
+				// Empty panics by dereferencing the nil storage it created.
+				_ = sub.Empty()
+				sub.Compact()
+				t.Fatal("accepted a block storage that points to a previous storage")
+			}
+			if !strings.Contains(err.Error(), "previous") {
+				t.Fatalf("error = %q, want previous-storage context", err)
+			}
+		})
+	}
+}
+
+func TestDecodePalettedStorage_RejectsUnsupportedSize(t *testing.T) {
+	for _, size := range []byte{7, 9, 15, 17, 31} {
+		t.Run(fmt.Sprintf("%d bit", size), func(t *testing.T) {
+			_, err := decodePalettedStorage(
+				bytes.NewBuffer([]byte{size<<1 | NetworkEncoding.network()}),
+				NetworkEncoding,
+				BlockPaletteEncoding{Blocks: testBlockRegistry{}},
+			)
+			if err == nil || !strings.Contains(err.Error(), "unsupported size") {
+				t.Fatalf("accepted unsupported %d-bit storage: %v", size, err)
+			}
+		})
+	}
+}
+
+func FuzzDecodeSubChunkRuntimeOperations(f *testing.F) {
+	f.Add([]byte{1, 0xff})
+	f.Add([]byte{8, 1, 0xff})
+	f.Add([]byte{9, 1, 0, 0xff})
+	f.Add([]byte{8, 0})
+
+	f.Fuzz(func(t *testing.T, payload []byte) {
+		if len(payload) > 1<<20 {
+			t.Skip()
+		}
+		ch := New(testBlockRegistry{}, cube.Range{0, 127})
+		index := byte(0)
+		sub, err := DecodeSubChunk(bytes.NewBuffer(payload), ch, &index, NetworkEncoding)
+		if err != nil || int(index) >= len(ch.Sub()) {
+			return
+		}
+
+		if sub.Empty() {
+			sub.Compact()
+		}
+		_ = sub.Clone()
+		ch.Sub()[index] = sub
+		ch.CompactForRuntimeCache()
+		_ = ch.Clone()
+		_ = ch.HeightMap()
+		ch.SetBlock(0, 0, 0, 0, 1)
+		_ = EncodeSubChunk(ch, NetworkEncoding, int(index))
+	})
+}
+
+func FuzzNetworkDecodeRuntimeOperations(f *testing.F) {
+	f.Add([]byte{}, byte(0))
+	f.Add([]byte{1, 0xff}, byte(1))
+	f.Add([]byte{9, 0, 0}, byte(1))
+
+	f.Fuzz(func(t *testing.T, payload []byte, count byte) {
+		if len(payload) > 1<<20 {
+			t.Skip()
+		}
+		ch, _, err := NetworkDecodeWithBlockEntities(
+			testBlockRegistry{}, payload, int(count), cube.Range{0, 127},
+		)
+		if err != nil {
+			return
+		}
+
+		ch.CompactForRuntimeCache()
+		_ = ch.Clone()
+		_ = ch.HeightMap()
+		ch.SetBlock(0, 0, 0, 0, 1)
+		_ = Encode(ch, NetworkEncoding)
+	})
 }
