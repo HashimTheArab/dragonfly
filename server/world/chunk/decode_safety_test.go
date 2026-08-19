@@ -139,11 +139,21 @@ func TestDecodePalettedStorage_RejectsUnsupportedSize(t *testing.T) {
 	}
 }
 
+func TestDecodeSubChunk_RejectsExcessStorageLayers(t *testing.T) {
+	ch := New(testBlockRegistry{}, cube.Range{0, 127})
+	index := byte(0)
+	_, err := DecodeSubChunk(bytes.NewBuffer([]byte{8, 3}), ch, &index, NetworkEncoding)
+	if err == nil || !strings.Contains(err.Error(), "storage count") {
+		t.Fatalf("accepted more storage layers than the client supports: %v", err)
+	}
+}
+
 func FuzzDecodeSubChunkRuntimeOperations(f *testing.F) {
 	f.Add([]byte{1, 0xff})
 	f.Add([]byte{8, 1, 0xff})
 	f.Add([]byte{9, 1, 0, 0xff})
 	f.Add([]byte{8, 0})
+	f.Add([]byte{8, 0xff})
 
 	f.Fuzz(func(t *testing.T, payload []byte) {
 		if len(payload) > 1<<20 {
