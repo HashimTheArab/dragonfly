@@ -1,7 +1,6 @@
 package block
 
 import (
-	"fmt"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
@@ -184,17 +183,21 @@ func (p DecoratedPot) DecodeNBT(data map[string]any) any {
 	p.Item = item.MapNBT(data, "item")
 	p.Decorations = [4]PotDecoration{}
 	if sherds := nbtconv.Slice(data, "sherds"); sherds != nil {
-		for i, name := range sherds {
+		for i, value := range sherds {
 			if i >= len(p.Decorations) {
 				break
 			}
-			it, ok := world.ItemByName(name.(string), 0)
+			name, ok := value.(string)
 			if !ok {
-				panic(fmt.Errorf("unknown item %s", name))
+				continue
+			}
+			it, ok := world.ItemByName(name, 0)
+			if !ok {
+				continue
 			}
 			decoration, ok := it.(PotDecoration)
 			if !ok {
-				panic(fmt.Errorf("item %s is not a pot decoration", name))
+				continue
 			}
 			p.Decorations[i] = decoration
 		}

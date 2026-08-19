@@ -271,7 +271,7 @@ func readDragonflyData(m map[string]any, s *Stack) {
 		}
 		var values []mapValue
 		if err := gob.NewDecoder(bytes.NewBuffer(d)).Decode(&values); err != nil {
-			panic("error decoding item user data: " + err.Error())
+			return
 		}
 		for _, val := range values {
 			*s = s.WithValue(val.K, val.V)
