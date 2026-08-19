@@ -38,3 +38,15 @@ func TestReadEnchantments_ClampsLevelBelowOne(t *testing.T) {
 		t.Fatalf("expected clamped enchantment level 1, got %d", enchants[0].Level())
 	}
 }
+
+func TestReadDragonflyData_IgnoresMalformedData(t *testing.T) {
+	stack := NewStack(Sword{Tier: ToolTierDiamond}, 1).WithValue("existing", "kept")
+	readDragonflyData(map[string]any{"dragonflyData": []byte{0xff, 0x01}}, &stack)
+
+	if got, ok := stack.Value("existing"); !ok || got != "kept" {
+		t.Fatalf("existing stack value = %v, %t; want kept, true", got, ok)
+	}
+	if len(stack.Values()) != 1 {
+		t.Fatalf("malformed dragonflyData changed stack values: %v", stack.Values())
+	}
+}
