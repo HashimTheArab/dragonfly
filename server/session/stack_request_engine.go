@@ -104,7 +104,7 @@ func (h *stackRequestHooks) Take(container stackrequest.Container, slot int, sta
 	if err := call(event.C(inventory.Holder(h.c)), slot, stack, c.inv.Handler().HandleTake); err != nil {
 		return err
 	}
-	if h.openedWindow(c) && slot == c.inv.Size()-1 {
+	if !stack.Empty() && h.openedWindow(c) && slot == c.inv.Size()-1 {
 		h.rewards = append(h.rewards, c)
 	}
 	return nil

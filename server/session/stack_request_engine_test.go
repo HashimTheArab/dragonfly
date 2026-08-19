@@ -252,3 +252,18 @@ func TestItemStackRequestHandlerRejectsRepeatedStatefulWorkstationActions(t *tes
 		t.Fatalf("reject = %#v, want action index 1", reject)
 	}
 }
+
+func TestStackRequestHooksDoNotRewardTakingEmptySmelterResult(t *testing.T) {
+	opened := inventory.New(3, nil)
+	s := &Session{}
+	s.openedWindow.Store(opened)
+	s.containerOpened.Store(true)
+	hooks := &stackRequestHooks{s: s}
+	container := stackRequestContainer{inv: opened}
+	if err := hooks.Take(container, opened.Size()-1, item.Stack{}); err != nil {
+		t.Fatalf("take: %v", err)
+	}
+	if len(hooks.rewards) != 0 {
+		t.Fatalf("empty result queued %d smelter rewards", len(hooks.rewards))
+	}
+}
