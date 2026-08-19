@@ -2585,13 +2585,26 @@ func (p *Player) mendItems(xp int) int {
 // The number of items that was dropped in the end is returned. It is generally the count of the stack passed
 // or 0 if dropping the item.Stack was cancelled.
 func (p *Player) Drop(s item.Stack) int {
-	ctx := NewEventContext(p.tx, p)
-	if p.Handler().HandleItemDrop(ctx, s); ctx.Cancelled() {
+	if !p.PrepareItemDrop(s) {
 		return 0
 	}
+	p.SpawnItemDrop(s)
+	return s.Count()
+}
+
+// PrepareItemDrop runs the cancellable item-drop event without spawning an entity.
+func (p *Player) PrepareItemDrop(s item.Stack) bool {
+	ctx := NewEventContext(p.tx, p)
+	if p.Handler().HandleItemDrop(ctx, s); ctx.Cancelled() {
+		return false
+	}
+	return true
+}
+
+// SpawnItemDrop spawns a previously authorised item drop.
+func (p *Player) SpawnItemDrop(s item.Stack) {
 	opts := world.EntitySpawnOpts{Position: p.Position().Add(mgl64.Vec3{0, 1.4}), Velocity: p.Rotation().Vec3().Mul(0.4)}
 	p.tx.AddEntity(entity.NewItemPickupDelay(opts, s, time.Second*2))
-	return s.Count()
 }
 
 // OpenBlockContainer opens a block container, such as a chest, at the position passed. If no container was
