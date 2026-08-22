@@ -229,6 +229,18 @@ func (c ExplosionConfig) exposure(tx *world.Tx, origin mgl64.Vec3, e world.Entit
 // block in src. SuppressUnderwaterImpact only applies if src is a world.LiquidSource.
 func (c ExplosionConfig) Exposure(src world.BlockSource, origin mgl64.Vec3, box cube.BBox) float64 {
 	boxMin, boxMax := box.Min(), box.Max()
+	for axis := range 3 {
+		if math.IsNaN(origin[axis]) || math.IsInf(origin[axis], 0) ||
+			math.IsNaN(boxMin[axis]) || math.IsInf(boxMin[axis], 0) ||
+			math.IsNaN(boxMax[axis]) || math.IsInf(boxMax[axis], 0) {
+			return 0.0
+		}
+	}
+	if origin[0] >= boxMin[0] && origin[0] <= boxMax[0] &&
+		origin[1] >= boxMin[1] && origin[1] <= boxMax[1] &&
+		origin[2] >= boxMin[2] && origin[2] <= boxMax[2] {
+		return 1.0
+	}
 	diff := boxMax.Sub(boxMin).Mul(2.0).Add(mgl64.Vec3{1, 1, 1})
 	if diff[0] <= 0 || diff[1] <= 0 || diff[2] <= 0 {
 		return 0.0
@@ -255,7 +267,7 @@ func (c ExplosionConfig) Exposure(src world.BlockSource, origin mgl64.Vec3, box 
 					lerp(z, boxMin[2], boxMax[2]) + zOffset,
 				}
 				checks++
-				if point.Sub(origin).LenSqr() == 0 {
+				if mgl64.FloatEqual(point.Sub(origin).LenSqr(), 0) {
 					// Nothing can block a ray of no length.
 					misses++
 					continue
@@ -269,7 +281,7 @@ func (c ExplosionConfig) Exposure(src world.BlockSource, origin mgl64.Vec3, box 
 							return false
 						}
 					}
-					collided = trace.BlockIntersects(pos, src, src.Block(pos), origin, point)
+					_, collided = trace.BlockIntercept(pos, src, src.Block(pos), origin, point)
 					return !collided
 				})
 
