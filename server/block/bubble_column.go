@@ -1,6 +1,8 @@
 package block
 
 import (
+	"math/rand/v2"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 )
@@ -55,11 +57,16 @@ func (b BubbleColumn) EntityInside(pos cube.Pos, tx *world.Tx, e world.Entity) {
 	v.SetVelocity(velocity)
 }
 
-// NeighbourUpdateTick updates this bubble column and all bubble column blocks above it.
-func (BubbleColumn) NeighbourUpdateTick(pos, changedNeighbour cube.Pos, tx *world.Tx) {
+// NeighbourUpdateTick schedules this bubble column and all bubble column blocks above it to be revalidated.
+func (b BubbleColumn) NeighbourUpdateTick(pos, changedNeighbour cube.Pos, tx *world.Tx) {
 	if changedNeighbour != pos && changedNeighbour != pos.Side(cube.FaceDown) && changedNeighbour != pos.Side(cube.FaceUp) {
 		return
 	}
+	tx.ScheduleBlockUpdate(pos, b, 0)
+}
+
+// ScheduledTick revalidates this bubble column and all bubble column blocks above it.
+func (BubbleColumn) ScheduledTick(pos cube.Pos, tx *world.Tx, _ *rand.Rand) {
 	updateBubbleColumn(pos, tx)
 }
 
@@ -90,24 +97,25 @@ func allBubbleColumns() []world.Block {
 
 // updateBubbleColumn creates, redirects, or removes consecutive bubble column blocks above pos.
 func updateBubbleColumn(pos cube.Pos, tx *world.Tx) {
+	opts := &world.SetOpts{DisableBlockUpdates: true, DisableRedstoneUpdates: true}
 	dragDown, active := bubbleColumnDirection(tx.Block(pos.Side(cube.FaceDown)))
 	for !pos.OutOfBounds(tx.Range()) {
 		current := tx.Block(pos)
 		if column, ok := current.(BubbleColumn); ok {
 			liquid, waterPresent := tx.Liquid(pos)
 			if !waterPresent || !isSourceWater(liquid) {
-				tx.SetBlock(pos, nil, nil)
+				tx.SetBlock(pos, nil, opts)
 				active = false
 				pos = pos.Side(cube.FaceUp)
 				continue
 			}
 			if !active {
-				tx.SetBlock(pos, nil, nil)
+				tx.SetBlock(pos, nil, opts)
 				pos = pos.Side(cube.FaceUp)
 				continue
 			}
 			if column.DragDown != dragDown {
-				tx.SetBlock(pos, BubbleColumn{DragDown: dragDown}, nil)
+				tx.SetBlock(pos, BubbleColumn{DragDown: dragDown}, opts)
 			}
 			pos = pos.Side(cube.FaceUp)
 			continue
@@ -116,7 +124,7 @@ func updateBubbleColumn(pos cube.Pos, tx *world.Tx) {
 		if !active || !isSourceWater(current) {
 			return
 		}
-		tx.SetBlock(pos, BubbleColumn{DragDown: dragDown}, nil)
+		tx.SetBlock(pos, BubbleColumn{DragDown: dragDown}, opts)
 		pos = pos.Side(cube.FaceUp)
 	}
 }
