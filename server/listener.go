@@ -24,15 +24,7 @@ type Listener interface {
 // listenerFunc may be used to return a *minecraft.Listener using a Config. It
 // is the standard listener used when UserConfig.Config() is called.
 func (uc UserConfig) listenerFunc(conf Config) (Listener, error) {
-	cfg := minecraft.ListenConfig{
-		MaximumPlayers:         conf.MaxPlayers,
-		StatusProvider:         conf.StatusProvider,
-		AuthenticationDisabled: conf.AuthDisabled,
-		ResourcePacks:          conf.Resources,
-		TexturePacksRequired:   conf.ResourcesRequired,
-		Compression:            conf.Compression,
-		Allow:                  conf.Allower.Allow,
-	}
+	cfg := minecraftListenConfig(conf)
 	if conf.Log.Enabled(context.Background(), slog.LevelDebug) {
 		cfg.ErrorLog = conf.Log.With("net origin", "gophertunnel")
 	}
@@ -42,6 +34,19 @@ func (uc UserConfig) listenerFunc(conf Config) (Listener, error) {
 	}
 	conf.Log.Info("Listener running.", "addr", l.Addr())
 	return listener{l}, nil
+}
+
+func minecraftListenConfig(conf Config) minecraft.ListenConfig {
+	return minecraft.ListenConfig{
+		MaximumPlayers:         conf.MaxPlayers,
+		StatusProvider:         conf.StatusProvider,
+		AuthenticationDisabled: conf.AuthDisabled,
+		ResourcePacks:          conf.Resources,
+		TexturePacksRequired:   conf.ResourcesRequired,
+		Compression:            conf.Compression,
+		Allow:                  conf.Allower.Allow,
+		AcceptedProtocols:      conf.AcceptedProtocols,
+	}
 }
 
 // listener is a Listener implementation that wraps around a minecraft.Listener so that it can be listened on by

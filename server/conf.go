@@ -82,6 +82,9 @@ type Config struct {
 	// Compression is the packet compression used for connections accepted by
 	// the default listener. If nil, gophertunnel's default compression is used.
 	Compression packet.Compression
+	// AcceptedProtocols is a list of additional Minecraft protocols accepted by
+	// the default listener. The current protocol is always accepted.
+	AcceptedProtocols []minecraft.Protocol
 	// PlayerProvider is the player.Provider used for storing and loading player
 	// data. If left as nil, player data will be newly created every time a
 	// player joins the server and no data will be stored.
