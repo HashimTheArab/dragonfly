@@ -56,6 +56,20 @@ func (unknownBlock) Model() BlockModel {
 	return unknownModel{}
 }
 
+// ContainerSize returns the client-visible capacity of chest blocks that are
+// present in the palette but do not yet have a dedicated block implementation.
+func (b unknownBlock) ContainerSize() int {
+	if b.Name != "minecraft:trapped_chest" && !strings.HasSuffix(b.Name, "copper_chest") {
+		return 0
+	}
+	_, pairedX := b.data["pairx"].(int32)
+	_, pairedZ := b.data["pairz"].(int32)
+	if pairedX && pairedZ {
+		return 54
+	}
+	return 27
+}
+
 // Friction returns the vanilla friction of the block, so a block dragonfly has no type for
 // still slows or slips the way players expect. block.Frictional is matched structurally.
 func (b unknownBlock) Friction() float64 {
