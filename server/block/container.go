@@ -27,6 +27,7 @@ type Container interface {
 	AddViewer(v ContainerViewer, tx *world.Tx, pos cube.Pos)
 	RemoveViewer(v ContainerViewer, tx *world.Tx, pos cube.Pos)
 	Inventory(tx *world.Tx, pos cube.Pos) *inventory.Inventory
+	ContainerSize() int
 }
 
 // ContainerSizer exposes the client-visible number of slots of a container
