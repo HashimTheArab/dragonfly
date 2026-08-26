@@ -40,6 +40,6 @@ func (riptide) CompatibleWithEnchantment(t item.EnchantmentType) bool {
 
 // CompatibleWithItem ...
 func (riptide) CompatibleWithItem(i world.Item) bool {
-	t, ok := i.(interface{ Trident() bool })
+	t, ok := i.(item.TridentType)
 	return ok && t.Trident()
 }
