@@ -33,7 +33,7 @@ func init() {
 	// TODO: (27) Curse of Binding.
 	item.RegisterEnchantment(28, CurseOfVanishing)
 	// TODO: (29) Impaling.
-	// TODO: (30) Riptide.
+	item.RegisterEnchantment(30, Riptide)
 	// TODO: (31) Loyalty.
 	// TODO: (32) Channeling.
 	item.RegisterEnchantment(33, Multishot)
