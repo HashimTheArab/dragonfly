@@ -15,7 +15,7 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 	t.Run("slab merge", func(t *testing.T) {
 		slab := Slab{Block: Stone{}}
 		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: slab})
-		changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{0.5, 1, 0.5}, slab)
+		changes := predictPlacement(t, src, user, clicked, cube.FaceUp, mgl64.Vec3{0.5, 1, 0.5}, slab)
 		if len(changes) != 1 {
 			t.Fatalf("changes = %v, want one", changes)
 		}
@@ -27,11 +27,11 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 
 	t.Run("dead bush substrate", func(t *testing.T) {
 		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Stone{}})
-		if changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, DeadBush{}); len(changes) != 0 {
+		if changes := predictPlacement(t, src, user, clicked, cube.FaceUp, mgl64.Vec3{}, DeadBush{}); len(changes) != 0 {
 			t.Fatalf("changes = %v, want no placement on stone", changes)
 		}
 		src.blocks[clicked] = Sand{}
-		if changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, DeadBush{}); len(changes) != 1 {
+		if changes := predictPlacement(t, src, user, clicked, cube.FaceUp, mgl64.Vec3{}, DeadBush{}); len(changes) != 1 {
 			t.Fatalf("changes = %v, want placement on sand", changes)
 		}
 	})
@@ -40,7 +40,7 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 		placePos := clicked.Side(cube.FaceUp)
 		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Sand{}})
 		src.liquids[placePos] = Water{Still: true, Depth: 8}
-		changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Kelp{})
+		changes := predictPlacement(t, src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Kelp{})
 		if len(changes) != 1 {
 			t.Fatalf("changes = %v, want one", changes)
 		}
@@ -56,7 +56,7 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 			clicked:                      Stone{},
 			placePos.Side(cube.FaceEast): Stone{},
 		})
-		changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Wall{Block: Cobblestone{}})
+		changes := predictPlacement(t, src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Wall{Block: Cobblestone{}})
 		if len(changes) != 1 {
 			t.Fatalf("changes = %v, want one", changes)
 		}
@@ -75,7 +75,7 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 			clicked: Stone{},
 			pairPos: pair,
 		})
-		changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, NewChest())
+		changes := predictPlacement(t, src, user, clicked, cube.FaceUp, mgl64.Vec3{}, NewChest())
 		if len(changes) != 2 {
 			t.Fatalf("changes = %v, want paired chest writes", changes)
 		}
@@ -88,7 +88,7 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 
 	t.Run("standing skull rotation", func(t *testing.T) {
 		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Stone{}})
-		changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Skull{Type: SkeletonSkull()})
+		changes := predictPlacement(t, src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Skull{Type: SkeletonSkull()})
 		if len(changes) != 1 {
 			t.Fatalf("changes = %v, want one", changes)
 		}
@@ -102,7 +102,7 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 		placePos := clicked.Side(cube.FaceUp)
 		for _, b := range []world.Block{Cobblestone{}, Dirt{}, Stone{}, Planks{}, Obsidian{}} {
 			src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Stone{}})
-			changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{0.5, 1, 0.5}, b)
+			changes := predictPlacement(t, src, user, clicked, cube.FaceUp, mgl64.Vec3{0.5, 1, 0.5}, b)
 			if len(changes) != 1 {
 				t.Fatalf("%T: changes = %v, want one", b, changes)
 			}
@@ -114,7 +114,7 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 
 	t.Run("plain block replaces clicked block", func(t *testing.T) {
 		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Air{}})
-		changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Cobblestone{})
+		changes := predictPlacement(t, src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Cobblestone{})
 		if len(changes) != 1 || changes[0].Pos != clicked {
 			t.Fatalf("changes = %#v, want cobblestone written at the clicked air block %v", changes, clicked)
 		}
@@ -126,7 +126,7 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 			clicked:  Stone{},
 			placePos: Stone{},
 		})
-		if changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Cobblestone{}); len(changes) != 0 {
+		if changes := predictPlacement(t, src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Cobblestone{}); len(changes) != 0 {
 			t.Fatalf("changes = %v, want no placement into an occupied position", changes)
 		}
 	})
@@ -134,14 +134,23 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 	t.Run("plain block outside world range", func(t *testing.T) {
 		top := cube.Pos{clicked[0], world.Overworld.Range().Max(), clicked[2]}
 		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{top: Stone{}})
-		if changes := PredictPlacement(src, user, top, cube.FaceUp, mgl64.Vec3{}, Cobblestone{}); len(changes) != 0 {
+		if changes := predictPlacement(t, src, user, top, cube.FaceUp, mgl64.Vec3{}, Cobblestone{}); len(changes) != 0 {
 			t.Fatalf("changes = %v, want no placement above the build limit", changes)
+		}
+	})
+
+	t.Run("unknown placement target", func(t *testing.T) {
+		placePos := clicked.Side(cube.FaceUp)
+		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Stone{}})
+		src.unknown[placePos] = true
+		if changes, known := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Cobblestone{}); known {
+			t.Fatalf("prediction was known with an unloaded target: changes=%v", changes)
 		}
 	})
 
 	t.Run("wet sponge in nether", func(t *testing.T) {
 		src := newPlacementTestSource(world.Nether, map[cube.Pos]world.Block{clicked: Stone{}})
-		changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Sponge{Wet: true})
+		changes := predictPlacement(t, src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Sponge{Wet: true})
 		if len(changes) != 1 {
 			t.Fatalf("changes = %v, want one", changes)
 		}
@@ -156,10 +165,15 @@ type placementTestSource struct {
 	dim     world.Dimension
 	blocks  map[cube.Pos]world.Block
 	liquids map[cube.Pos]world.Liquid
+	unknown map[cube.Pos]bool
 }
 
 func newPlacementTestSource(dim world.Dimension, blocks map[cube.Pos]world.Block) *placementTestSource {
-	return &placementTestSource{dim: dim, blocks: blocks, liquids: make(map[cube.Pos]world.Liquid)}
+	return &placementTestSource{
+		dim: dim, blocks: blocks,
+		liquids: make(map[cube.Pos]world.Liquid),
+		unknown: make(map[cube.Pos]bool),
+	}
 }
 
 func (s *placementTestSource) Range() cube.Range          { return s.dim.Range() }
@@ -170,6 +184,13 @@ func (s *placementTestSource) Block(pos cube.Pos) world.Block {
 		return b
 	}
 	return Air{}
+}
+
+func (s *placementTestSource) BlockLoaded(pos cube.Pos) (world.Block, bool) {
+	if s.unknown[pos] {
+		return nil, false
+	}
+	return s.Block(pos), true
 }
 
 func (s *placementTestSource) Liquid(pos cube.Pos) (world.Liquid, bool) {
@@ -184,3 +205,12 @@ type placementTestUser struct {
 
 func (u placementTestUser) Position() mgl64.Vec3    { return u.pos }
 func (u placementTestUser) Rotation() cube.Rotation { return u.rot }
+
+func predictPlacement(t *testing.T, src PlacementSource, user PlacementUser, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) []PredictedBlockChange {
+	t.Helper()
+	changes, known := PredictPlacement(src, user, clickedPos, face, clickPos, placed)
+	if !known {
+		t.Fatal("prediction unexpectedly depended on unknown world state")
+	}
+	return changes
+}

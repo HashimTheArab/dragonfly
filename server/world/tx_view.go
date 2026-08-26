@@ -11,6 +11,7 @@ import "github.com/df-mc/dragonfly/server/block/cube"
 // Liquid so that multi-block behaviour observes its earlier changes.
 type BlockTransactionView interface {
 	LiquidSource
+	BlockLoaded(pos cube.Pos) (Block, bool)
 	Range() cube.Range
 	Dimension() Dimension
 	SetBlock(pos cube.Pos, b Block)
@@ -23,10 +24,11 @@ type BlockTransactionView interface {
 // second implementation.
 //
 // The transaction and its World must not escape f. RunBlockTransaction is
-// synchronous and does not retain view after f returns.
-func RunBlockTransaction(view BlockTransactionView, f func(tx *Tx)) {
+// synchronous and does not retain view after f returns. It returns false when
+// the callback used world state that the detached view cannot represent.
+func RunBlockTransaction(view BlockTransactionView, f func(tx *Tx)) bool {
 	if view == nil || f == nil {
-		return
+		return false
 	}
 	dim := view.Dimension()
 	if dim == nil {
@@ -43,4 +45,13 @@ func RunBlockTransaction(view BlockTransactionView, f func(tx *Tx)) {
 	tx.view = view
 	defer tx.close()
 	f(tx)
+	return !tx.viewIncomplete
+}
+
+func (tx *Tx) detachedUnsupported() bool {
+	if tx.view == nil {
+		return false
+	}
+	tx.viewIncomplete = true
+	return true
 }

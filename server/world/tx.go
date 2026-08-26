@@ -13,10 +13,11 @@ import (
 // Tx is the owner transaction handle passed to world callbacks. It is the
 // only way to perform world operations and is valid only during its callback.
 type Tx struct {
-	w        *World
-	view     BlockTransactionView
-	closed   bool
-	deferred []scheduledTransaction
+	w              *World
+	view           BlockTransactionView
+	viewIncomplete bool
+	closed         bool
+	deferred       []scheduledTransaction
 }
 
 // Context is a cancellable event scope passed to Handler events. It embeds the
@@ -57,6 +58,10 @@ func (tx *Tx) Defer(f func(tx *Tx)) *Task {
 // DeferErr schedules f to run on the owner after the current callback
 // completes, recording any returned error on the Task.
 func (tx *Tx) DeferErr(f func(tx *Tx) error) *Task {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return newTask()
+	}
 	return tx.deferTask(f)
 }
 
@@ -116,7 +121,7 @@ func (tx *Tx) Block(pos cube.Pos) Block {
 // without loading or generating the chunk when the block is unavailable.
 func (tx *Tx) BlockLoaded(pos cube.Pos) (Block, bool) {
 	if tx.view != nil {
-		return tx.view.Block(pos), true
+		return tx.view.BlockLoaded(pos)
 	}
 	return tx.World().blockLoaded(pos)
 }
@@ -125,6 +130,10 @@ func (tx *Tx) BlockLoaded(pos cube.Pos) (Block, bool) {
 // horizontal square radius around pos. Chunks not in memory are read from the world save; missing chunks are
 // skipped, not generated. Only the primary block layer is searched and blocks are matched by their state alone.
 func (tx *Tx) BlocksWithin(pos cube.Pos, radius int, blocks ...Block) iter.Seq[cube.Pos] {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return func(func(cube.Pos) bool) {}
+	}
 	return tx.World().blocksWithin(pos, radius, blocks...)
 }
 
@@ -160,6 +169,10 @@ func (tx *Tx) SetLiquid(pos cube.Pos, b Liquid) {
 // method operates on a per-chunk basis, setting all blocks within a single
 // chunk part of the Structure before moving on to the next chunk.
 func (tx *Tx) BuildStructure(pos cube.Pos, s Structure) {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return
+	}
 	tx.buildStructure(pos, s)
 }
 
@@ -179,6 +192,10 @@ func (tx *Tx) ScheduleBlockUpdate(pos cube.Pos, b Block, delay time.Duration) {
 // HighestLightBlocker gets the Y value of the highest fully light blocking
 // block at the x and z values passed in the World.
 func (tx *Tx) HighestLightBlocker(x, z int) int {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return 0
+	}
 	return tx.highestLightBlocker(x, z)
 }
 
@@ -186,6 +203,10 @@ func (tx *Tx) HighestLightBlocker(x, z int) int {
 // and z. The y value of the highest block is returned, or 0 if no blocks were
 // present in the column.
 func (tx *Tx) HighestBlock(x, z int) int {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return 0
+	}
 	return tx.highestBlock(x, z)
 }
 
@@ -195,6 +216,10 @@ func (tx *Tx) HighestBlock(x, z int) int {
 // fully lit. Light does not load chunks: 0 is returned for positions in chunks
 // that are not currently loaded.
 func (tx *Tx) Light(pos cube.Pos) uint8 {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return 0
+	}
 	return tx.light(pos)
 }
 
@@ -204,6 +229,10 @@ func (tx *Tx) Light(pos cube.Pos) uint8 {
 // light is present. Unlike Light, SkyLight loads or generates the chunk at the
 // position if it is not currently loaded.
 func (tx *Tx) SkyLight(pos cube.Pos) uint8 {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return 0
+	}
 	return tx.skyLight(pos)
 }
 
@@ -211,6 +240,10 @@ func (tx *Tx) SkyLight(pos cube.Pos) uint8 {
 // at that position, the chunk is first loaded or generated if it could not be
 // found in the world save.
 func (tx *Tx) SetBiome(pos cube.Pos, b Biome) {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return
+	}
 	tx.setBiome(pos, b)
 }
 
@@ -218,12 +251,20 @@ func (tx *Tx) SetBiome(pos cube.Pos, b Biome) {
 // at that position, the chunk is loaded, or generated if it could not be found
 // in the world save, and the Biome returned.
 func (tx *Tx) Biome(pos cube.Pos) Biome {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return nil
+	}
 	return tx.biome(pos)
 }
 
 // Temperature returns the temperature in the World at a specific position.
 // Higher altitudes and different biomes influence the temperature returned.
 func (tx *Tx) Temperature(pos cube.Pos) float64 {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return 0
+	}
 	return tx.temperature(pos)
 }
 
@@ -232,6 +273,10 @@ func (tx *Tx) Temperature(pos cube.Pos) float64 {
 // for it not to be snow and if the block is above the top-most obstructing
 // block.
 func (tx *Tx) RainingAt(pos cube.Pos) bool {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return false
+	}
 	return tx.rainingAt(pos)
 }
 
@@ -239,6 +284,10 @@ func (tx *Tx) RainingAt(pos cube.Pos) bool {
 // is returned if the temperature in the Biome at that position is sufficiently
 // low, if it is raining and if it's above the top-most obstructing block.
 func (tx *Tx) SnowingAt(pos cube.Pos) bool {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return false
+	}
 	return tx.snowingAt(pos)
 }
 
@@ -246,16 +295,28 @@ func (tx *Tx) SnowingAt(pos cube.Pos) bool {
 // True is returned if RainingAt returns true and if it is thundering in the
 // world.
 func (tx *Tx) ThunderingAt(pos cube.Pos) bool {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return false
+	}
 	return tx.thunderingAt(pos)
 }
 
 // Raining checks if it is raining anywhere in the World.
 func (tx *Tx) Raining() bool {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return false
+	}
 	return tx.World().raining()
 }
 
 // Thundering checks if it is thundering anywhere in the World.
 func (tx *Tx) Thundering() bool {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return false
+	}
 	return tx.World().thundering()
 }
 
@@ -271,6 +332,9 @@ func (tx *Tx) AddParticle(pos mgl64.Vec3, p Particle) {
 // PlayEntityAnimation plays an animation on an entity in the World. The animation is played for all viewers
 // of the entity.
 func (tx *Tx) PlayEntityAnimation(e Entity, a EntityAnimation) {
+	if tx.view != nil {
+		return
+	}
 	for _, viewer := range tx.World().viewersOf(e.Position()) {
 		viewer.ViewEntityAnimation(e, a)
 	}
@@ -291,6 +355,10 @@ func (tx *Tx) PlaySound(pos mgl64.Vec3, s Sound) {
 // loaded. AddEntity panics if the EntityHandle is already in a world.
 // AddEntity returns the Entity created by the EntityHandle.
 func (tx *Tx) AddEntity(e *EntityHandle) Entity {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return nil
+	}
 	return tx.World().addEntity(tx, e)
 }
 
@@ -298,6 +366,10 @@ func (tx *Tx) AddEntity(e *EntityHandle) Entity {
 // the World that have the chunk at the position passed. AddEntityAt panics if the EntityHandle is already in a world.
 // AddEntityAt returns the Entity created by the EntityHandle.
 func (tx *Tx) AddEntityAt(e *EntityHandle, pos mgl64.Vec3) Entity {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return nil
+	}
 	return tx.World().addEntityAt(tx, e, pos)
 }
 
@@ -306,27 +378,47 @@ func (tx *Tx) AddEntityAt(e *EntityHandle, pos mgl64.Vec3) Entity {
 // RemoveEntity returns the EntityHandle of the Entity. After removing an Entity
 // from the World, the Entity is no longer usable.
 func (tx *Tx) RemoveEntity(e Entity) *EntityHandle {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return nil
+	}
 	return tx.World().removeEntity(e, tx)
 }
 
 // EntitiesWithin returns an iterator that yields all entities contained within
 // the cube.BBox passed.
 func (tx *Tx) EntitiesWithin(box cube.BBox) iter.Seq[Entity] {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return func(func(Entity) bool) {}
+	}
 	return tx.World().entitiesWithin(tx, box)
 }
 
 // Entities returns an iterator that yields all entities in the World.
 func (tx *Tx) Entities() iter.Seq[Entity] {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return func(func(Entity) bool) {}
+	}
 	return tx.World().allEntities(tx)
 }
 
 // Players returns an iterator that yields all player entities in the World.
 func (tx *Tx) Players() iter.Seq[Entity] {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return func(func(Entity) bool) {}
+	}
 	return tx.World().allPlayers(tx)
 }
 
 // Viewers returns all viewers viewing the position passed.
 func (tx *Tx) Viewers(pos mgl64.Vec3) []Viewer {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return nil
+	}
 	return tx.World().viewersOf(pos)
 }
 
@@ -402,6 +494,10 @@ func (tx *Tx) World() *World {
 
 // CurrentTick returns the current tick of the transaction's world.
 func (tx *Tx) CurrentTick() int64 {
+	if tx.view != nil {
+		tx.viewIncomplete = true
+		return 0
+	}
 	w := tx.World()
 	w.set.Lock()
 	defer w.set.Unlock()
