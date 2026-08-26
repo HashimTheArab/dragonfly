@@ -171,6 +171,26 @@ func TestLightBlockerMapMasksBlockCoordinates(t *testing.T) {
 	}
 }
 
+// Replacing streamed terrain bypasses SetBlock, so the chunk-owned operation
+// must invalidate blocker heights cached from an earlier partial sub-chunk.
+func TestSetSubChunkInvalidatesLightBlockerMap(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	t.Parallel()
+
+	c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	stone := world.DefaultBlockRegistry.BlockRuntimeID(block.Stone{})
+	c.SetBlock(3, 64, 5, 0, stone)
+	heights := c.LightBlockerMap()
+	if got := heights.At(3, 5); got != 64 {
+		t.Fatalf("blocker before replacement = %d, want 64", got)
+	}
+
+	c.SetSubChunk(c.SubIndex(64), chunk.NewSubChunk(world.DefaultBlockRegistry.AirRuntimeID()))
+	if got := heights.At(3, 5); got != int16(c.Range().Min()) {
+		t.Fatalf("blocker after all-air replacement = %d, want world minimum %d", got, c.Range().Min())
+	}
+}
+
 // BenchmarkSubChunkHeightMaps compares one prepared response summary with the
 // compatibility helper that prepares each entry independently.
 func BenchmarkSubChunkHeightMaps(b *testing.B) {
