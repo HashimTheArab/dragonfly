@@ -28,8 +28,17 @@ func RunBlockTransaction(view BlockTransactionView, f func(tx *Tx)) {
 	if view == nil || f == nil {
 		return
 	}
-	w := Config{Dim: view.Dimension(), ReadOnly: true, Synchronous: true}.New()
-	defer func() { _ = w.Close() }()
+	dim := view.Dimension()
+	if dim == nil {
+		dim = Overworld
+	}
+	settings := defaultSettings()
+	w := &World{
+		conf:     Config{Dim: dim, ReadOnly: true, Synchronous: true},
+		ra:       view.Range(),
+		set:      settings,
+		redstone: newRedstoneEngine(settings.CurrentTick),
+	}
 	tx := newTx(w)
 	tx.view = view
 	defer tx.close()
