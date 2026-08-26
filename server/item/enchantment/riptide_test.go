@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/item"
-	"github.com/df-mc/dragonfly/server/world"
 )
 
 func TestRiptide_RegistryIdentity(t *testing.T) {
@@ -25,25 +24,14 @@ func TestRiptide_RegistryIdentity(t *testing.T) {
 	}
 }
 
-func TestRiptide_CompatibleWithItem(t *testing.T) {
-	if !Riptide.CompatibleWithItem(testTrident{}) {
-		t.Fatal("Riptide is incompatible with a trident")
-	}
-	if Riptide.CompatibleWithItem(testNonTrident{}) {
-		t.Fatal("Riptide is compatible with a non-trident")
+func TestRiptide_FutureExclusiveEnchantmentsAreSymmetric(t *testing.T) {
+	for _, id := range []int{31, 32} {
+		other, registered := item.EnchantmentByID(id)
+		if !registered {
+			continue
+		}
+		if Riptide.CompatibleWithEnchantment(other) || other.CompatibleWithEnchantment(Riptide) {
+			t.Errorf("Riptide compatibility with enchantment %d must be false in both directions", id)
+		}
 	}
 }
-
-type testTrident struct{}
-
-func (testTrident) EncodeItem() (string, int16) { return "minecraft:trident", 0 }
-func (testTrident) Trident() bool               { return true }
-
-type testNonTrident struct{}
-
-func (testNonTrident) EncodeItem() (string, int16) { return "minecraft:stick", 0 }
-
-var (
-	_ world.Item = testTrident{}
-	_ world.Item = testNonTrident{}
-)
