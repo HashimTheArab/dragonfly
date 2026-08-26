@@ -28,19 +28,21 @@ type PredictedBlockChange struct {
 	Block world.Block
 }
 
-// PredictPlacement runs placed's actual UseOnBlock implementation against src
-// and returns its block writes in order. Running the canonical implementation
-// keeps prediction in step with placement changes made in this package.
+// PredictPlacement runs placed's actual placement behaviour against src and
+// returns its block writes in order. Running the canonical implementation keeps
+// prediction in step with placement changes made in this package.
+//
+// It mirrors the two branches (*player.Player).UseItemOnBlock dispatches on: a
+// block implementing item.UsableOnBlock has its own UseOnBlock run, and any
+// other block is placed at the first replaceable position at or beside the
+// click. Most full blocks, such as Cobblestone and Dirt, take the second
+// branch.
 //
 // user may be nil only when the placed block does not consult player position
 // or rotation. Non-block side effects such as sounds, particles and scheduled
 // updates are intentionally discarded.
 func PredictPlacement(src PlacementSource, user PlacementUser, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) []PredictedBlockChange {
 	if src == nil || placed == nil {
-		return nil
-	}
-	usable, ok := placed.(item.UsableOnBlock)
-	if !ok {
 		return nil
 	}
 
@@ -51,8 +53,16 @@ func PredictPlacement(src PlacementSource, user PlacementUser, clickedPos cube.P
 		liquidWrites: make(map[cube.Pos]struct{}),
 	}
 	world.RunBlockTransaction(view, func(tx *world.Tx) {
-		u := &placementUser{user: user, tx: tx}
-		usable.UseOnBlock(clickedPos, face, clickPos, tx, u, &item.UseContext{})
+		u, ctx := &placementUser{user: user, tx: tx}, &item.UseContext{}
+		if usable, ok := placed.(item.UsableOnBlock); ok {
+			usable.UseOnBlock(clickedPos, face, clickPos, tx, u, ctx)
+			return
+		}
+		pos, _, ok := firstReplaceable(tx, clickedPos, face, placed)
+		if !ok {
+			return
+		}
+		place(tx, pos, placed, u, ctx)
 	})
 	return view.changes
 }

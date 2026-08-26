@@ -98,6 +98,47 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 		}
 	})
 
+	t.Run("plain block on solid face", func(t *testing.T) {
+		placePos := clicked.Side(cube.FaceUp)
+		for _, b := range []world.Block{Cobblestone{}, Dirt{}, Stone{}, Planks{}, Obsidian{}} {
+			src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Stone{}})
+			changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{0.5, 1, 0.5}, b)
+			if len(changes) != 1 {
+				t.Fatalf("%T: changes = %v, want one", b, changes)
+			}
+			if changes[0].Pos != placePos || changes[0].Block != b {
+				t.Fatalf("%T: change = %#v, want %#v at %v", b, changes[0], b, placePos)
+			}
+		}
+	})
+
+	t.Run("plain block replaces clicked block", func(t *testing.T) {
+		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Air{}})
+		changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Cobblestone{})
+		if len(changes) != 1 || changes[0].Pos != clicked {
+			t.Fatalf("changes = %#v, want cobblestone written at the clicked air block %v", changes, clicked)
+		}
+	})
+
+	t.Run("plain block needs a replaceable target", func(t *testing.T) {
+		placePos := clicked.Side(cube.FaceUp)
+		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{
+			clicked:  Stone{},
+			placePos: Stone{},
+		})
+		if changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Cobblestone{}); len(changes) != 0 {
+			t.Fatalf("changes = %v, want no placement into an occupied position", changes)
+		}
+	})
+
+	t.Run("plain block outside world range", func(t *testing.T) {
+		top := cube.Pos{clicked[0], world.Overworld.Range().Max(), clicked[2]}
+		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{top: Stone{}})
+		if changes := PredictPlacement(src, user, top, cube.FaceUp, mgl64.Vec3{}, Cobblestone{}); len(changes) != 0 {
+			t.Fatalf("changes = %v, want no placement above the build limit", changes)
+		}
+	})
+
 	t.Run("wet sponge in nether", func(t *testing.T) {
 		src := newPlacementTestSource(world.Nether, map[cube.Pos]world.Block{clicked: Stone{}})
 		changes := PredictPlacement(src, user, clicked, cube.FaceUp, mgl64.Vec3{}, Sponge{Wet: true})
