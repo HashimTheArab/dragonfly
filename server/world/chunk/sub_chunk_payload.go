@@ -51,14 +51,6 @@ func (m SubChunkHeightMaps) At(index int16) (byte, []int8) {
 	return protocol.HeightMapDataHasData, heightMap
 }
 
-// SubChunkHeightMap describes where the surface sits within the sub-chunk of c at index,
-// which is what the client lights that sub-chunk from. The returned type is one of the
-// protocol.HeightMapData constants; the heights are nil unless it is HeightMapDataHasData,
-// because a surface lying wholly above or below the sub-chunk needs no per-column data.
-func SubChunkHeightMap(c *Chunk, index int16) (byte, []int8) {
-	return NewSubChunkHeightMaps(c).At(index)
-}
-
 // RequestModeLevelChunk returns the SubChunkCount and SubChunkLimit a LevelChunk carries to
 // announce a column without its terrain, which is what prompts the client to request it a
 // sub-chunk at a time. Protocol 2168 constrains SubChunkCount to 0..64, so the limit alone

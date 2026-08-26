@@ -1,7 +1,6 @@
 package chunk_test
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block"
@@ -23,7 +22,7 @@ func (r *countingFilteringRegistry) FilteringBlock(runtimeID uint32) uint8 {
 
 // The client lights a sub-chunk from this map, so a surface lying wholly outside the
 // sub-chunk has to collapse to TooHigh/TooLow rather than ship 256 sentinel heights.
-func TestSubChunkHeightMap(t *testing.T) {
+func TestSubChunkHeightMaps(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	t.Parallel()
 
@@ -38,9 +37,10 @@ func TestSubChunkHeightMap(t *testing.T) {
 		}
 	}
 	surface := c.SubIndex(64)
+	maps := chunk.NewSubChunkHeightMaps(c)
 
 	t.Run("surface above the sub-chunk", func(t *testing.T) {
-		mapType, heights := chunk.SubChunkHeightMap(c, surface-1)
+		mapType, heights := maps.At(surface - 1)
 		if mapType != protocol.HeightMapDataTooHigh {
 			t.Fatalf("type = %d, want TooHigh", mapType)
 		}
@@ -50,7 +50,7 @@ func TestSubChunkHeightMap(t *testing.T) {
 	})
 
 	t.Run("surface below the sub-chunk", func(t *testing.T) {
-		mapType, heights := chunk.SubChunkHeightMap(c, surface+1)
+		mapType, heights := maps.At(surface + 1)
 		if mapType != protocol.HeightMapDataTooLow {
 			t.Fatalf("type = %d, want TooLow", mapType)
 		}
@@ -60,7 +60,7 @@ func TestSubChunkHeightMap(t *testing.T) {
 	})
 
 	t.Run("surface inside the sub-chunk", func(t *testing.T) {
-		mapType, heights := chunk.SubChunkHeightMap(c, surface)
+		mapType, heights := maps.At(surface)
 		if mapType != protocol.HeightMapDataHasData {
 			t.Fatalf("type = %d, want HasData", mapType)
 		}
@@ -76,32 +76,6 @@ func TestSubChunkHeightMap(t *testing.T) {
 			}
 		}
 	})
-}
-
-// A reusable map must preserve the per-entry protocol contract while avoiding a
-// fresh chunk-height lookup for every vertical offset in one response.
-func TestSubChunkHeightMaps(t *testing.T) {
-	world.DefaultBlockRegistry.Finalize()
-	t.Parallel()
-
-	c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
-	stone := world.DefaultBlockRegistry.BlockRuntimeID(block.Stone{})
-	for x := uint8(0); x < 16; x++ {
-		for z := uint8(0); z < 16; z++ {
-			c.SetBlock(x, int16(48+int(x&3)*16), z, 0, stone)
-		}
-	}
-	maps := chunk.NewSubChunkHeightMaps(c)
-	for index := int16(0); index < int16(len(c.Sub())); index++ {
-		gotType, gotHeights := maps.At(index)
-		wantType, wantHeights := chunk.SubChunkHeightMap(c, index)
-		if gotType != wantType {
-			t.Fatalf("index %d type = %d, want %d", index, gotType, wantType)
-		}
-		if !slices.Equal(gotHeights, wantHeights) {
-			t.Fatalf("index %d heights differ", index)
-		}
-	}
 }
 
 // LightBlockerMap exposes the cached chunk-wide scan using the exact semantics
@@ -204,11 +178,11 @@ func BenchmarkSubChunkHeightMaps(b *testing.B) {
 	}
 	indices := [...]int16{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 
-	b.Run("individual", func(b *testing.B) {
+	b.Run("reprepare_each_entry", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			for _, index := range indices {
-				_, _ = chunk.SubChunkHeightMap(c, index)
+				_, _ = chunk.NewSubChunkHeightMaps(c).At(index)
 			}
 		}
 	})
