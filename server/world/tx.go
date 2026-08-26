@@ -14,6 +14,7 @@ import (
 // only way to perform world operations and is valid only during its callback.
 type Tx struct {
 	w        *World
+	view     BlockTransactionView
 	closed   bool
 	deferred []scheduledTransaction
 }
@@ -62,6 +63,9 @@ func (tx *Tx) DeferErr(f func(tx *Tx) error) *Task {
 // Range returns the lower and upper bounds of the World that the Tx is
 // operating on.
 func (tx *Tx) Range() cube.Range {
+	if tx.view != nil {
+		return tx.view.Range()
+	}
 	return tx.World().ra
 }
 
@@ -80,6 +84,10 @@ func (tx *Tx) Range() cube.Range {
 // needing to set a lot of blocks to the world. BuildStructure may be used
 // instead.
 func (tx *Tx) SetBlock(pos cube.Pos, b Block, opts *SetOpts) {
+	if tx.view != nil {
+		tx.view.SetBlock(pos, b)
+		return
+	}
 	tx.setBlock(pos, b, opts)
 }
 
@@ -87,6 +95,10 @@ func (tx *Tx) SetBlock(pos cube.Pos, b Block, opts *SetOpts) {
 // neighbouring blocks or invalidating redstone. The chunk is marked modified.
 // It falls back to SetBlock if b has no block entity data or its state differs.
 func (tx *Tx) SetBlockEntity(pos cube.Pos, b Block) {
+	if tx.view != nil {
+		tx.view.SetBlock(pos, b)
+		return
+	}
 	tx.setBlockEntity(pos, b)
 }
 
@@ -94,12 +106,18 @@ func (tx *Tx) SetBlockEntity(pos cube.Pos, b Block) {
 // at that position, the chunk is loaded, or generated if it could not be found
 // in the world save, and the block returned.
 func (tx *Tx) Block(pos cube.Pos) Block {
+	if tx.view != nil {
+		return tx.view.Block(pos)
+	}
 	return tx.block(pos)
 }
 
 // BlockLoaded returns the block at the position passed if the chunk containing it is already loaded. It returns false
 // without loading or generating the chunk when the block is unavailable.
 func (tx *Tx) BlockLoaded(pos cube.Pos) (Block, bool) {
+	if tx.view != nil {
+		return tx.view.Block(pos), true
+	}
 	return tx.World().blockLoaded(pos)
 }
 
@@ -114,6 +132,9 @@ func (tx *Tx) BlocksWithin(pos cube.Pos, radius int, blocks ...Block) iter.Seq[c
 // Liquid may be in the foreground or in any other layer. If found, the Liquid
 // is returned. If not, the bool returned is false.
 func (tx *Tx) Liquid(pos cube.Pos) (Liquid, bool) {
+	if tx.view != nil {
+		return tx.view.Liquid(pos)
+	}
 	return tx.liquid(pos)
 }
 
@@ -124,6 +145,10 @@ func (tx *Tx) Liquid(pos cube.Pos) (Liquid, bool) {
 // overwritten. If nil is passed for the Liquid, any Liquid currently present
 // will be removed.
 func (tx *Tx) SetLiquid(pos cube.Pos, b Liquid) {
+	if tx.view != nil {
+		tx.view.SetLiquid(pos, b)
+		return
+	}
 	tx.setLiquid(pos, b)
 }
 
@@ -145,6 +170,9 @@ func (tx *Tx) BuildStructure(pos cube.Pos, s Structure) {
 // scheduled if no block update with the same position and block type is
 // already scheduled at a later time than the newly scheduled update.
 func (tx *Tx) ScheduleBlockUpdate(pos cube.Pos, b Block, delay time.Duration) {
+	if tx.view != nil {
+		return
+	}
 	tx.World().scheduleBlockUpdate(pos, b, delay)
 }
 
@@ -234,6 +262,9 @@ func (tx *Tx) Thundering() bool {
 // AddParticle spawns a Particle at a given position in the World. Viewers that
 // are viewing the chunk will be shown the particle.
 func (tx *Tx) AddParticle(pos mgl64.Vec3, p Particle) {
+	if tx.view != nil {
+		return
+	}
 	tx.World().addParticle(pos, p)
 }
 
@@ -248,6 +279,9 @@ func (tx *Tx) PlayEntityAnimation(e Entity, a EntityAnimation) {
 // PlaySound plays a sound at a specific position in the World. Viewers of that
 // position will be able to hear the sound if they are close enough.
 func (tx *Tx) PlaySound(pos mgl64.Vec3, s Sound) {
+	if tx.view != nil {
+		return
+	}
 	tx.World().playSound(tx, pos, s)
 }
 
