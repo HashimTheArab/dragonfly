@@ -246,6 +246,18 @@ func TestBlock_PlacementViewSetLiquidUsesVanillaLayer(t *testing.T) {
 	})
 }
 
+func TestBlock_PlacementViewRejectsWritesOutsideWorldRange(t *testing.T) {
+	t.Parallel()
+
+	view := newPlacementViewForTest(newPlacementTestSource(world.Overworld, nil))
+	pos := cube.Pos{4, world.Overworld.Range().Max() + 1, 7}
+	view.SetBlock(pos, Stone{})
+	view.SetLiquid(pos, Water{Still: true, Depth: 8})
+	if len(view.changes) != 0 {
+		t.Fatalf("changes = %#v, want no writes outside the world range", view.changes)
+	}
+}
+
 type placementTestSource struct {
 	dim     world.Dimension
 	blocks  map[cube.Pos]world.Block

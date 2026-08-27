@@ -133,6 +133,9 @@ func (v *placementView) Liquid(pos cube.Pos) (world.Liquid, bool) {
 }
 
 func (v *placementView) SetBlock(pos cube.Pos, b world.Block) {
+	if pos.OutOfBounds(v.Range()) {
+		return
+	}
 	if b == nil {
 		b = Air{}
 	}
@@ -164,6 +167,9 @@ func (v *placementView) SetBlock(pos cube.Pos, b world.Block) {
 }
 
 func (v *placementView) SetLiquid(pos cube.Pos, liquid world.Liquid) {
+	if pos.OutOfBounds(v.Range()) {
+		return
+	}
 	primary := v.Block(pos)
 	_, hasSecondary := v.secondaryLiquid(pos, primary)
 	if liquid == nil {
