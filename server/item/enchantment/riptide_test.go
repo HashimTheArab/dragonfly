@@ -11,21 +11,21 @@ func TestRiptide_RegistryIdentity(t *testing.T) {
 	if !ok {
 		t.Fatal("Riptide is not registered")
 	}
-	if id != 30 {
-		t.Fatalf("Riptide ID = %v, want 30", id)
+	if id != riptideID {
+		t.Fatalf("Riptide ID = %v, want %d", id, riptideID)
 	}
 	if Riptide.MaxLevel() != 3 {
 		t.Fatalf("Riptide max level = %v, want 3", Riptide.MaxLevel())
 	}
 
-	got, ok := item.EnchantmentByID(30)
+	got, ok := item.EnchantmentByID(riptideID)
 	if !ok || got != Riptide {
-		t.Fatalf("enchantment 30 = %T, %v, want Riptide, true", got, ok)
+		t.Fatalf("enchantment %d = %T, %v, want Riptide, true", riptideID, got, ok)
 	}
 }
 
 func TestRiptide_FutureExclusiveEnchantmentsAreSymmetric(t *testing.T) {
-	for _, id := range []int{31, 32} {
+	for _, id := range []int{loyaltyID, channelingID} {
 		other, registered := item.EnchantmentByID(id)
 		if !registered {
 			continue

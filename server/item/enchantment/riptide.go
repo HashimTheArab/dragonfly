@@ -34,8 +34,8 @@ func (riptide) Rarity() item.EnchantmentRarity {
 
 // CompatibleWithEnchantment ...
 func (riptide) CompatibleWithEnchantment(t item.EnchantmentType) bool {
-	// TODO: Loyalty and Channeling.
-	return true
+	id, registered := item.EnchantmentID(t)
+	return !registered || (id != loyaltyID && id != channelingID)
 }
 
 // CompatibleWithItem ...
