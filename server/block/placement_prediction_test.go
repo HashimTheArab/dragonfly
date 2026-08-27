@@ -161,6 +161,91 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 	})
 }
 
+func TestBlock_PlacementViewMirrorsLiquidDisplacement(t *testing.T) {
+	pos := cube.Pos{4, 64, 7}
+	sourceWater := Water{Still: true, Depth: 8}
+	stoneSlab := Slab{Block: Stone{}}
+
+	t.Run("primary liquid moves to layer one", func(t *testing.T) {
+		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{pos: sourceWater})
+		view := newPlacementViewForTest(src)
+		view.SetBlock(pos, stoneSlab)
+
+		if got := view.Block(pos); got != stoneSlab {
+			t.Fatalf("primary block = %#v, want %#v", got, stoneSlab)
+		}
+		if got, ok := view.Liquid(pos); !ok || got != sourceWater {
+			t.Fatalf("liquid = %#v, %v; want displaced source water", got, ok)
+		}
+		assertPlacementChanges(t, view.changes,
+			PredictedBlockChange{Pos: pos, Block: sourceWater, Layer: 1},
+			PredictedBlockChange{Pos: pos, Block: stoneSlab},
+		)
+	})
+
+	t.Run("solid replacement clears layer one", func(t *testing.T) {
+		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{pos: stoneSlab})
+		src.liquids[pos] = sourceWater
+		view := newPlacementViewForTest(src)
+		view.SetBlock(pos, Stone{})
+
+		if got, ok := view.Liquid(pos); ok {
+			t.Fatalf("liquid = %#v, %v; want cleared", got, ok)
+		}
+		assertPlacementChanges(t, view.changes,
+			PredictedBlockChange{Pos: pos, Block: Air{}, Layer: 1},
+			PredictedBlockChange{Pos: pos, Block: Stone{}},
+		)
+	})
+
+	t.Run("removing displacer restores liquid to primary", func(t *testing.T) {
+		src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{pos: stoneSlab})
+		src.liquids[pos] = sourceWater
+		view := newPlacementViewForTest(src)
+		view.SetBlock(pos, Air{})
+
+		if got := view.Block(pos); got != sourceWater {
+			t.Fatalf("primary block = %#v, want restored source water", got)
+		}
+		assertPlacementChanges(t, view.changes,
+			PredictedBlockChange{Pos: pos, Block: Air{}, Layer: 1},
+			PredictedBlockChange{Pos: pos, Block: sourceWater},
+		)
+	})
+}
+
+func TestBlock_PlacementViewSetLiquidUsesVanillaLayer(t *testing.T) {
+	pos := cube.Pos{4, 64, 7}
+	sourceWater := Water{Still: true, Depth: 8}
+
+	t.Run("air receives primary liquid", func(t *testing.T) {
+		view := newPlacementViewForTest(newPlacementTestSource(world.Overworld, nil))
+		view.SetLiquid(pos, sourceWater)
+		if got := view.Block(pos); got != sourceWater {
+			t.Fatalf("primary block = %#v, want source water", got)
+		}
+		assertPlacementChanges(t, view.changes, PredictedBlockChange{Pos: pos, Block: sourceWater})
+	})
+
+	t.Run("replaceable plant retains primary and receives layer one", func(t *testing.T) {
+		grass := ShortGrass{}
+		view := newPlacementViewForTest(newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{pos: grass}))
+		view.SetLiquid(pos, sourceWater)
+		if got := view.Block(pos); got != grass {
+			t.Fatalf("primary block = %#v, want short grass", got)
+		}
+		assertPlacementChanges(t, view.changes, PredictedBlockChange{Pos: pos, Block: sourceWater, Layer: 1})
+	})
+
+	t.Run("non-displacing solid rejects liquid", func(t *testing.T) {
+		view := newPlacementViewForTest(newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{pos: Stone{}}))
+		view.SetLiquid(pos, sourceWater)
+		if len(view.changes) != 0 {
+			t.Fatalf("changes = %#v, want none", view.changes)
+		}
+	})
+}
+
 type placementTestSource struct {
 	dim     world.Dimension
 	blocks  map[cube.Pos]world.Block
@@ -173,6 +258,28 @@ func newPlacementTestSource(dim world.Dimension, blocks map[cube.Pos]world.Block
 		dim: dim, blocks: blocks,
 		liquids: make(map[cube.Pos]world.Liquid),
 		unknown: make(map[cube.Pos]bool),
+	}
+}
+
+func newPlacementViewForTest(src PlacementSource) *placementView {
+	return &placementView{
+		src:          src,
+		blocks:       make(map[cube.Pos]world.Block),
+		liquids:      make(map[cube.Pos]world.Liquid),
+		liquidWrites: make(map[cube.Pos]struct{}),
+		known:        true,
+	}
+}
+
+func assertPlacementChanges(t *testing.T, got []PredictedBlockChange, want ...PredictedBlockChange) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("changes = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i].Pos != want[i].Pos || got[i].Block != want[i].Block || got[i].Layer != want[i].Layer {
+			t.Fatalf("change %d = %#v, want %#v", i, got[i], want[i])
+		}
 	}
 }
 
@@ -194,6 +301,9 @@ func (s *placementTestSource) BlockLoaded(pos cube.Pos) (world.Block, bool) {
 }
 
 func (s *placementTestSource) Liquid(pos cube.Pos) (world.Liquid, bool) {
+	if liquid, ok := s.blocks[pos].(world.Liquid); ok {
+		return liquid, true
+	}
 	liquid, ok := s.liquids[pos]
 	return liquid, ok
 }

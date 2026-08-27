@@ -27,6 +27,9 @@ type PlacementUser interface {
 type PredictedBlockChange struct {
 	Pos   cube.Pos
 	Block world.Block
+	// Layer is the Bedrock block layer written by the placement. Primary
+	// blocks use layer zero; displaced or cleared liquids use layer one.
+	Layer uint8
 }
 
 // PredictPlacement runs placed's actual placement behaviour against src and
@@ -107,15 +110,23 @@ func (v *placementView) BlockLoaded(pos cube.Pos) (world.Block, bool) {
 }
 
 func (v *placementView) Liquid(pos cube.Pos) (world.Liquid, bool) {
+	if liquid, ok := v.Block(pos).(world.Liquid); ok {
+		return liquid, true
+	}
 	if _, written := v.liquidWrites[pos]; written {
 		liquid := v.liquids[pos]
 		return liquid, liquid != nil
 	}
-	if liquid, ok := v.blocks[pos].(world.Liquid); ok {
-		return liquid, true
-	}
-	if _, ok := v.src.BlockLoaded(pos); !ok {
+	primary, ok := v.src.BlockLoaded(pos)
+	if !ok {
 		v.known = false
+		return nil, false
+	}
+	// PlacementSource.Liquid returns either layer. If the source primary block
+	// is itself liquid, it was already handled above; consulting the source
+	// after a staged primary replacement would otherwise resurrect that stale
+	// layer-zero liquid.
+	if _, primaryLiquid := primary.(world.Liquid); primaryLiquid {
 		return nil, false
 	}
 	return v.src.Liquid(pos)
@@ -125,11 +136,90 @@ func (v *placementView) SetBlock(pos cube.Pos, b world.Block) {
 	if b == nil {
 		b = Air{}
 	}
+	oldPrimary := v.Block(pos)
+	oldSecondary, hasSecondary := v.secondaryLiquid(pos, oldPrimary)
+
+	if _, air := b.(Air); air && hasSecondary {
+		// Real world transactions move a displaced liquid back to the primary
+		// layer when the containing block is removed.
+		v.setSecondaryLiquid(pos, nil)
+		v.setPrimaryBlock(pos, oldSecondary)
+		return
+	}
+	oldPrimaryLiquid, primaryWasLiquid := oldPrimary.(world.Liquid)
+	if displacer, ok := b.(world.LiquidDisplacer); ok {
+		if primaryWasLiquid && displacer.CanDisplace(oldPrimaryLiquid) {
+			v.setSecondaryLiquid(pos, oldPrimaryLiquid)
+		} else if primaryWasLiquid {
+			v.markSecondaryLiquid(pos, nil)
+		}
+	} else {
+		if hasSecondary {
+			v.setSecondaryLiquid(pos, nil)
+		} else if primaryWasLiquid {
+			v.markSecondaryLiquid(pos, nil)
+		}
+	}
+	v.setPrimaryBlock(pos, b)
+}
+
+func (v *placementView) SetLiquid(pos cube.Pos, liquid world.Liquid) {
+	primary := v.Block(pos)
+	_, hasSecondary := v.secondaryLiquid(pos, primary)
+	if liquid == nil {
+		if _, primaryLiquid := primary.(world.Liquid); primaryLiquid {
+			v.setPrimaryBlock(pos, Air{})
+		}
+		if hasSecondary {
+			v.setSecondaryLiquid(pos, nil)
+		}
+		return
+	}
+
+	replaceable, canReplace := primary.(Replaceable)
+	displacer, canDisplace := primary.(world.LiquidDisplacer)
+	if (!canReplace || !replaceable.ReplaceableBy(liquid)) && (!canDisplace || !displacer.CanDisplace(liquid)) {
+		return
+	}
+	_, primaryIsAir := primary.(Air)
+	_, primaryIsLiquid := primary.(world.Liquid)
+	if primaryIsAir || primaryIsLiquid {
+		if hasSecondary {
+			v.setSecondaryLiquid(pos, nil)
+		}
+		v.setPrimaryBlock(pos, liquid)
+		return
+	}
+	v.setSecondaryLiquid(pos, liquid)
+}
+
+func (v *placementView) secondaryLiquid(pos cube.Pos, primary world.Block) (world.Liquid, bool) {
+	if _, written := v.liquidWrites[pos]; written {
+		liquid := v.liquids[pos]
+		return liquid, liquid != nil
+	}
+	if _, primaryLiquid := primary.(world.Liquid); primaryLiquid {
+		return nil, false
+	}
+	liquid, ok := v.src.Liquid(pos)
+	return liquid, ok
+}
+
+func (v *placementView) setPrimaryBlock(pos cube.Pos, b world.Block) {
 	v.blocks[pos] = b
 	v.changes = append(v.changes, PredictedBlockChange{Pos: pos, Block: b})
 }
 
-func (v *placementView) SetLiquid(pos cube.Pos, liquid world.Liquid) {
+func (v *placementView) setSecondaryLiquid(pos cube.Pos, liquid world.Liquid) {
+	v.markSecondaryLiquid(pos, liquid)
+	b := world.Block(Air{})
+	if liquid != nil {
+		b = liquid
+	}
+	v.changes = append(v.changes, PredictedBlockChange{Pos: pos, Block: b, Layer: 1})
+}
+
+func (v *placementView) markSecondaryLiquid(pos cube.Pos, liquid world.Liquid) {
 	v.liquidWrites[pos] = struct{}{}
 	v.liquids[pos] = liquid
 }
