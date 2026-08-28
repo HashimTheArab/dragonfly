@@ -71,8 +71,6 @@ type (
 // ArmourSlot returns the armour-container slot accepted for an item. The bool is false when the item is not wearable.
 func ArmourSlot(it world.Item) (int, bool) {
 	switch wearable := it.(type) {
-	case ArmourSlotProvider:
-		return wearable.ArmourSlot()
 	case HelmetType:
 		return 0, wearable.Helmet()
 	case ChestplateType:
@@ -83,6 +81,8 @@ func ArmourSlot(it world.Item) (int, bool) {
 		return 3, wearable.Boots()
 	case BodyType:
 		return 4, wearable.Body()
+	case ArmourSlotProvider:
+		return wearable.ArmourSlot()
 	default:
 		return 0, false
 	}
