@@ -107,6 +107,10 @@ func IsValidPairedContainerAt(source PairedContainerSource, pos cube.Pos) bool {
 	if !ok {
 		return false
 	}
+	dx, dz := pairPos[0]-pos[0], pairPos[2]-pos[2]
+	if dx*dx+dz*dz != 1 {
+		return false
+	}
 	pairName, pairProperties := source.Block(pairPos).EncodeBlock()
 	if pairName != name || !matchingPairedContainerFacing(properties, pairProperties) {
 		return false

@@ -75,6 +75,13 @@ func TestIsValidPairedContainerAt(t *testing.T) {
 	if IsValidPairedContainerAt(source, pos) {
 		t.Fatal("one-sided pair metadata was accepted")
 	}
+	nonAdjacent := cube.Pos{4, 64, 1}
+	source.blocks[nonAdjacent] = NewChest()
+	source.data[pos] = map[string]any{"pairx": int32(nonAdjacent[0]), "pairz": int32(nonAdjacent[2])}
+	source.data[nonAdjacent] = map[string]any{"pairx": int32(pos[0]), "pairz": int32(pos[2])}
+	if IsValidPairedContainerAt(source, pos) {
+		t.Fatal("non-adjacent reciprocal chest metadata was accepted")
+	}
 }
 
 func TestContainerSizeAt(t *testing.T) {
