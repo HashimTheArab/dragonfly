@@ -56,6 +56,25 @@ type PairedContainerSource interface {
 	BlockEntityData(cube.Pos) (map[string]any, bool)
 }
 
+// ContainerSizeAt returns the client-visible capacity of the container at pos.
+// Paired chest models expose the combined capacity of both physical blocks.
+func ContainerSizeAt(source PairedContainerSource, pos cube.Pos) (int, bool) {
+	b := source.Block(pos)
+	sizer, ok := b.(ContainerSizer)
+	if !ok {
+		return 0, false
+	}
+	size := sizer.ContainerSize()
+	if size <= 0 {
+		return 0, false
+	}
+	name, _ := b.EncodeBlock()
+	if size == 27 && IsPairedContainerName(name) && IsValidPairedContainerAt(source, pos) {
+		return 54, true
+	}
+	return size, true
+}
+
 // IsPairableChestName reports whether name is a standard chest that may pair.
 func IsPairableChestName(name string) bool {
 	return name == PairableChestName || name == PairableTrappedChestName
