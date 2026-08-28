@@ -76,7 +76,7 @@ func PairedContainerPosition(data map[string]any, y int) (cube.Pos, bool) {
 // IsValidPairedContainerAt reports whether pos and its referenced partner have
 // matching block types and reciprocal pair metadata.
 func IsValidPairedContainerAt(source PairedContainerSource, pos cube.Pos) bool {
-	name, _ := source.Block(pos).EncodeBlock()
+	name, properties := source.Block(pos).EncodeBlock()
 	if !IsPairedContainerName(name) {
 		return false
 	}
@@ -88,8 +88,8 @@ func IsValidPairedContainerAt(source PairedContainerSource, pos cube.Pos) bool {
 	if !ok {
 		return false
 	}
-	pairName, _ := source.Block(pairPos).EncodeBlock()
-	if pairName != name {
+	pairName, pairProperties := source.Block(pairPos).EncodeBlock()
+	if pairName != name || !matchingPairedContainerFacing(properties, pairProperties) {
 		return false
 	}
 	pairData, ok := source.BlockEntityData(pairPos)
@@ -98,4 +98,20 @@ func IsValidPairedContainerAt(source PairedContainerSource, pos cube.Pos) bool {
 	}
 	back, ok := PairedContainerPosition(pairData, pairPos[1])
 	return ok && back == pos
+}
+
+// matchingPairedContainerFacing reports whether two paired-container block
+// states declare the same cardinal direction.
+func matchingPairedContainerFacing(a, b map[string]any) bool {
+	aValue, aPresent := a["minecraft:cardinal_direction"]
+	bValue, bPresent := b["minecraft:cardinal_direction"]
+	if aPresent != bPresent {
+		return false
+	}
+	if !aPresent {
+		return true
+	}
+	aFacing, aOK := aValue.(string)
+	bFacing, bOK := bValue.(string)
+	return aOK && bOK && aFacing == bFacing
 }

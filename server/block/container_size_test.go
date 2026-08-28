@@ -64,6 +64,13 @@ func TestIsValidPairedContainerAt(t *testing.T) {
 	if !IsValidPairedContainerAt(source, pos) || !IsValidPairedContainerAt(source, pair) {
 		t.Fatal("reciprocal matching chests were not accepted")
 	}
+	first, second := NewChest(), NewChest()
+	first.Facing, second.Facing = cube.North, cube.South
+	source.blocks[pos], source.blocks[pair] = first, second
+	if IsValidPairedContainerAt(source, pos) {
+		t.Fatal("reciprocal chests with different facings were accepted")
+	}
+	source.blocks[pos], source.blocks[pair] = NewChest(), NewChest()
 	source.data[pair] = map[string]any{"pairx": int32(9), "pairz": int32(9)}
 	if IsValidPairedContainerAt(source, pos) {
 		t.Fatal("one-sided pair metadata was accepted")
