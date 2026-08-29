@@ -101,6 +101,28 @@ func TestCustomBlock_CloneEncodedPropertiesWithMaterialRejectsMissingGeometry(t 
 	}
 }
 
+func TestCustomBlock_CloneEncodedPropertiesWithMaterialAddsMissingVanillaData(t *testing.T) {
+	t.Parallel()
+
+	properties := map[string]any{
+		"components": map[string]any{
+			"minecraft:geometry": map[string]any{"identifier": "geometry.server.shaped"},
+		},
+	}
+	cloned, err := CloneEncodedPropertiesWithMaterial(
+		properties, 34, NewMaterial("replacement", BlendRenderMethod()),
+	)
+	if err != nil {
+		t.Fatalf("CloneEncodedPropertiesWithMaterial() error = %v", err)
+	}
+	if got := cloned["vanilla_block_data"].(map[string]any)["block_id"]; got != int32(34) {
+		t.Fatalf("cloned block ID = %v, want 34", got)
+	}
+	if _, ok := properties["vanilla_block_data"]; ok {
+		t.Fatal("source properties gained vanilla block data")
+	}
+}
+
 func TestCustomBlock_EncodedPropertiesHaveGeometry(t *testing.T) {
 	t.Parallel()
 

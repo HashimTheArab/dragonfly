@@ -29,9 +29,10 @@ func CloneEncodedPropertiesWithMaterial(
 	}
 
 	components := cloned["components"].(map[string]any)
-	vanillaData, ok := cloned["vanilla_block_data"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("encoded custom block properties have no vanilla block data")
+	vanillaData, _ := cloned["vanilla_block_data"].(map[string]any)
+	if vanillaData == nil {
+		vanillaData = make(map[string]any)
+		cloned["vanilla_block_data"] = vanillaData
 	}
 	vanillaData["block_id"] = blockID
 	replacement := Properties{Textures: map[string]Material{"*": material}}
