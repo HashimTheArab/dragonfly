@@ -3,6 +3,8 @@ package customblock
 import (
 	"reflect"
 	"testing"
+
+	"github.com/sandertv/gophertunnel/minecraft/nbt"
 )
 
 func TestCustomBlock_CloneEncodedPropertiesWithMaterial(t *testing.T) {
@@ -10,15 +12,22 @@ func TestCustomBlock_CloneEncodedPropertiesWithMaterial(t *testing.T) {
 
 	sourceMaterial := map[string]any{"materials": map[string]any{"*": map[string]any{"texture": "source"}}}
 	properties := map[string]any{
-		"vanilla_block_data": map[string]any{"block_id": int32(12)},
+		"unknown_top_level":  map[string]any{"preserved": "yes"},
+		"vanilla_block_data": map[string]any{"block_id": int32(12), "unknown_sibling": int32(7)},
 		"properties": []any{map[string]any{
 			"name": "server:variant",
 			"enum": []int32{0, 1},
+		}},
+		"traits": []any{map[string]any{
+			"name":              "minecraft:placement_direction",
+			"enabled_states":    []any{"minecraft:cardinal_direction"},
+			"y_rotation_offset": int32(0),
 		}},
 		"components": map[string]any{
 			"minecraft:geometry":           map[string]any{"identifier": "geometry.server.shaped"},
 			"minecraft:collision_box":      map[string]any{"enabled": uint8(1)},
 			"minecraft:material_instances": sourceMaterial,
+			"server:unknown_component":     map[string]any{"preserved": uint8(1)},
 		},
 		"permutations": []any{
 			map[string]any{
@@ -26,6 +35,7 @@ func TestCustomBlock_CloneEncodedPropertiesWithMaterial(t *testing.T) {
 				"components": map[string]any{
 					"minecraft:transformation":     map[string]any{"RY": int32(1)},
 					"minecraft:material_instances": sourceMaterial,
+					"server:unknown_component":     map[string]any{"preserved": uint8(1)},
 				},
 			},
 			map[string]any{
@@ -34,17 +44,28 @@ func TestCustomBlock_CloneEncodedPropertiesWithMaterial(t *testing.T) {
 			},
 		},
 	}
+	data, err := nbt.Marshal(properties)
+	if err != nil {
+		t.Fatalf("marshal source properties: %v", err)
+	}
+	var original map[string]any
+	if err := nbt.Unmarshal(data, &original); err != nil {
+		t.Fatalf("unmarshal source properties: %v", err)
+	}
 	material := NewMaterial("replacement", BlendRenderMethod()).WithoutAmbientOcclusion()
 
-	cloned, ok, err := CloneEncodedPropertiesWithMaterial(properties, 34, material)
+	cloned, err := CloneEncodedPropertiesWithMaterial(properties, 34, material)
 	if err != nil {
 		t.Fatalf("CloneEncodedPropertiesWithMaterial() error = %v", err)
 	}
-	if !ok {
-		t.Fatal("CloneEncodedPropertiesWithMaterial() rejected properties with geometry")
-	}
 	if got := cloned["vanilla_block_data"].(map[string]any)["block_id"]; got != int32(34) {
 		t.Fatalf("cloned block ID = %v, want 34", got)
+	}
+	if got := cloned["vanilla_block_data"].(map[string]any)["unknown_sibling"]; got != int32(7) {
+		t.Fatalf("cloned vanilla block sibling = %v, want 7", got)
+	}
+	if !reflect.DeepEqual(cloned["unknown_top_level"], properties["unknown_top_level"]) {
+		t.Fatal("clone did not preserve unknown top-level data")
 	}
 	components := cloned["components"].(map[string]any)
 	if got := components["minecraft:geometry"].(map[string]any)["identifier"]; got != "geometry.server.shaped" {
@@ -65,18 +86,18 @@ func TestCustomBlock_CloneEncodedPropertiesWithMaterial(t *testing.T) {
 	if !reflect.DeepEqual(properties["components"].(map[string]any)["minecraft:material_instances"], sourceMaterial) {
 		t.Fatal("source material mutated")
 	}
+	if !reflect.DeepEqual(properties, original) {
+		t.Fatal("source properties mutated")
+	}
 }
 
 func TestCustomBlock_CloneEncodedPropertiesWithMaterialRejectsMissingGeometry(t *testing.T) {
 	t.Parallel()
 
 	properties := map[string]any{"components": map[string]any{"minecraft:collision_box": map[string]any{}}}
-	cloned, ok, err := CloneEncodedPropertiesWithMaterial(properties, 34, NewMaterial("replacement", BlendRenderMethod()))
-	if err != nil {
-		t.Fatalf("CloneEncodedPropertiesWithMaterial() error = %v", err)
-	}
-	if ok || cloned != nil {
-		t.Fatalf("CloneEncodedPropertiesWithMaterial() = (%v, %t), want (nil, false)", cloned, ok)
+	cloned, err := CloneEncodedPropertiesWithMaterial(properties, 34, NewMaterial("replacement", BlendRenderMethod()))
+	if err == nil || cloned != nil {
+		t.Fatalf("CloneEncodedPropertiesWithMaterial() = (%v, %v), want (nil, error)", cloned, err)
 	}
 }
 
