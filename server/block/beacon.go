@@ -26,6 +26,8 @@ type Beacon struct {
 	level int
 }
 
+func (Beacon) OpensContainer() {}
+
 // BeaconSource represents a block which is capable of contributing to powering a beacon pyramid.
 type BeaconSource interface {
 	// PowersBeacon returns a bool which indicates whether this block can contribute to powering up a

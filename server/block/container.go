@@ -33,6 +33,12 @@ type ContainerOpener interface {
 	OpenBlockContainer(pos cube.Pos, tx *world.Tx)
 }
 
+// ContainerOpening is implemented by blocks whose activation opens a block
+// container or UI through ContainerOpener.
+type ContainerOpening interface {
+	OpensContainer()
+}
+
 // Container represents a container of items, typically a block such as a chest. Containers may have their
 // inventory opened by viewers.
 type Container interface {

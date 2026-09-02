@@ -15,6 +15,8 @@ type EnchantingTable struct {
 	sourceWaterDisplacer
 }
 
+func (EnchantingTable) OpensContainer() {}
+
 // Model ...
 func (e EnchantingTable) Model() world.BlockModel {
 	return model.EnchantingTable{}

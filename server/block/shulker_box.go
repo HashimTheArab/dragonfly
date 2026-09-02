@@ -50,6 +50,8 @@ type ShulkerBox struct {
 	animationStatus *atomic.Int32
 }
 
+func (ShulkerBox) OpensContainer() {}
+
 // NewShulkerBox creates a new initialised shulker box. The inventory is properly initialised.
 func NewShulkerBox() ShulkerBox {
 	s := ShulkerBox{

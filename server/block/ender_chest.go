@@ -30,6 +30,8 @@ type EnderChest struct {
 	viewers *atomic.Int64
 }
 
+func (EnderChest) OpensContainer() {}
+
 // NewEnderChest creates a new initialised ender chest.
 func NewEnderChest() EnderChest {
 	return EnderChest{viewers: &atomic.Int64{}}
