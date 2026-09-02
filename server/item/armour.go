@@ -61,10 +61,20 @@ type (
 	BodyType interface {
 		Body() bool
 	}
+	// ArmourSlotProvider exposes the armour-container slot accepted by an item
+	// whose concrete type is supplied outside Dragonfly's vanilla registry.
+	ArmourSlotProvider interface {
+		ArmourSlot() (int, bool)
+	}
 )
 
 // ArmourSlot returns the armour-container slot accepted for an item. The bool is false when the item is not wearable.
 func ArmourSlot(it world.Item) (int, bool) {
+	if provider, ok := it.(ArmourSlotProvider); ok {
+		if slot, wearable := provider.ArmourSlot(); wearable {
+			return slot, true
+		}
+	}
 	switch wearable := it.(type) {
 	case HelmetType:
 		return 0, wearable.Helmet()
