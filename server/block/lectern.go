@@ -27,6 +27,8 @@ type Lectern struct {
 	Page int
 }
 
+func (Lectern) OpensContainer() {}
+
 // Model ...
 func (Lectern) Model() world.BlockModel {
 	return model.Lectern{}

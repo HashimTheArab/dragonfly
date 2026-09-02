@@ -33,6 +33,8 @@ type Barrel struct {
 	viewers   map[ContainerViewer]struct{}
 }
 
+func (Barrel) OpensContainer() {}
+
 // NewBarrel creates a new initialised barrel. The inventory is properly initialised.
 func NewBarrel() Barrel {
 	m := new(sync.RWMutex)

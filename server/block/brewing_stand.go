@@ -25,6 +25,8 @@ type BrewingStand struct {
 	RightSlot bool
 }
 
+func (BrewingStand) OpensContainer() {}
+
 // NewBrewingStand creates a new initialised brewing stand. The inventory is properly initialised.
 func NewBrewingStand() BrewingStand {
 	return BrewingStand{brewer: newBrewer()}
