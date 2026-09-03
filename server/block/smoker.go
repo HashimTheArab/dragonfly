@@ -25,6 +25,8 @@ type Smoker struct {
 	Lit bool
 }
 
+func (Smoker) OpensContainer() {}
+
 // ContainerSize returns the number of slots in a smoker.
 func (Smoker) ContainerSize() int { return 3 }
 

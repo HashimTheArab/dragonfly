@@ -170,3 +170,13 @@ func (w WoodType) Leaves() (LeavesType, bool) {
 		return LeavesType{}, false
 	}
 }
+
+// Sapling returns whether the wood type grows from a sapling. Crimson and warped grow from fungi, mangrove from a
+// propagule and bamboo from a bamboo sapling, none of which are Sapling blocks.
+func (w WoodType) Sapling() bool {
+	switch w {
+	case CrimsonWood(), WarpedWood(), MangroveWood(), BambooWood():
+		return false
+	}
+	return true
+}
