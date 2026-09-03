@@ -50,6 +50,9 @@ type BlockRegistry interface {
 	CustomBlocks() map[string]CustomBlock
 	// BlockByName looks up a Block by full identifier and properties.
 	BlockByName(name string, properties map[string]any) (Block, bool)
+	// BlockByNBTState looks up a Block by full identifier and properties read
+	// from NBT, whose numeric types may differ from the ones the palette holds.
+	BlockByNBTState(name string, properties map[string]any) (Block, bool)
 	// Blocks returns all blocks registered in the registry, indexed by runtime ID.
 	Blocks() []Block
 	// Air returns the air block registered in the registry.
@@ -578,6 +581,78 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 		return nil, false
 	}
 	return br.blocks[rid], true
+}
+
+// BlockByNBTState looks up a Block by name and properties decoded from NBT.
+//
+// Property values are hashed by type, so a boolean the palette holds as a byte
+// does not match the same property written as an int. Structure files and other
+// third-party sources do write them that way, and the resulting state would
+// otherwise silently fail to resolve. Values are coerced to the type the
+// palette declares for the block before the lookup, which leaves genuinely
+// numeric properties such as a stair's direction alone. Properties the palette
+// does not declare at all are dropped, since no registered state carries them.
+func (br *BasicBlockRegistry) BlockByNBTState(name string, properties map[string]any) (Block, bool) {
+	if b, ok := br.BlockByName(name, properties); ok {
+		return b, true
+	}
+	declared, ok := br.blockProperties[name]
+	if !ok {
+		return nil, false
+	}
+	coerced := make(map[string]any, len(properties))
+	extra := false
+	for property, value := range properties {
+		if _, ok := declared[property]; !ok {
+			extra = true
+			continue
+		}
+		coerced[property] = coerceStateValue(value, declared[property])
+	}
+	if !extra {
+		return br.BlockByName(name, coerced)
+	}
+	// A state may also carry properties this palette does not know, either
+	// because the block predates them or because the block derives them rather
+	// than storing them, the way a fence reads its arms from its neighbours.
+	// No registered state holds them, so the only candidate is the state
+	// without them.
+	if b, ok := br.BlockByName(name, coerced); ok {
+		return b, true
+	}
+	full := make(map[string]any, len(properties))
+	for property, value := range properties {
+		full[property] = coerceStateValue(value, declared[property])
+	}
+	return br.BlockByName(name, full)
+}
+
+// coerceStateValue converts one NBT property value to the type the palette
+// declares for it.
+//
+// A block state property is only ever a byte, an int or a string, so a string
+// never needs converting and only the two numeric spellings can disagree. A
+// value whose declared type cannot hold it is returned unchanged, so the caller
+// still fails the lookup rather than resolving to the wrong state.
+func coerceStateValue(value, declared any) any {
+	var number int32
+	switch v := value.(type) {
+	case uint8:
+		number = int32(v)
+	case int32:
+		number = v
+	default:
+		return value
+	}
+	switch declared.(type) {
+	case bool:
+		return number != 0
+	case uint8:
+		return uint8(number)
+	case int32:
+		return number
+	}
+	return value
 }
 
 // CustomBlocks returns a map of all custom blocks registered with their names as keys.
