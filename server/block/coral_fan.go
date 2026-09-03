@@ -34,6 +34,9 @@ func (c CoralFan) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *wor
 	if !coralPlaceableIn(pos, tx) {
 		return false
 	}
+	if !coralFanWaterlogged(pos, tx) {
+		c.Dead = true
+	}
 	if face != cube.FaceUp {
 		supportPos := pos.Side(face.Opposite())
 		if !tx.Block(supportPos).Model().FaceSolid(supportPos, face, tx) {
@@ -76,7 +79,7 @@ func (c CoralFan) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 
 // ScheduledTick ...
 func (c CoralFan) ScheduledTick(pos cube.Pos, tx *world.Tx, _ *rand.Rand) {
-	if !coralFanHasWater(pos, tx) {
+	if !coralFanWaterlogged(pos, tx) {
 		c.Dead = true
 		tx.SetBlock(pos, c, nil)
 	}
@@ -117,19 +120,9 @@ func allCoralFan() (c []world.Block) {
 	return
 }
 
-// coralFanHasWater reports whether a floor or wall fan is waterlogged or touches water.
-func coralFanHasWater(pos cube.Pos, tx *world.Tx) bool {
-	isWater := func(p cube.Pos) bool {
-		liquid, ok := tx.Liquid(p)
-		_, water := liquid.(Water)
-		return ok && water
-	}
-	if isWater(pos) {
-		return true
-	}
-	found := false
-	pos.Neighbours(func(neighbour cube.Pos) {
-		found = found || isWater(neighbour)
-	}, tx.Range())
-	return found
+// coralFanWaterlogged reports whether a floor or wall fan retains water in its own block layer.
+func coralFanWaterlogged(pos cube.Pos, tx *world.Tx) bool {
+	liquid, ok := tx.Liquid(pos)
+	_, water := liquid.(Water)
+	return ok && water
 }
