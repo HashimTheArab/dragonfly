@@ -32,7 +32,7 @@ func (t TripwireHook) RedstonePower(cube.Pos, *world.Tx, cube.Face) int {
 
 // RedstoneStrongPower ...
 func (t TripwireHook) RedstoneStrongPower(_ cube.Pos, _ *world.Tx, face cube.Face) int {
-	if t.Powered && t.Facing.Face() == face {
+	if t.Powered && t.Facing.Face().Opposite() == face {
 		return 15
 	}
 	return 0

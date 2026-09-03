@@ -35,10 +35,8 @@ func (c CoralFan) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *wor
 	if !tx.Block(below).Model().FaceSolid(below, cube.FaceUp, tx) {
 		return false
 	}
-	if liquid, ok := tx.Liquid(pos); ok {
-		if water, ok := liquid.(Water); ok && water.Depth != 8 {
-			return false
-		}
+	if !coralPlaceableIn(pos, tx) {
+		return false
 	}
 
 	c.Axis = cube.X
