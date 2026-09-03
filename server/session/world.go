@@ -12,6 +12,7 @@ import (
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/entity"
 	"github.com/df-mc/dragonfly/server/entity/effect"
+	"github.com/df-mc/dragonfly/server/entity/networkoffset"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/item/inventory"
@@ -40,11 +41,6 @@ type NetworkEncodeableEntity interface {
 type OffsetEntity interface {
 	NetworkOffset() float64
 }
-
-const (
-	horizontalPlayerNetworkOffset = 0.4
-	sneakingPlayerNetworkOffset   = 1.27001
-)
 
 // entityHidden checks if a world.Entity is being explicitly hidden from the Session.
 func (s *Session) entityHidden(e world.Entity) bool {
@@ -81,7 +77,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 	yaw, pitch := e.Rotation().Elem()
 	metadata := s.entityMetadata(e)
 
-	id := e.H().Type().EncodeEntity()
+	id := entityNetworkIdentifier(e.H().Type())
 	switch v := e.(type) {
 	case Controllable:
 		_, actualPlayer := sessions.Lookup(v.UUID())
@@ -142,10 +138,6 @@ func (s *Session) ViewEntity(e world.Entity) {
 			metadata[protocol.EntityDataKeyVariant] = int32(s.br.BlockRuntimeID(v.Behaviour().(*entity.FallingBlockBehaviour).Block()))
 		}
 	}
-	if v, ok := e.H().Type().(NetworkEncodeableEntity); ok {
-		id = v.NetworkEncodeEntity()
-	}
-
 	var vel mgl64.Vec3
 	if v, ok := e.(interface{ Velocity() mgl64.Vec3 }); ok {
 		vel = v.Velocity()
@@ -247,29 +239,49 @@ func (s *Session) ViewEntityVelocity(e world.Entity, velocity mgl64.Vec3) {
 
 // entityOffset returns the offset that entities have client-side.
 func entityOffset(e world.Entity) mgl64.Vec3 {
-	if e.H().Type().EncodeEntity() == "minecraft:player" {
+	entityType := e.H().Type()
+	if entityNetworkIdentifier(entityType) == "minecraft:player" {
+		pose := networkoffset.PlayerPose{}
 		if sl, ok := e.(sleeper); ok {
-			if _, sleeping := sl.Sleeping(); sleeping {
-				return mgl64.Vec3{0, 0.2}
-			}
+			_, pose.Sleeping = sl.Sleeping()
 		}
 		if sw, ok := e.(swimmer); ok && sw.Swimming() {
-			return mgl64.Vec3{0, horizontalPlayerNetworkOffset}
+			pose.Swimming = true
 		}
 		if cr, ok := e.(crawler); ok && cr.Crawling() {
-			return mgl64.Vec3{0, horizontalPlayerNetworkOffset}
+			pose.Crawling = true
 		}
 		if gl, ok := e.(glider); ok && gl.Gliding() {
-			return mgl64.Vec3{0, horizontalPlayerNetworkOffset}
+			pose.Gliding = true
 		}
 		if sn, ok := e.(sneaker); ok && sn.Sneaking() {
-			return mgl64.Vec3{0, sneakingPlayerNetworkOffset}
+			pose.Sneaking = true
+		}
+		if pose != (networkoffset.PlayerPose{}) {
+			return mgl64.Vec3{0, networkoffset.Player(pose)}
 		}
 	}
-	if offset, ok := e.H().Type().(OffsetEntity); ok {
-		return mgl64.Vec3{0, offset.NetworkOffset()}
+	return mgl64.Vec3{0, entityTypeOffset(entityType)}
+}
+
+// entityTypeOffset resolves an explicit type offset before its client-facing vanilla default.
+func entityTypeOffset(entityType world.EntityType) float64 {
+	if offset, ok := entityType.(OffsetEntity); ok {
+		return offset.NetworkOffset()
 	}
-	return mgl64.Vec3{}
+	identifier := entityNetworkIdentifier(entityType)
+	if identifier == "minecraft:player" {
+		return networkoffset.Player(networkoffset.PlayerPose{})
+	}
+	return networkoffset.Entity(identifier)
+}
+
+// entityNetworkIdentifier returns the identifier encoded to the client for an entity type.
+func entityNetworkIdentifier(entityType world.EntityType) string {
+	if networkType, ok := entityType.(NetworkEncodeableEntity); ok {
+		return networkType.NetworkEncodeEntity()
+	}
+	return entityType.EncodeEntity()
 }
 
 func entityNetworkPosition(e world.Entity, pos mgl64.Vec3) mgl64.Vec3 {
