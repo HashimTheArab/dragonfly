@@ -284,10 +284,12 @@ func entityNetworkIdentifier(entityType world.EntityType) string {
 	return entityType.EncodeEntity()
 }
 
+// entityNetworkPosition converts an entity base position to Bedrock network space.
 func entityNetworkPosition(e world.Entity, pos mgl64.Vec3) mgl64.Vec3 {
 	return pos.Add(entityOffset(e))
 }
 
+// entityBasePosition converts a Bedrock network position to an entity base position.
 func entityBasePosition(e world.Entity, pos mgl64.Vec3) mgl64.Vec3 {
 	return pos.Sub(entityOffset(e))
 }

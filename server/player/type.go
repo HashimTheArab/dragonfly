@@ -45,6 +45,7 @@ func (t ptype) Open(tx *world.Tx, handle *world.EntityHandle, data *world.Entity
 
 func (ptype) EncodeEntity() string { return "minecraft:player" }
 
+// NetworkOffset returns the standing player's Bedrock movement offset.
 func (ptype) NetworkOffset() float64 { return networkoffset.Player(networkoffset.PlayerPose{}) }
 func (ptype) BBox(e world.Entity) cube.BBox {
 	p := e.(*Player)
