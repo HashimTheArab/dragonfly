@@ -25,6 +25,8 @@ type BlastFurnace struct {
 	Lit bool
 }
 
+func (BlastFurnace) OpensContainer() {}
+
 // ContainerSize returns the number of slots in a blast furnace.
 func (BlastFurnace) ContainerSize() int { return 3 }
 

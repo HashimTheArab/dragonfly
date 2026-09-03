@@ -19,6 +19,8 @@ type Grindstone struct {
 	Facing cube.Direction
 }
 
+func (Grindstone) OpensContainer() {}
+
 // BreakInfo ...
 func (g Grindstone) BreakInfo() BreakInfo {
 	return newBreakInfo(2, pickaxeHarvestable, pickaxeEffective, oneOf(g)).withBlastResistance(6)
