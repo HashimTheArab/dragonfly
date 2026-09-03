@@ -185,6 +185,7 @@ func init() {
 	registerAll(allCoral())
 	registerAll(allCoralBlocks())
 	registerAll(allCoralFan())
+	registerAll(allCoralWallFans())
 	registerAll(allDeepslate())
 	registerAll(allDoors())
 	registerAll(allDoubleFlowers())
