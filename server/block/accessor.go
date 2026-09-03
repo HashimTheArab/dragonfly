@@ -213,6 +213,30 @@ func (b Grindstone) WithFacing(facing cube.Direction) world.Block {
 }
 
 // FacingDirection returns the horizontal direction the block faces.
+func (b IronDoor) FacingDirection() cube.Direction {
+	return b.Facing
+}
+
+// WithFacing returns a copy of the block with its facing set to facing. It does not update any
+// other blocks that the block may be part of, such as the second half of a bed or door.
+func (b IronDoor) WithFacing(facing cube.Direction) world.Block {
+	b.Facing = facing
+	return b
+}
+
+// FacingDirection returns the horizontal direction the block faces.
+func (b IronTrapdoor) FacingDirection() cube.Direction {
+	return b.Facing
+}
+
+// WithFacing returns a copy of the block with its facing set to facing. It does not update any
+// other blocks that the block may be part of, such as the second half of a bed or door.
+func (b IronTrapdoor) WithFacing(facing cube.Direction) world.Block {
+	b.Facing = facing
+	return b
+}
+
+// FacingDirection returns the horizontal direction the block faces.
 func (b Ladder) FacingDirection() cube.Direction {
 	return b.Facing
 }
@@ -321,6 +345,18 @@ func (b Stonecutter) WithFacing(facing cube.Direction) world.Block {
 }
 
 // FacingDirection returns the horizontal direction the block faces.
+func (b TripwireHook) FacingDirection() cube.Direction {
+	return b.Facing
+}
+
+// WithFacing returns a copy of the block with its facing set to facing. It does not update any
+// other blocks that the block may be part of, such as the second half of a bed or door.
+func (b TripwireHook) WithFacing(facing cube.Direction) world.Block {
+	b.Facing = facing
+	return b
+}
+
+// FacingDirection returns the horizontal direction the block faces.
 func (b WoodDoor) FacingDirection() cube.Direction {
 	return b.Facing
 }
@@ -396,6 +432,17 @@ func (b CopperChain) PillarAxis() cube.Axis {
 
 // WithAxis returns a copy of the block with its axis set to axis.
 func (b CopperChain) WithAxis(axis cube.Axis) world.Block {
+	b.Axis = axis
+	return b
+}
+
+// PillarAxis returns the axis the block is oriented along.
+func (b CoralFan) PillarAxis() cube.Axis {
+	return b.Axis
+}
+
+// WithAxis returns a copy of the block with its axis set to axis.
+func (b CoralFan) WithAxis(axis cube.Axis) world.Block {
 	b.Axis = axis
 	return b
 }
