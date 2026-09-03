@@ -98,11 +98,13 @@ func (s *Session) ViewEntity(e world.Entity) {
 			GameType:        gameTypeFromMode(v.GameMode()),
 			HeadYaw:         float32(yaw),
 			Pitch:           float32(pitch),
-			Position:        vec64To32(entityNetworkPosition(e, e.Position())),
-			UUID:            v.UUID(),
-			Username:        v.Name(),
-			Yaw:             float32(yaw),
-			BuildPlatform:   int32(protocol.DeviceUnknown),
+			// AddPlayer is encoded in base space. Player movement packets use the
+			// pose-specific network offset applied by entityNetworkPosition.
+			Position:      vec64To32(e.Position()),
+			UUID:          v.UUID(),
+			Username:      v.Name(),
+			Yaw:           float32(yaw),
+			BuildPlatform: int32(protocol.DeviceUnknown),
 			AbilityData: protocol.AbilityData{
 				EntityUniqueID: int64(runtimeID),
 				Layers: []protocol.AbilityLayer{{
