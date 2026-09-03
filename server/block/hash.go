@@ -63,6 +63,7 @@ const (
 	hashCoral
 	hashCoralBlock
 	hashCoralFan
+	hashCoralWallFan
 	hashCraftingTable
 	hashDeadBush
 	hashDecoratedPot
@@ -475,7 +476,11 @@ func (c CoralBlock) Hash() (uint64, uint64) {
 }
 
 func (c CoralFan) Hash() (uint64, uint64) {
-	return hashCoralFan, uint64(c.Type.Uint8()) | uint64(boolByte(c.Dead))<<3 | uint64(c.Axis)<<4
+	return hashCoralFan, uint64(c.Type.Uint8()) | uint64(boolByte(c.Dead))<<3 | uint64(boolByte(c.AlongZ))<<4
+}
+
+func (c CoralWallFan) Hash() (uint64, uint64) {
+	return hashCoralWallFan, uint64(c.Type.Uint8()) | uint64(boolByte(c.Dead))<<3 | uint64(c.Facing)<<4
 }
 
 func (CraftingTable) Hash() (uint64, uint64) {

@@ -10,7 +10,7 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 )
 
-// CoralFan is a non-solid block that comes in 5 variants and dies when it is no longer next to water.
+// CoralFan is a non-solid floor block that comes in 5 variants and dies when it is no longer touching water.
 type CoralFan struct {
 	empty
 	transparent
@@ -21,28 +21,33 @@ type CoralFan struct {
 	Type CoralType
 	// Dead is whether the coral fan is dead.
 	Dead bool
-	// Axis is the horizontal axis the fan is laid out along. Only X and Z are valid.
-	Axis cube.Axis
+	// AlongZ is whether the fan is laid out along the Z axis instead of the X axis.
+	AlongZ bool
 }
 
 // UseOnBlock ...
 func (c CoralFan) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx, user item.User, ctx *item.UseContext) bool {
-	pos, _, used := firstReplaceable(tx, pos, face, c)
-	if !used {
-		return false
-	}
-	below := pos.Side(cube.FaceDown)
-	if !tx.Block(below).Model().FaceSolid(below, cube.FaceUp, tx) {
+	pos, face, used := firstReplaceable(tx, pos, face, c)
+	if !used || face == cube.FaceDown {
 		return false
 	}
 	if !coralPlaceableIn(pos, tx) {
 		return false
 	}
-
-	c.Axis = cube.X
-	if user.Rotation().Direction().Face().Axis() == cube.X {
-		c.Axis = cube.Z
+	if face != cube.FaceUp {
+		supportPos := pos.Side(face.Opposite())
+		if !tx.Block(supportPos).Model().FaceSolid(supportPos, face, tx) {
+			return false
+		}
+		place(tx, pos, CoralWallFan{Type: c.Type, Dead: c.Dead, Facing: face.Direction()}, user, ctx)
+		return placed(ctx)
 	}
+	below := pos.Side(cube.FaceDown)
+	if !tx.Block(below).Model().FaceSolid(below, cube.FaceUp, tx) {
+		return false
+	}
+
+	c.AlongZ = user.Rotation().Direction().Face().Axis() == cube.X
 	place(tx, pos, c, user, ctx)
 	return placed(ctx)
 }
@@ -71,15 +76,7 @@ func (c CoralFan) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 
 // ScheduledTick ...
 func (c CoralFan) ScheduledTick(pos cube.Pos, tx *world.Tx, _ *rand.Rand) {
-	adjacentWater := false
-	pos.Neighbours(func(neighbour cube.Pos) {
-		if liquid, ok := tx.Liquid(neighbour); ok {
-			if _, ok := liquid.(Water); ok {
-				adjacentWater = true
-			}
-		}
-	}, tx.Range())
-	if !adjacentWater {
+	if !coralFanHasWater(pos, tx) {
 		c.Dead = true
 		tx.SetBlock(pos, c, nil)
 	}
@@ -92,7 +89,7 @@ func (c CoralFan) BreakInfo() BreakInfo {
 
 // EncodeBlock ...
 func (c CoralFan) EncodeBlock() (name string, properties map[string]any) {
-	properties = map[string]any{"coral_fan_direction": encodeCoralFanAxis(c.Axis)}
+	properties = map[string]any{"coral_fan_direction": int32(boolByte(c.AlongZ))}
 	if c.Dead {
 		return "minecraft:dead_" + c.Type.String() + "_coral_fan", properties
 	}
@@ -107,23 +104,32 @@ func (c CoralFan) EncodeItem() (name string, meta int16) {
 	return "minecraft:" + c.Type.String() + "_coral_fan", 0
 }
 
-// encodeCoralFanAxis encodes the axis a coral fan is laid out along.
-func encodeCoralFanAxis(axis cube.Axis) int32 {
-	if axis == cube.X {
-		return 0
-	}
-	return 1
-}
-
 // allCoralFan returns a list of all coral fan variants.
 func allCoralFan() (c []world.Block) {
 	f := func(dead bool) {
 		for _, t := range CoralTypes() {
-			c = append(c, CoralFan{Type: t, Dead: dead, Axis: cube.X})
-			c = append(c, CoralFan{Type: t, Dead: dead, Axis: cube.Z})
+			c = append(c, CoralFan{Type: t, Dead: dead})
+			c = append(c, CoralFan{Type: t, Dead: dead, AlongZ: true})
 		}
 	}
 	f(true)
 	f(false)
 	return
+}
+
+// coralFanHasWater reports whether a floor or wall fan is waterlogged or touches water.
+func coralFanHasWater(pos cube.Pos, tx *world.Tx) bool {
+	isWater := func(p cube.Pos) bool {
+		liquid, ok := tx.Liquid(p)
+		_, water := liquid.(Water)
+		return ok && water
+	}
+	if isWater(pos) {
+		return true
+	}
+	found := false
+	pos.Neighbours(func(neighbour cube.Pos) {
+		found = found || isWater(neighbour)
+	}, tx.Range())
+	return found
 }
