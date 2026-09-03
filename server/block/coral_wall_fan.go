@@ -41,7 +41,7 @@ func (c CoralWallFan) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 	}
 }
 
-// ScheduledTick kills a live fan that is no longer waterlogged or touching water.
+// ScheduledTick kills a live fan that is no longer waterlogged.
 func (c CoralWallFan) ScheduledTick(pos cube.Pos, tx *world.Tx, _ *rand.Rand) {
 	if !coralFanWaterlogged(pos, tx) {
 		c.Dead = true
