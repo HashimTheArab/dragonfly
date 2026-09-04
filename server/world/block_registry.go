@@ -52,8 +52,6 @@ type BlockRegistry interface {
 	CustomBlocks() map[string]CustomBlock
 	// BlockByName looks up a Block by full identifier and properties.
 	BlockByName(name string, properties map[string]any) (Block, bool)
-	// ResolveBlockState upgrades and resolves a versioned block state read from NBT.
-	ResolveBlockState(state BlockState) (Block, bool)
 	// Blocks returns all blocks registered in the registry, indexed by runtime ID.
 	Blocks() []Block
 	// Air returns the air block registered in the registry.
@@ -68,6 +66,33 @@ type BlockRegistry interface {
 	BlockHash(b Block) uint64
 	// RuntimeIDToHash resolves a runtime ID to its network block hash.
 	RuntimeIDToHash(runtimeID uint32) (hash uint32, ok bool)
+}
+
+// BlockStateResolver resolves versioned block states read from NBT. Registries
+// that support tolerant input and historical state upgrades may implement this
+// interface without expanding the core BlockRegistry contract.
+type BlockStateResolver interface {
+	ResolveBlockState(state BlockState) (Block, bool)
+}
+
+// ResolveBlockState upgrades and resolves a versioned block state using registry.
+// Registries may implement BlockStateResolver to accept loosely typed or otherwise
+// non-canonical state data. Other registries receive the upgraded state unchanged.
+func ResolveBlockState(registry BlockRegistry, state BlockState) (Block, bool) {
+	if resolver, ok := registry.(BlockStateResolver); ok {
+		return resolver.ResolveBlockState(state)
+	}
+	properties := maps.Clone(state.Properties)
+	if properties == nil {
+		properties = make(map[string]any)
+	}
+	if !validBlockPropertyValues(properties) {
+		return nil, false
+	}
+	upgraded := blockupgrader.Upgrade(blockupgrader.BlockState{
+		Name: state.Name, Properties: properties, Version: state.Version,
+	})
+	return registry.BlockByName(upgraded.Name, upgraded.Properties)
 }
 
 const (

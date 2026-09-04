@@ -6,6 +6,23 @@ import (
 	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
+type blockRegistryWithoutResolver struct {
+	BlockRegistry
+}
+
+// TestResolveBlockState_FallsBackForRegistryWithoutResolver verifies that the
+// resolver remains optional for custom BlockRegistry implementations.
+func TestResolveBlockState_FallsBackForRegistryWithoutResolver(t *testing.T) {
+	registry := NewBlockRegistry()
+	registry.RegisterBlockState(BlockState{Name: "dragonfly:plain_state"})
+	registry.Finalize()
+
+	wrapped := blockRegistryWithoutResolver{BlockRegistry: registry}
+	if _, ok := ResolveBlockState(wrapped, BlockState{Name: "dragonfly:plain_state", Version: chunk.CurrentBlockVersion}); !ok {
+		t.Fatal("ResolveBlockState did not fall back to BlockByName")
+	}
+}
+
 // TestResolveBlockState_ResolvesLooselyTypedProperties resolves a state whose
 // boolean properties were written as integers, which is how structure files and
 // other third-party sources spell them. Property values hash by type, so such a
@@ -22,7 +39,7 @@ func TestResolveBlockState_ResolvesLooselyTypedProperties(t *testing.T) {
 	if _, ok := registry.BlockByName("dragonfly:loose_state", loose); ok {
 		t.Fatal("BlockByName resolved an int-typed boolean; the coercion is no longer needed")
 	}
-	if _, ok := registry.ResolveBlockState(BlockState{Name: "dragonfly:loose_state", Properties: loose, Version: chunk.CurrentBlockVersion}); !ok {
+	if _, ok := ResolveBlockState(registry, BlockState{Name: "dragonfly:loose_state", Properties: loose, Version: chunk.CurrentBlockVersion}); !ok {
 		t.Fatalf("ResolveBlockState did not resolve %v", loose)
 	}
 }
@@ -39,10 +56,10 @@ func TestResolveBlockState_KeepsNumericPropertiesNumeric(t *testing.T) {
 	registry.Finalize()
 
 	wrongDirection := map[string]any{"open_bit": int32(1), "direction": int32(1)}
-	if _, ok := registry.ResolveBlockState(BlockState{Name: "dragonfly:loose_state", Properties: wrongDirection, Version: chunk.CurrentBlockVersion}); ok {
+	if _, ok := ResolveBlockState(registry, BlockState{Name: "dragonfly:loose_state", Properties: wrongDirection, Version: chunk.CurrentBlockVersion}); ok {
 		t.Fatal("ResolveBlockState resolved a state whose direction does not exist")
 	}
-	if _, ok := registry.ResolveBlockState(BlockState{Name: "dragonfly:missing", Version: chunk.CurrentBlockVersion}); ok {
+	if _, ok := ResolveBlockState(registry, BlockState{Name: "dragonfly:missing", Version: chunk.CurrentBlockVersion}); ok {
 		t.Fatal("ResolveBlockState resolved an unregistered block name")
 	}
 }
@@ -60,7 +77,7 @@ func TestResolveBlockState_DropsPropertiesThePaletteDoesNotDeclare(t *testing.T)
 	if _, ok := registry.BlockByName("dragonfly:derived_state", connections); ok {
 		t.Fatal("BlockByName resolved undeclared properties; the fallback is no longer needed")
 	}
-	if _, ok := registry.ResolveBlockState(BlockState{Name: "dragonfly:derived_state", Properties: connections, Version: chunk.CurrentBlockVersion}); !ok {
+	if _, ok := ResolveBlockState(registry, BlockState{Name: "dragonfly:derived_state", Properties: connections, Version: chunk.CurrentBlockVersion}); !ok {
 		t.Fatalf("ResolveBlockState did not resolve %v", connections)
 	}
 }
@@ -79,7 +96,7 @@ func TestResolveBlockState_PrefersTheDeclaredState(t *testing.T) {
 	})
 	registry.Finalize()
 
-	block, ok := registry.ResolveBlockState(BlockState{
+	block, ok := ResolveBlockState(registry, BlockState{
 		Name: "dragonfly:mixed_state", Version: chunk.CurrentBlockVersion,
 		Properties: map[string]any{"direction": int32(3), "has_book": int32(1)},
 	})
@@ -103,7 +120,7 @@ func TestResolveBlockState_UpgradesRealPaletteState(t *testing.T) {
 		Properties: map[string]any{"color": "yellow"},
 		Version:    17825806,
 	}
-	block, ok := registry.ResolveBlockState(state)
+	block, ok := ResolveBlockState(registry, state)
 	if !ok {
 		t.Fatal("ResolveBlockState did not resolve legacy yellow wool")
 	}
@@ -120,7 +137,7 @@ func TestResolveBlockState_CoercesLegacyPropertyBeforeUpgrade(t *testing.T) {
 	registry := NewBlockRegistry()
 	registry.Finalize()
 
-	block, ok := registry.ResolveBlockState(BlockState{
+	block, ok := ResolveBlockState(registry, BlockState{
 		Name: "minecraft:colored_torch_bp", Version: 18158598,
 		Properties: map[string]any{"color_bit": int32(0), "torch_facing_direction": "top"},
 	})
@@ -137,7 +154,7 @@ func TestResolveBlockState_CoercesLegacyByteToIntBeforeUpgrade(t *testing.T) {
 	registry := NewBlockRegistry()
 	registry.Finalize()
 
-	block, ok := registry.ResolveBlockState(BlockState{
+	block, ok := ResolveBlockState(registry, BlockState{
 		Name: "minecraft:blast_furnace", Version: 17432626,
 		Properties: map[string]any{"facing_direction": uint8(0)},
 	})
@@ -154,7 +171,7 @@ func TestResolveBlockState_RestoresCurrentPaletteDefaults(t *testing.T) {
 	registry := NewBlockRegistry()
 	registry.Finalize()
 
-	block, ok := registry.ResolveBlockState(BlockState{
+	block, ok := ResolveBlockState(registry, BlockState{
 		Name: "minecraft:tnt", Version: 18158598,
 		Properties: map[string]any{"allow_underwater_bit": uint8(0)},
 	})
@@ -171,7 +188,7 @@ func TestResolveBlockState_PrefersUpgradeThatConsumesLooseProperty(t *testing.T)
 	registry := NewBlockRegistry()
 	registry.Finalize()
 
-	block, ok := registry.ResolveBlockState(BlockState{
+	block, ok := ResolveBlockState(registry, BlockState{
 		Name: "minecraft:tnt", Version: 18158598,
 		Properties: map[string]any{"allow_underwater_bit": int32(1)},
 	})
@@ -188,7 +205,7 @@ func TestResolveBlockState_InitializesMissingPropertiesBeforeUpgrade(t *testing.
 	registry := NewBlockRegistry()
 	registry.Finalize()
 
-	block, ok := registry.ResolveBlockState(BlockState{Name: "minecraft:potent_sulfur"})
+	block, ok := ResolveBlockState(registry, BlockState{Name: "minecraft:potent_sulfur"})
 	if !ok {
 		t.Fatal("ResolveBlockState did not resolve a state whose upgrader adds its properties")
 	}
@@ -208,13 +225,13 @@ func TestBlockStateLookup_HandlesUnsupportedPropertyValues(t *testing.T) {
 	if _, ok := registry.BlockByName("dragonfly:safe_lookup", map[string]any{"direction": int64(1)}); ok {
 		t.Fatal("BlockByName accepted an unsupported declared property value")
 	}
-	if _, ok := registry.ResolveBlockState(BlockState{
+	if _, ok := ResolveBlockState(registry, BlockState{
 		Name: "dragonfly:safe_lookup", Version: chunk.CurrentBlockVersion,
 		Properties: map[string]any{"direction": int32(1), "derived": []int{1}},
 	}); !ok {
 		t.Fatal("ResolveBlockState did not ignore an unsupported undeclared property")
 	}
-	if _, ok := registry.ResolveBlockState(BlockState{
+	if _, ok := ResolveBlockState(registry, BlockState{
 		Name: "dragonfly:safe_lookup", Version: chunk.CurrentBlockVersion,
 		Properties: map[string]any{"direction": int64(1)},
 	}); ok {
@@ -226,7 +243,7 @@ func TestResolveBlockState_RejectsUnsupportedHistoricalProperty(t *testing.T) {
 	registry := NewBlockRegistry()
 	registry.Finalize()
 
-	if _, ok := registry.ResolveBlockState(BlockState{
+	if _, ok := ResolveBlockState(registry, BlockState{
 		Name: "minecraft:barrel", Properties: map[string]any{"facing_direction": []int32{1}},
 	}); ok {
 		t.Fatal("ResolveBlockState accepted an unsupported historical property")
@@ -242,7 +259,7 @@ func TestResolveBlockState_RejectsUnverifiedMatchAboveCandidateLimit(t *testing.
 	for index := range 9 {
 		properties[string(rune('a'+index))] = int32(0)
 	}
-	if _, ok := registry.ResolveBlockState(BlockState{
+	if _, ok := ResolveBlockState(registry, BlockState{
 		Name: "dragonfly:derived_flags", Properties: properties, Version: chunk.CurrentBlockVersion,
 	}); ok {
 		t.Fatal("ResolveBlockState accepted an unverified match above the candidate-search limit")
