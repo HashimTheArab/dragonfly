@@ -141,6 +141,18 @@ func (b CopperTrapdoor) WithFacing(facing cube.Direction) world.Block {
 }
 
 // FacingDirection returns the horizontal direction the block faces.
+func (b CoralWallFan) FacingDirection() cube.Direction {
+	return b.Facing
+}
+
+// WithFacing returns a copy of the block with its facing set to facing. It does not update any
+// other blocks that the block may be part of, such as the second half of a bed or door.
+func (b CoralWallFan) WithFacing(facing cube.Direction) world.Block {
+	b.Facing = facing
+	return b
+}
+
+// FacingDirection returns the horizontal direction the block faces.
 func (b DecoratedPot) FacingDirection() cube.Direction {
 	return b.Facing
 }
@@ -208,6 +220,30 @@ func (b Grindstone) FacingDirection() cube.Direction {
 // WithFacing returns a copy of the block with its facing set to facing. It does not update any
 // other blocks that the block may be part of, such as the second half of a bed or door.
 func (b Grindstone) WithFacing(facing cube.Direction) world.Block {
+	b.Facing = facing
+	return b
+}
+
+// FacingDirection returns the horizontal direction the block faces.
+func (b IronDoor) FacingDirection() cube.Direction {
+	return b.Facing
+}
+
+// WithFacing returns a copy of the block with its facing set to facing. It does not update any
+// other blocks that the block may be part of, such as the second half of a bed or door.
+func (b IronDoor) WithFacing(facing cube.Direction) world.Block {
+	b.Facing = facing
+	return b
+}
+
+// FacingDirection returns the horizontal direction the block faces.
+func (b IronTrapdoor) FacingDirection() cube.Direction {
+	return b.Facing
+}
+
+// WithFacing returns a copy of the block with its facing set to facing. It does not update any
+// other blocks that the block may be part of, such as the second half of a bed or door.
+func (b IronTrapdoor) WithFacing(facing cube.Direction) world.Block {
 	b.Facing = facing
 	return b
 }
@@ -316,6 +352,18 @@ func (b Stonecutter) FacingDirection() cube.Direction {
 // WithFacing returns a copy of the block with its facing set to facing. It does not update any
 // other blocks that the block may be part of, such as the second half of a bed or door.
 func (b Stonecutter) WithFacing(facing cube.Direction) world.Block {
+	b.Facing = facing
+	return b
+}
+
+// FacingDirection returns the horizontal direction the block faces.
+func (b TripwireHook) FacingDirection() cube.Direction {
+	return b.Facing
+}
+
+// WithFacing returns a copy of the block with its facing set to facing. It does not update any
+// other blocks that the block may be part of, such as the second half of a bed or door.
+func (b TripwireHook) WithFacing(facing cube.Direction) world.Block {
 	b.Facing = facing
 	return b
 }

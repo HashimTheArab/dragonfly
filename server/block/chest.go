@@ -38,6 +38,8 @@ type Chest struct {
 	viewers   map[ContainerViewer]struct{}
 }
 
+func (Chest) OpensContainer() {}
+
 // NewChest creates a new initialised chest. The inventory is properly initialised.
 func NewChest() Chest {
 	c := Chest{

@@ -1,20 +1,28 @@
 package item
 
-import "testing"
+import (
+	"testing"
 
-func TestCrossbow_StartsCharge(t *testing.T) {
-	tests := []struct {
+	"github.com/df-mc/dragonfly/server/world"
+)
+
+func TestClassifyUseContinuation(t *testing.T) {
+	for _, tt := range []struct {
 		name string
-		bow  Crossbow
-		want bool
+		item world.Item
+		want UseContinuation
 	}{
-		{name: "unloaded", bow: Crossbow{}, want: true},
-		{name: "loaded", bow: Crossbow{Item: NewStack(Arrow{}, 1)}, want: false},
-	}
-	for _, tt := range tests {
+		{name: "consumable", item: Apple{}, want: UseContinuationContinued},
+		{name: "releasable", item: Bow{}, want: UseContinuationContinued},
+		{name: "unloaded crossbow", item: Crossbow{}, want: UseContinuationContinued},
+		{name: "loaded crossbow", item: Crossbow{Item: NewStack(Arrow{}, 1)}, want: UseContinuationInstant},
+		{name: "unloaded crossbow pointer", item: &Crossbow{}, want: UseContinuationContinued},
+		{name: "loaded crossbow pointer", item: &Crossbow{Item: NewStack(Arrow{}, 1)}, want: UseContinuationInstant},
+		{name: "ordinary item", item: Stick{}, want: UseContinuationUnclassified},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.bow.StartsCharge(); got != tt.want {
-				t.Fatalf("StartsCharge() = %t, want %t", got, tt.want)
+			if got := ClassifyUseContinuation(tt.item); got != tt.want {
+				t.Fatalf("ClassifyUseContinuation() = %d, want %d", got, tt.want)
 			}
 		})
 	}

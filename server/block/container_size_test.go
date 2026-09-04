@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 )
 
@@ -47,6 +48,28 @@ func TestContainerSize(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if got := test.container.ContainerSize(); got != test.want {
 				t.Fatalf("ContainerSize() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
+func TestOpensContainerOnUse(t *testing.T) {
+	tests := []struct {
+		name     string
+		block    world.Block
+		sneaking bool
+		held     item.Stack
+		want     bool
+	}{
+		{name: "standing", block: Chest{}, want: true},
+		{name: "sneaking empty hand", block: Chest{}, sneaking: true, want: true},
+		{name: "sneaking held item", block: Chest{}, sneaking: true, held: item.NewStack(item.Stick{}, 1)},
+		{name: "non-container", block: Stone{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := OpensContainerOnUse(tt.block, tt.sneaking, tt.held); got != tt.want {
+				t.Fatalf("OpensContainerOnUse() = %t, want %t", got, tt.want)
 			}
 		})
 	}
