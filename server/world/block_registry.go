@@ -5,6 +5,7 @@ import (
 	"maps"
 	"math"
 	"math/bits"
+	"reflect"
 	"slices"
 	"sort"
 	"sync"
@@ -597,67 +598,88 @@ func (br *BasicBlockRegistry) ResolveBlockState(state BlockState) (Block, bool) 
 	if properties == nil {
 		properties = make(map[string]any)
 	}
-	if b, ok := br.resolveBlockStateCandidate(BlockState{Name: state.Name, Properties: properties, Version: state.Version}); ok {
-		return b, true
+	match, cost, matched := br.resolveBlockStateCandidate(BlockState{Name: state.Name, Properties: properties, Version: state.Version})
+	if matched && cost == 0 {
+		return match, true
 	}
-	keys := looseByteCandidateProperties(properties)
-	const maxLooseByteProperties = 8
-	if len(keys) == 0 || len(keys) > maxLooseByteProperties {
+	keys := looseNumericCandidateProperties(properties)
+	if len(keys) == 0 {
+		return match, matched
+	}
+	const maxLooseNumericProperties = 8
+	if len(keys) > maxLooseNumericProperties {
 		return nil, false
 	}
-	var match Block
 	var matchState stateHash
+	if matched {
+		name, resolvedProperties := match.EncodeBlock()
+		matchState = stateHash{name: name, properties: hashProperties(resolvedProperties)}
+	}
 	for mask := 1; mask < 1<<len(keys); mask++ {
 		candidate := maps.Clone(properties)
 		for index, key := range keys {
 			if mask&(1<<index) != 0 {
-				candidate[key] = looseByte(candidate[key])
+				candidate[key] = alternateNumericEncoding(candidate[key])
 			}
 		}
-		b, ok := br.resolveBlockStateCandidate(BlockState{Name: state.Name, Properties: candidate, Version: state.Version})
-		if !ok {
+		b, candidateCost, ok := br.resolveBlockStateCandidate(BlockState{Name: state.Name, Properties: candidate, Version: state.Version})
+		if !ok || matched && candidateCost > cost {
 			continue
 		}
 		name, resolvedProperties := b.EncodeBlock()
 		resolvedState := stateHash{name: name, properties: hashProperties(resolvedProperties)}
-		if match != nil && resolvedState != matchState {
+		if !matched || candidateCost < cost {
+			match, matchState, cost, matched = b, resolvedState, candidateCost, true
+			continue
+		}
+		if resolvedState != matchState {
 			return nil, false
 		}
-		match, matchState = b, resolvedState
 	}
-	return match, match != nil
+	return match, matched
 }
 
-// resolveBlockStateCandidate upgrades one type interpretation and resolves it against the current palette.
-func (br *BasicBlockRegistry) resolveBlockStateCandidate(state BlockState) (Block, bool) {
+// resolveBlockStateCandidate upgrades one type interpretation and reports its normalization cost.
+func (br *BasicBlockRegistry) resolveBlockStateCandidate(state BlockState) (Block, int, bool) {
 	upgraded := blockupgrader.Upgrade(blockupgrader.BlockState{
 		Name: state.Name, Properties: maps.Clone(state.Properties), Version: state.Version,
 	})
 	if b, ok := br.BlockByName(upgraded.Name, upgraded.Properties); ok {
-		return b, true
+		return b, 0, true
 	}
 	declared, ok := br.blockProperties[upgraded.Name]
 	if !ok {
-		return nil, false
+		return nil, 0, false
 	}
 	coerced := maps.Clone(declared)
+	cost := 0
 	for property, value := range upgraded.Properties {
 		declaredValue, ok := declared[property]
 		if !ok {
+			cost++
 			continue
 		}
-		coerced[property] = coerceStateValue(value, declaredValue)
+		coercedValue := coerceStateValue(value, declaredValue)
+		if reflect.TypeOf(coercedValue) != reflect.TypeOf(value) {
+			cost++
+		}
+		coerced[property] = coercedValue
 	}
-	return br.BlockByName(upgraded.Name, coerced)
+	b, ok := br.BlockByName(upgraded.Name, coerced)
+	return b, cost, ok
 }
 
-// looseByteCandidateProperties returns deterministic keys whose 0/1 value may represent an NBT byte.
-func looseByteCandidateProperties(properties map[string]any) []string {
+// looseNumericCandidateProperties returns deterministic keys whose 0/1 value has another valid NBT numeric encoding.
+func looseNumericCandidateProperties(properties map[string]any) []string {
 	keys := make([]string, 0, len(properties))
 	for key, value := range properties {
 		switch value := value.(type) {
 		case bool:
 			keys = append(keys, key)
+		case uint8:
+			if value == 0 || value == 1 {
+				keys = append(keys, key)
+			}
 		case int32:
 			if value == 0 || value == 1 {
 				keys = append(keys, key)
@@ -668,13 +690,16 @@ func looseByteCandidateProperties(properties map[string]any) []string {
 	return keys
 }
 
-// looseByte converts one boolean-like value into the byte representation used by Bedrock palettes.
-func looseByte(value any) any {
+// alternateNumericEncoding switches one 0/1 value between loose integer and byte representations.
+func alternateNumericEncoding(value any) any {
 	if value, ok := value.(bool); ok {
 		if value {
 			return uint8(1)
 		}
 		return uint8(0)
+	}
+	if value, ok := value.(uint8); ok {
+		return int32(value)
 	}
 	return uint8(value.(int32))
 }

@@ -133,6 +133,23 @@ func TestResolveBlockState_CoercesLegacyPropertyBeforeUpgrade(t *testing.T) {
 	}
 }
 
+func TestResolveBlockState_CoercesLegacyByteToIntBeforeUpgrade(t *testing.T) {
+	registry := NewBlockRegistry()
+	registry.Finalize()
+
+	block, ok := registry.ResolveBlockState(BlockState{
+		Name: "minecraft:blast_furnace", Version: 17432626,
+		Properties: map[string]any{"facing_direction": uint8(0)},
+	})
+	if !ok {
+		t.Fatal("ResolveBlockState did not resolve a legacy byte-typed integer property")
+	}
+	name, properties := block.EncodeBlock()
+	if name != "minecraft:blast_furnace" || properties["minecraft:cardinal_direction"] != "north" {
+		t.Fatalf("resolved state = %s%v, want north-facing blast furnace", name, properties)
+	}
+}
+
 func TestResolveBlockState_RestoresCurrentPaletteDefaults(t *testing.T) {
 	registry := NewBlockRegistry()
 	registry.Finalize()
@@ -147,6 +164,23 @@ func TestResolveBlockState_RestoresCurrentPaletteDefaults(t *testing.T) {
 	name, properties := block.EncodeBlock()
 	if name != "minecraft:tnt" || properties["explode_bit"] != uint8(0) {
 		t.Fatalf("resolved state = %s%v, want minecraft:tnt{explode_bit: 0}", name, properties)
+	}
+}
+
+func TestResolveBlockState_PrefersUpgradeThatConsumesLooseProperty(t *testing.T) {
+	registry := NewBlockRegistry()
+	registry.Finalize()
+
+	block, ok := registry.ResolveBlockState(BlockState{
+		Name: "minecraft:tnt", Version: 18158598,
+		Properties: map[string]any{"allow_underwater_bit": int32(1)},
+	})
+	if !ok {
+		t.Fatal("ResolveBlockState did not resolve loose underwater TNT")
+	}
+	name, _ := block.EncodeBlock()
+	if name != "minecraft:underwater_tnt" {
+		t.Fatalf("resolved name = %s, want minecraft:underwater_tnt", name)
 	}
 }
 
