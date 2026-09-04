@@ -33,6 +33,19 @@ type ContainerOpener interface {
 	OpenBlockContainer(pos cube.Pos, tx *world.Tx)
 }
 
+// ContainerOpening is implemented by blocks whose activation opens a block
+// container or UI through ContainerOpener.
+type ContainerOpening interface {
+	OpensContainer()
+}
+
+// OpensContainerOnUse reports whether using held on b activates its container
+// or UI. Sneaking bypasses activation only while the player holds an item.
+func OpensContainerOnUse(b world.Block, sneaking bool, held item.Stack) bool {
+	_, opens := b.(ContainerOpening)
+	return opens && (!sneaking || held.Empty())
+}
+
 // Container represents a container of items, typically a block such as a chest. Containers may have their
 // inventory opened by viewers.
 type Container interface {

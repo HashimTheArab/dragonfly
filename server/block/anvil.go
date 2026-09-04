@@ -20,6 +20,8 @@ type Anvil struct {
 	Facing cube.Direction
 }
 
+func (Anvil) OpensContainer() {}
+
 // Model ...
 func (a Anvil) Model() world.BlockModel {
 	return model.Anvil{Facing: a.Facing}

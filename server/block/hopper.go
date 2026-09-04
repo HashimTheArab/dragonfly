@@ -38,6 +38,8 @@ type Hopper struct {
 	viewers   map[ContainerViewer]struct{}
 }
 
+func (Hopper) OpensContainer() {}
+
 // NewHopper creates a new initialised hopper. The inventory is properly initialised.
 func NewHopper() Hopper {
 	m := new(sync.RWMutex)

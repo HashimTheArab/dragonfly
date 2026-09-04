@@ -24,6 +24,8 @@ type Furnace struct {
 	Lit bool
 }
 
+func (Furnace) OpensContainer() {}
+
 // NewFurnace creates a new initialised furnace. The smelter is properly initialised.
 func NewFurnace(face cube.Direction) Furnace {
 	return Furnace{
