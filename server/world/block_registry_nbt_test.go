@@ -222,6 +222,33 @@ func TestBlockStateLookup_HandlesUnsupportedPropertyValues(t *testing.T) {
 	}
 }
 
+func TestResolveBlockState_RejectsUnsupportedHistoricalProperty(t *testing.T) {
+	registry := NewBlockRegistry()
+	registry.Finalize()
+
+	if _, ok := registry.ResolveBlockState(BlockState{
+		Name: "minecraft:barrel", Properties: map[string]any{"facing_direction": []int32{1}},
+	}); ok {
+		t.Fatal("ResolveBlockState accepted an unsupported historical property")
+	}
+}
+
+func TestResolveBlockState_RejectsUnverifiedMatchAboveCandidateLimit(t *testing.T) {
+	registry := NewBlockRegistry()
+	registry.RegisterBlockState(BlockState{Name: "dragonfly:derived_flags"})
+	registry.Finalize()
+
+	properties := make(map[string]any, 9)
+	for index := range 9 {
+		properties[string(rune('a'+index))] = int32(0)
+	}
+	if _, ok := registry.ResolveBlockState(BlockState{
+		Name: "dragonfly:derived_flags", Properties: properties, Version: chunk.CurrentBlockVersion,
+	}); ok {
+		t.Fatal("ResolveBlockState accepted an unverified match above the candidate-search limit")
+	}
+}
+
 // TestCoerceStateValue covers the per-type conversion the lookup relies on.
 func TestCoerceStateValue(t *testing.T) {
 	for _, test := range []struct {

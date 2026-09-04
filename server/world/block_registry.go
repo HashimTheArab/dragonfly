@@ -590,13 +590,21 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 // validBlockPropertyValues reports whether properties contain only palette-supported scalar types.
 func validBlockPropertyValues(properties map[string]any) bool {
 	for _, value := range properties {
-		switch value.(type) {
-		case bool, uint8, int32, string:
-		default:
+		if !validBlockPropertyValue(value) {
 			return false
 		}
 	}
 	return true
+}
+
+// validBlockPropertyValue reports whether value is a scalar supported by Bedrock block palettes.
+func validBlockPropertyValue(value any) bool {
+	switch value.(type) {
+	case bool, uint8, int32, string:
+		return true
+	default:
+		return false
+	}
 }
 
 // ResolveBlockState upgrades and resolves a versioned block state decoded from NBT.
@@ -612,6 +620,17 @@ func (br *BasicBlockRegistry) ResolveBlockState(state BlockState) (Block, bool) 
 	properties := maps.Clone(state.Properties)
 	if properties == nil {
 		properties = make(map[string]any)
+	}
+	declared, knownName := br.blockProperties[state.Name]
+	for property, value := range properties {
+		if validBlockPropertyValue(value) {
+			continue
+		}
+		_, declaredProperty := declared[property]
+		if !knownName || declaredProperty || state.Version < chunk.CurrentBlockVersion {
+			return nil, false
+		}
+		delete(properties, property)
 	}
 	match, cost, matched := br.resolveBlockStateCandidate(BlockState{Name: state.Name, Properties: properties, Version: state.Version})
 	if matched && cost == 0 {
