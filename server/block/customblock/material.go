@@ -72,3 +72,17 @@ func (m Material) Encode() map[string]any {
 		"ambient_occlusion": m.ambientOcclusion,
 	}
 }
+
+// MaterialInstances returns the encoded material-instances component for the textures in
+// p. Keeping this encoding with Properties gives custom-block encoders one source of truth
+// for the component shape.
+func (p Properties) MaterialInstances() map[string]any {
+	materials := make(map[string]any, len(p.Textures))
+	for target, material := range p.Textures {
+		materials[target] = material.Encode()
+	}
+	return map[string]any{
+		"mappings":  map[string]any{},
+		"materials": materials,
+	}
+}

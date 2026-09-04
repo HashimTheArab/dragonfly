@@ -84,14 +84,7 @@ func componentsFromProperties(props customblock.Properties) map[string]any {
 		components["minecraft:map_color"] = map[string]any{"value": props.MapColour}
 	}
 	if props.Textures != nil {
-		materials := map[string]any{}
-		for target, material := range props.Textures {
-			materials[target] = material.Encode()
-		}
-		components["minecraft:material_instances"] = map[string]any{
-			"mappings":  map[string]any{},
-			"materials": materials,
-		}
+		components["minecraft:material_instances"] = props.MaterialInstances()
 	}
 	transformation := make(map[string]any)
 	if props.Rotation != (cube.Pos{}) {
