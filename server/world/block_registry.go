@@ -11,6 +11,7 @@ import (
 
 	"github.com/brentp/intintmap"
 	"github.com/df-mc/dragonfly/server/world/chunk"
+	"github.com/df-mc/worldupgrader/blockupgrader"
 	"github.com/segmentio/fasthash/fnv1"
 )
 
@@ -50,9 +51,8 @@ type BlockRegistry interface {
 	CustomBlocks() map[string]CustomBlock
 	// BlockByName looks up a Block by full identifier and properties.
 	BlockByName(name string, properties map[string]any) (Block, bool)
-	// BlockByNBTState looks up a Block by full identifier and properties read
-	// from NBT, whose numeric types may differ from the ones the palette holds.
-	BlockByNBTState(name string, properties map[string]any) (Block, bool)
+	// ResolveBlockState upgrades and resolves a versioned block state read from NBT.
+	ResolveBlockState(state BlockState) (Block, bool)
 	// Blocks returns all blocks registered in the registry, indexed by runtime ID.
 	Blocks() []Block
 	// Air returns the air block registered in the registry.
@@ -583,7 +583,7 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 	return br.blocks[rid], true
 }
 
-// BlockByNBTState looks up a Block by name and properties decoded from NBT.
+// ResolveBlockState upgrades and resolves a versioned block state decoded from NBT.
 //
 // Property values are hashed by type, so a boolean the palette holds as a byte
 // does not match the same property written as an int. Structure files and other
@@ -592,39 +592,25 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 // palette declares for the block before the lookup, which leaves genuinely
 // numeric properties such as a stair's direction alone. Properties the palette
 // does not declare at all are dropped, since no registered state carries them.
-func (br *BasicBlockRegistry) BlockByNBTState(name string, properties map[string]any) (Block, bool) {
-	if b, ok := br.BlockByName(name, properties); ok {
+func (br *BasicBlockRegistry) ResolveBlockState(state BlockState) (Block, bool) {
+	upgraded := blockupgrader.Upgrade(blockupgrader.BlockState{
+		Name: state.Name, Properties: maps.Clone(state.Properties), Version: state.Version,
+	})
+	if b, ok := br.BlockByName(upgraded.Name, upgraded.Properties); ok {
 		return b, true
 	}
-	declared, ok := br.blockProperties[name]
+	declared, ok := br.blockProperties[upgraded.Name]
 	if !ok {
 		return nil, false
 	}
-	coerced := make(map[string]any, len(properties))
-	extra := false
-	for property, value := range properties {
+	coerced := make(map[string]any, len(upgraded.Properties))
+	for property, value := range upgraded.Properties {
 		if _, ok := declared[property]; !ok {
-			extra = true
 			continue
 		}
 		coerced[property] = coerceStateValue(value, declared[property])
 	}
-	if !extra {
-		return br.BlockByName(name, coerced)
-	}
-	// A state may also carry properties this palette does not know, either
-	// because the block predates them or because the block derives them rather
-	// than storing them, the way a fence reads its arms from its neighbours.
-	// No registered state holds them, so the only candidate is the state
-	// without them.
-	if b, ok := br.BlockByName(name, coerced); ok {
-		return b, true
-	}
-	full := make(map[string]any, len(properties))
-	for property, value := range properties {
-		full[property] = coerceStateValue(value, declared[property])
-	}
-	return br.BlockByName(name, full)
+	return br.BlockByName(upgraded.Name, coerced)
 }
 
 // coerceStateValue converts one NBT property value to the type the palette
@@ -646,8 +632,18 @@ func coerceStateValue(value, declared any) any {
 	}
 	switch declared.(type) {
 	case bool:
-		return number != 0
+		switch number {
+		case 0:
+			return false
+		case 1:
+			return true
+		default:
+			return value
+		}
 	case uint8:
+		if number < 0 || number > math.MaxUint8 {
+			return value
+		}
 		return uint8(number)
 	case int32:
 		return number
