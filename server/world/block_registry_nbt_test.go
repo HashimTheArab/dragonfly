@@ -116,6 +116,54 @@ func TestResolveBlockState_UpgradesRealPaletteState(t *testing.T) {
 	}
 }
 
+func TestResolveBlockState_CoercesLegacyPropertyBeforeUpgrade(t *testing.T) {
+	registry := NewBlockRegistry()
+	registry.Finalize()
+
+	block, ok := registry.ResolveBlockState(BlockState{
+		Name: "minecraft:colored_torch_bp", Version: 18158598,
+		Properties: map[string]any{"color_bit": int32(0), "torch_facing_direction": "top"},
+	})
+	if !ok {
+		t.Fatal("ResolveBlockState did not resolve a legacy int-typed byte property")
+	}
+	name, properties := block.EncodeBlock()
+	if name != "minecraft:colored_torch_blue" || properties["torch_facing_direction"] != "top" {
+		t.Fatalf("resolved state = %s%v, want blue top-facing torch", name, properties)
+	}
+}
+
+func TestResolveBlockState_RestoresCurrentPaletteDefaults(t *testing.T) {
+	registry := NewBlockRegistry()
+	registry.Finalize()
+
+	block, ok := registry.ResolveBlockState(BlockState{
+		Name: "minecraft:tnt", Version: 18158598,
+		Properties: map[string]any{"allow_underwater_bit": uint8(0)},
+	})
+	if !ok {
+		t.Fatal("ResolveBlockState did not restore the current TNT default state")
+	}
+	name, properties := block.EncodeBlock()
+	if name != "minecraft:tnt" || properties["explode_bit"] != uint8(0) {
+		t.Fatalf("resolved state = %s%v, want minecraft:tnt{explode_bit: 0}", name, properties)
+	}
+}
+
+func TestResolveBlockState_InitializesMissingPropertiesBeforeUpgrade(t *testing.T) {
+	registry := NewBlockRegistry()
+	registry.Finalize()
+
+	block, ok := registry.ResolveBlockState(BlockState{Name: "minecraft:potent_sulfur"})
+	if !ok {
+		t.Fatal("ResolveBlockState did not resolve a state whose upgrader adds its properties")
+	}
+	name, properties := block.EncodeBlock()
+	if name != "minecraft:potent_sulfur" || properties["potent_sulfur_state"] != "dry" {
+		t.Fatalf("resolved state = %s%v, want dry potent sulfur", name, properties)
+	}
+}
+
 // TestCoerceStateValue covers the per-type conversion the lookup relies on.
 func TestCoerceStateValue(t *testing.T) {
 	for _, test := range []struct {

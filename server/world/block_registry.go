@@ -593,6 +593,43 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 // numeric properties such as a stair's direction alone. Properties the palette
 // does not declare at all are dropped, since no registered state carries them.
 func (br *BasicBlockRegistry) ResolveBlockState(state BlockState) (Block, bool) {
+	properties := maps.Clone(state.Properties)
+	if properties == nil {
+		properties = make(map[string]any)
+	}
+	if b, ok := br.resolveBlockStateCandidate(BlockState{Name: state.Name, Properties: properties, Version: state.Version}); ok {
+		return b, true
+	}
+	keys := looseByteCandidateProperties(properties)
+	const maxLooseByteProperties = 8
+	if len(keys) == 0 || len(keys) > maxLooseByteProperties {
+		return nil, false
+	}
+	var match Block
+	var matchState stateHash
+	for mask := 1; mask < 1<<len(keys); mask++ {
+		candidate := maps.Clone(properties)
+		for index, key := range keys {
+			if mask&(1<<index) != 0 {
+				candidate[key] = looseByte(candidate[key])
+			}
+		}
+		b, ok := br.resolveBlockStateCandidate(BlockState{Name: state.Name, Properties: candidate, Version: state.Version})
+		if !ok {
+			continue
+		}
+		name, resolvedProperties := b.EncodeBlock()
+		resolvedState := stateHash{name: name, properties: hashProperties(resolvedProperties)}
+		if match != nil && resolvedState != matchState {
+			return nil, false
+		}
+		match, matchState = b, resolvedState
+	}
+	return match, match != nil
+}
+
+// resolveBlockStateCandidate upgrades one type interpretation and resolves it against the current palette.
+func (br *BasicBlockRegistry) resolveBlockStateCandidate(state BlockState) (Block, bool) {
 	upgraded := blockupgrader.Upgrade(blockupgrader.BlockState{
 		Name: state.Name, Properties: maps.Clone(state.Properties), Version: state.Version,
 	})
@@ -603,14 +640,43 @@ func (br *BasicBlockRegistry) ResolveBlockState(state BlockState) (Block, bool) 
 	if !ok {
 		return nil, false
 	}
-	coerced := make(map[string]any, len(upgraded.Properties))
+	coerced := maps.Clone(declared)
 	for property, value := range upgraded.Properties {
-		if _, ok := declared[property]; !ok {
+		declaredValue, ok := declared[property]
+		if !ok {
 			continue
 		}
-		coerced[property] = coerceStateValue(value, declared[property])
+		coerced[property] = coerceStateValue(value, declaredValue)
 	}
 	return br.BlockByName(upgraded.Name, coerced)
+}
+
+// looseByteCandidateProperties returns deterministic keys whose 0/1 value may represent an NBT byte.
+func looseByteCandidateProperties(properties map[string]any) []string {
+	keys := make([]string, 0, len(properties))
+	for key, value := range properties {
+		switch value := value.(type) {
+		case bool:
+			keys = append(keys, key)
+		case int32:
+			if value == 0 || value == 1 {
+				keys = append(keys, key)
+			}
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// looseByte converts one boolean-like value into the byte representation used by Bedrock palettes.
+func looseByte(value any) any {
+	if value, ok := value.(bool); ok {
+		if value {
+			return uint8(1)
+		}
+		return uint8(0)
+	}
+	return uint8(value.(int32))
 }
 
 // coerceStateValue converts one NBT property value to the type the palette
@@ -623,6 +689,10 @@ func (br *BasicBlockRegistry) ResolveBlockState(state BlockState) (Block, bool) 
 func coerceStateValue(value, declared any) any {
 	var number int32
 	switch v := value.(type) {
+	case bool:
+		if v {
+			number = 1
+		}
 	case uint8:
 		number = int32(v)
 	case int32:
