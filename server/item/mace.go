@@ -6,7 +6,7 @@ type Mace struct{}
 
 // AttackDamage ...
 func (Mace) AttackDamage() float64 {
-	return 6
+	return 5
 }
 
 // MaxCount always returns 1.
