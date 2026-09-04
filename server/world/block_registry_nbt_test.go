@@ -156,14 +156,14 @@ func TestResolveBlockState_CoercesLegacyByteToIntBeforeUpgrade(t *testing.T) {
 
 	block, ok := ResolveBlockState(registry, BlockState{
 		Name: "minecraft:blast_furnace", Version: 17432626,
-		Properties: map[string]any{"facing_direction": uint8(0)},
+		Properties: map[string]any{"facing_direction": uint8(3)},
 	})
 	if !ok {
 		t.Fatal("ResolveBlockState did not resolve a legacy byte-typed integer property")
 	}
 	name, properties := block.EncodeBlock()
-	if name != "minecraft:blast_furnace" || properties["minecraft:cardinal_direction"] != "north" {
-		t.Fatalf("resolved state = %s%v, want north-facing blast furnace", name, properties)
+	if name != "minecraft:blast_furnace" || properties["minecraft:cardinal_direction"] != "south" {
+		t.Fatalf("resolved state = %s%v, want south-facing blast furnace", name, properties)
 	}
 }
 

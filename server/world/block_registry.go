@@ -725,7 +725,7 @@ func (br *BasicBlockRegistry) resolveBlockStateCandidate(state BlockState) (Bloc
 	return b, cost, ok
 }
 
-// looseNumericCandidateProperties returns deterministic keys whose 0/1 value has another valid NBT numeric encoding.
+// looseNumericCandidateProperties returns deterministic keys whose value has another valid NBT numeric encoding.
 func looseNumericCandidateProperties(properties map[string]any) []string {
 	keys := make([]string, 0, len(properties))
 	for key, value := range properties {
@@ -733,9 +733,7 @@ func looseNumericCandidateProperties(properties map[string]any) []string {
 		case bool:
 			keys = append(keys, key)
 		case uint8:
-			if value == 0 || value == 1 {
-				keys = append(keys, key)
-			}
+			keys = append(keys, key)
 		case int32:
 			if value == 0 || value == 1 {
 				keys = append(keys, key)
@@ -746,7 +744,7 @@ func looseNumericCandidateProperties(properties map[string]any) []string {
 	return keys
 }
 
-// alternateNumericEncoding switches one 0/1 value between loose integer and byte representations.
+// alternateNumericEncoding switches a byte to an integer, or a boolean-like integer to a byte.
 func alternateNumericEncoding(value any) any {
 	if value, ok := value.(bool); ok {
 		if value {
