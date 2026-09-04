@@ -123,6 +123,6 @@ func allCoralFan() (c []world.Block) {
 // coralFanWaterlogged reports whether a floor or wall fan retains water in its own block layer.
 func coralFanWaterlogged(pos cube.Pos, tx *world.Tx) bool {
 	liquid, ok := tx.Liquid(pos)
-	_, water := liquid.(Water)
-	return ok && water
+	water, waterlogged := liquid.(Water)
+	return ok && waterlogged && !water.Falling && water.Depth == 8
 }

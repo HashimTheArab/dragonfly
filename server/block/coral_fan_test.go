@@ -138,6 +138,28 @@ func TestCoralFan_DryPlacementDiesImmediately(t *testing.T) {
 	}
 }
 
+func TestCoralFan_PlacementInFallingWaterDiesImmediately(t *testing.T) {
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
+
+	support := cube.Pos{0, 64, 0}
+	target := support.Side(cube.FaceUp)
+	var used, dead bool
+	runWorld(w, func(tx *world.Tx) {
+		tx.SetBlock(support, Stone{}, nil)
+		tx.SetLiquid(target, Water{Depth: 8, Falling: true})
+		user := &coralFanTestUser{tx: tx, held: item.NewStack(CoralFan{Type: TubeCoral()}, 1)}
+		used = (CoralFan{Type: TubeCoral()}).UseOnBlock(support, cube.FaceUp, mgl64.Vec3{}, tx, user, &item.UseContext{})
+		dead = tx.Block(target).(CoralFan).Dead
+	})
+	if !used {
+		t.Fatal("coral fan placement in falling water was rejected")
+	}
+	if !dead {
+		t.Fatal("coral fan stayed alive after displacing falling water")
+	}
+}
+
 func TestCoralFan_WaterloggedFanSurvivesScheduledTick(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	floor, ok := world.BlockByName("minecraft:tube_coral_fan", map[string]any{"coral_fan_direction": int32(0)})
