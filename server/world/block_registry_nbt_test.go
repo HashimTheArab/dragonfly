@@ -198,6 +198,30 @@ func TestResolveBlockState_InitializesMissingPropertiesBeforeUpgrade(t *testing.
 	}
 }
 
+func TestBlockStateLookup_HandlesUnsupportedPropertyValues(t *testing.T) {
+	registry := NewBlockRegistry()
+	registry.RegisterBlockState(BlockState{
+		Name: "dragonfly:safe_lookup", Properties: map[string]any{"direction": int32(1)},
+	})
+	registry.Finalize()
+
+	if _, ok := registry.BlockByName("dragonfly:safe_lookup", map[string]any{"direction": int64(1)}); ok {
+		t.Fatal("BlockByName accepted an unsupported declared property value")
+	}
+	if _, ok := registry.ResolveBlockState(BlockState{
+		Name: "dragonfly:safe_lookup", Version: chunk.CurrentBlockVersion,
+		Properties: map[string]any{"direction": int32(1), "derived": []int{1}},
+	}); !ok {
+		t.Fatal("ResolveBlockState did not ignore an unsupported undeclared property")
+	}
+	if _, ok := registry.ResolveBlockState(BlockState{
+		Name: "dragonfly:safe_lookup", Version: chunk.CurrentBlockVersion,
+		Properties: map[string]any{"direction": int64(1)},
+	}); ok {
+		t.Fatal("ResolveBlockState accepted an unsupported declared property value")
+	}
+}
+
 // TestCoerceStateValue covers the per-type conversion the lookup relies on.
 func TestCoerceStateValue(t *testing.T) {
 	for _, test := range []struct {

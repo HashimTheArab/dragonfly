@@ -577,11 +577,26 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 	if !br.finalized {
 		panic("BlockRegistry.BlockByName called on non finalized BlockRegistry")
 	}
+	if !validBlockPropertyValues(properties) {
+		return nil, false
+	}
 	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]
 	if !ok {
 		return nil, false
 	}
 	return br.blocks[rid], true
+}
+
+// validBlockPropertyValues reports whether properties contain only palette-supported scalar types.
+func validBlockPropertyValues(properties map[string]any) bool {
+	for _, value := range properties {
+		switch value.(type) {
+		case bool, uint8, int32, string:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // ResolveBlockState upgrades and resolves a versioned block state decoded from NBT.
@@ -644,9 +659,6 @@ func (br *BasicBlockRegistry) resolveBlockStateCandidate(state BlockState) (Bloc
 	upgraded := blockupgrader.Upgrade(blockupgrader.BlockState{
 		Name: state.Name, Properties: maps.Clone(state.Properties), Version: state.Version,
 	})
-	if b, ok := br.BlockByName(upgraded.Name, upgraded.Properties); ok {
-		return b, 0, true
-	}
 	declared, ok := br.blockProperties[upgraded.Name]
 	if !ok {
 		return nil, 0, false
