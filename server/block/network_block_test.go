@@ -27,7 +27,7 @@ func testNetworkBlock(t *testing.T, properties map[string]any, state map[string]
 	return b
 }
 
-func TestNetworkBlock_ComponentsAndNBT(t *testing.T) {
+func TestNetworkBlock_Components(t *testing.T) {
 	b := testNetworkBlock(t, map[string]any{"components": map[string]any{
 		"minecraft:collision_box":          map[string]any{"enabled": uint8(0)},
 		"minecraft:selection_box":          map[string]any{"origin": []float32{-8, 0, -8}, "size": []float32{16, 8, 16}},
@@ -57,12 +57,8 @@ func TestNetworkBlock_ComponentsAndNBT(t *testing.T) {
 	if got := BreakDuration(b, item.Stack{}, BreakContext{Airborne: true}); got != 15*time.Second {
 		t.Fatalf("airborne duration=%v", got)
 	}
-	attached := b.(world.NBTer).DecodeNBT(map[string]any{"test": int32(7)}).(world.Block)
-	if got := BreakDuration(attached, item.Stack{}, BreakContext{}); got != 3*time.Second {
-		t.Fatalf("NBT lost mining implementation: %v", got)
-	}
-	if len(b.(world.NBTer).EncodeNBT()) != 0 {
-		t.Fatal("NBT changed registry block")
+	if _, ok := b.(world.NBTer); ok {
+		t.Fatal("ordinary custom block must not create a block entity")
 	}
 	if b.(LightEmitter).LightEmissionLevel() != 7 || b.(LightDiffuser).LightDiffusionLevel() != 0 {
 		t.Fatal("lighting not installed")
@@ -167,6 +163,70 @@ func TestNetworkBlock_LegacyBlockPropertyQuery(t *testing.T) {
 		got, err := evaluateBlockCondition(query+"('server:variant') == 1", map[string]any{"server:variant": int32(1)})
 		if err != nil || !got {
 			t.Fatalf("%s: got %v, error %v", query, got, err)
+		}
+	}
+}
+
+func TestNetworkBlock_NegativeHardnessOverrides(t *testing.T) {
+	for _, test := range []struct {
+		base, override float32
+		hand, tool     time.Duration
+	}{
+		{-1, 1, math.MaxInt64, 1500 * time.Millisecond},
+		{1, -1, 1500 * time.Millisecond, math.MaxInt64},
+	} {
+		b := testNetworkBlock(t, map[string]any{"components": map[string]any{"minecraft:destructible_by_mining": map[string]any{
+			"value": test.base, "item_specific_speeds": []any{map[string]any{"item": map[string]any{"Name": "minecraft:diamond_pickaxe"}, "destroy_speed": test.override}},
+		}}}, nil)
+		if got := BreakDuration(b, item.Stack{}, BreakContext{}); got != test.hand {
+			t.Fatalf("hand duration=%v want %v", got, test.hand)
+		}
+		if got := BreakDuration(b, item.NewStack(item.Pickaxe{Tier: item.ToolTierDiamond}, 1), BreakContext{}); got != test.tool {
+			t.Fatalf("tool duration=%v want %v", got, test.tool)
+		}
+	}
+}
+
+func TestNetworkBlock_CollisionFaces(t *testing.T) {
+	for _, axis := range cube.Axes() {
+		low, high := axis.Faces()
+		size := []float32{16, 16, 16}
+		for i, component := range axis.Vec3() {
+			if component != 0 {
+				size[i] = 8
+			}
+		}
+		b := testNetworkBlock(t, map[string]any{"components": map[string]any{"minecraft:collision_box": map[string]any{"origin": []float32{-8, 0, -8}, "size": size}}}, nil)
+		for _, face := range cube.Faces() {
+			if got, want := b.Model().FaceSolid(cube.Pos{}, face, nil), face == low; got != want {
+				t.Fatalf("axis=%v face=%v solid=%v want %v (opposite=%v)", axis, face, got, want, high)
+			}
+		}
+	}
+}
+
+func TestNetworkBlock_MultipleTallCollisionBoxes(t *testing.T) {
+	b := testNetworkBlock(t, map[string]any{"components": map[string]any{"minecraft:collision_box": map[string]any{"boxes": []map[string]any{
+		{"minX": float32(0), "minY": float32(0), "minZ": float32(0), "maxX": float32(4), "maxY": float32(24), "maxZ": float32(16)},
+		{"minX": float32(12), "minY": float32(0), "minZ": float32(0), "maxX": float32(16), "maxY": float32(24), "maxZ": float32(16)},
+	}}}}, nil)
+	boxes := b.Model().BBox(cube.Pos{}, nil)
+	if len(boxes) != 2 || boxes[0] != cube.Box(0, 0, 0, 0.25, 1.5, 1) || boxes[1] != cube.Box(0.75, 0, 0, 1, 1.5, 1) {
+		t.Fatalf("tall multipart collision=%v", boxes)
+	}
+	if _, ok := b.(world.NBTer); ok {
+		t.Fatal("non-mineable custom block must not create a block entity")
+	}
+}
+
+func TestNetworkBlock_RejectsPackMiningAndFriction(t *testing.T) {
+	for name, value := range map[string]any{
+		"minecraft:friction":               float32(0.4),
+		"minecraft:destructible_by_mining": map[string]any{"seconds_to_destroy": float32(3)},
+	} {
+		_, err := decodeNetworkBlock(protocol.BlockEntry{Name: "test:pack_json", Properties: map[string]any{"components": map[string]any{name: value}}}, nil)
+		if err == nil {
+			t.Fatalf("accepted pack JSON as a network component: %s", name)
 		}
 	}
 }

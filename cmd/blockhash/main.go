@@ -278,9 +278,28 @@ func (b *hashBuilder) resolveBlocks() {
 	}
 }
 
+// readFuncs selects block encoders that do not already own a handwritten hash.
 func (b *hashBuilder) readFuncs(pkg *packages.Package) {
 	for _, f := range pkg.Syntax {
 		ast.Inspect(f, b.readFuncDecls)
+	}
+	for _, f := range pkg.Syntax {
+		if ast.IsGenerated(f) {
+			continue
+		}
+		for _, decl := range f.Decls {
+			fun, ok := decl.(*ast.FuncDecl)
+			if !ok || fun.Name.Name != "Hash" || fun.Recv == nil {
+				continue
+			}
+			receiver := fun.Recv.List[0].Type
+			if pointer, ok := receiver.(*ast.StarExpr); ok {
+				receiver = pointer.X
+			}
+			if name, ok := receiver.(*ast.Ident); ok {
+				delete(b.funcs, name.Name)
+			}
+		}
 	}
 }
 

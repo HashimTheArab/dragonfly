@@ -20,7 +20,6 @@ type networkBlock struct {
 	model               networkBlockModel
 	friction            float64
 	emission, dampening uint8
-	data                map[string]any
 	tags                []string
 }
 
@@ -47,12 +46,6 @@ func (b networkBlock) LightEmissionLevel() uint8 { return b.emission }
 // LightDiffusionLevel returns the light blocked by this state.
 func (b networkBlock) LightDiffusionLevel() uint8 { return b.dampening }
 
-// EncodeNBT preserves block actor data without sharing its top-level map.
-func (b networkBlock) EncodeNBT() map[string]any { return maps.Clone(b.data) }
-
-// DecodeNBT attaches actor data to a copy without changing the registry's block.
-func (b networkBlock) DecodeNBT(data map[string]any) any { b.data = maps.Clone(data); return b }
-
 type mineableNetworkBlock struct {
 	networkBlock
 	hardness float64
@@ -63,9 +56,6 @@ type mineableNetworkBlock struct {
 func (b mineableNetworkBlock) BreakInfo() BreakInfo {
 	return b.breakInfoForItem(item.Stack{})
 }
-
-// DecodeNBT preserves the mining implementation when a block actor is attached.
-func (b mineableNetworkBlock) DecodeNBT(data map[string]any) any { b.data = maps.Clone(data); return b }
 
 type networkBlockModel struct{ collision, selection []cube.BBox }
 
@@ -81,7 +71,14 @@ func (m networkBlockModel) SelectionBBox(cube.Pos, world.BlockSource) []cube.BBo
 
 // FaceSolid reports a full supporting face only when a collision box covers it.
 func (m networkBlockModel) FaceSolid(_ cube.Pos, face cube.Face, _ world.BlockSource) bool {
-	axis := face.Axis()
+	// Vec3 uses X, Y, Z order; cube.Axis does not.
+	axis := 0
+	for i, component := range face.Axis().Vec3() {
+		if component != 0 {
+			axis = i
+			break
+		}
+	}
 	for _, box := range m.collision {
 		lo, hi := box.Min(), box.Max()
 		a, b := (axis+1)%3, (axis+2)%3
@@ -137,7 +134,11 @@ func decodeNetworkBlock(entry protocol.BlockEntry, state map[string]any) (world.
 		return nil, fmt.Errorf("selection_box: %w", err)
 	}
 	if raw, ok := components["minecraft:friction"]; ok {
-		b.friction, err = networkComponentNumber(raw, "value")
+		component, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("friction requires a network value compound, not a pack JSON scalar")
+		}
+		b.friction, err = networkComponentNumber(component, "value")
 		if err != nil || b.friction < 0 || b.friction > 1 {
 			return nil, fmt.Errorf("invalid friction %v", raw)
 		}
@@ -171,14 +172,11 @@ func decodeNetworkBlock(entry protocol.BlockEntry, state map[string]any) (world.
 		}
 		return mineableNetworkBlock{networkBlock: b}, nil
 	}
-	hardness, err := networkComponentNumber(raw, "value", "seconds_to_destroy")
+	hardness, err := networkComponentNumber(raw, "value")
 	if err != nil {
 		return nil, fmt.Errorf("destructible_by_mining: %w", err)
 	}
 	if m, ok := raw.(map[string]any); ok {
-		if _, networkValue := m["value"]; !networkValue {
-			hardness /= 1.5
-		}
 		rules, err := decodeNetworkMiningRules(m["item_specific_speeds"])
 		if err != nil {
 			return nil, err

@@ -46,7 +46,9 @@ func NewCustomBlockRegistry(entries []protocol.BlockEntry) (world.BlockRegistry,
 	return registry, nil
 }
 
-// AddCustomBlocks appends custom block states to registry while preserving its existing runtime IDs.
+// AddCustomBlocks appends StartGame network block states while preserving existing runtime IDs.
+// Entries contain compiled network components, not behaviour-pack JSON: for example, mining
+// uses hardness in value rather than seconds_to_destroy. On error, discard the registry.
 func AddCustomBlocks(registry world.BlockRegistry, entries []protocol.BlockEntry) error {
 	basicRegistry, ok := registry.(*world.BasicBlockRegistry)
 	if !ok {
