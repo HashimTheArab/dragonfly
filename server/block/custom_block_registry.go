@@ -48,7 +48,9 @@ func NewCustomBlockRegistry(entries []protocol.BlockEntry) (world.BlockRegistry,
 
 // AddCustomBlocks appends StartGame network block states while preserving existing runtime IDs.
 // Entries contain compiled network components, not behaviour-pack JSON: for example, mining
-// uses hardness in value rather than seconds_to_destroy. On error, discard the registry.
+// uses hardness in value rather than seconds_to_destroy. Unsupported behaviour produces an
+// UnresolvedNetworkBlock without failing state registration. Invalid state declarations still
+// return an error; in that case, discard the registry.
 func AddCustomBlocks(registry world.BlockRegistry, entries []protocol.BlockEntry) error {
 	basicRegistry, ok := registry.(*world.BasicBlockRegistry)
 	if !ok {
@@ -83,7 +85,7 @@ func AddCustomBlocks(registry world.BlockRegistry, entries []protocol.BlockEntry
 		err := forEachCustomBlockState(space.properties, space.values, func(properties map[string]any) error {
 			b, err := decodeNetworkBlock(space.entry, properties)
 			if err != nil {
-				return fmt.Errorf("custom block %s: %w", space.entry.Name, err)
+				b = unresolvedBlock(space.entry, properties, err)
 			}
 			return basicRegistry.AppendNetworkBlock(b)
 		})

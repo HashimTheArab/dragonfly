@@ -13,6 +13,39 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
+// UnresolvedNetworkBlock preserves a server state whose local behaviour could not be decoded.
+// Consumers must not use its placeholder model for automated targeting or movement prediction.
+// The original definition can still be forwarded to a client that understands it.
+type UnresolvedNetworkBlock interface {
+	world.Block
+	BehaviourError() error
+}
+
+type unresolvedNetworkBlock struct {
+	networkBlock
+	cause error
+}
+
+type unresolvedNetworkModel struct{ networkBlockModel }
+
+// FaceSolid refuses local attachments when the supporting shape is unknown.
+func (unresolvedNetworkModel) FaceSolid(cube.Pos, cube.Face, world.BlockSource) bool { return false }
+
+// Model returns an obstruction placeholder, not a usable prediction or selection shape.
+func (b unresolvedNetworkBlock) Model() world.BlockModel { return unresolvedNetworkModel{b.model} }
+
+// BehaviourError explains why this state has no reliable local behaviour model.
+func (b unresolvedNetworkBlock) BehaviourError() error { return b.cause }
+
+// unresolvedBlock keeps IDs usable without claiming mining or attachment support.
+func unresolvedBlock(entry protocol.BlockEntry, state map[string]any, cause error) world.Block {
+	return unresolvedNetworkBlock{networkBlock: networkBlock{
+		state:    world.BlockState{Name: entry.Name, Properties: state},
+		friction: 0.6, dampening: 15,
+		model: networkBlockModel{collision: []cube.BBox{cube.Box(0, 0, 0, 1, 1, 1)}},
+	}, cause: cause}
+}
+
 // networkBlock is an immutable, session-owned implementation of a server-defined state.
 // The server remains responsible for drops, scripts, and other authoritative behaviour.
 type networkBlock struct {

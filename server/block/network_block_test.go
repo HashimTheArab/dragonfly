@@ -118,15 +118,31 @@ func TestNetworkBlock_BoxFormsAndTransforms(t *testing.T) {
 	}
 }
 
-func TestNetworkBlock_RejectsUnknownConditionAndMalformedComponents(t *testing.T) {
+func TestNetworkBlock_PreservesStatesWithUnsupportedBehaviour(t *testing.T) {
 	for _, props := range []map[string]any{
 		{"components": map[string]any{"minecraft:friction": map[string]any{"value": float32(math.NaN())}}},
 		{"components": map[string]any{"minecraft:collision_box": map[string]any{"origin": []float32{0, 0}, "size": []float32{16, 16, 16}}}},
 		{"permutations": []any{map[string]any{"condition": "q.is_sprinting", "components": map[string]any{}}}},
 	} {
 		r := world.NewBlockRegistry()
-		if err := AddCustomBlocks(r, []protocol.BlockEntry{{Name: "test:bad", Properties: props}}); err == nil {
-			t.Fatalf("accepted invalid components: %v", props)
+		if err := AddCustomBlocks(r, []protocol.BlockEntry{{Name: "test:bad", Properties: props}, {Name: "test:good", Properties: map[string]any{"components": map[string]any{"minecraft:destructible_by_mining": map[string]any{"value": float32(1)}}}}}); err != nil {
+			t.Fatal(err)
+		}
+		r.Finalize()
+		b, ok := r.BlockByName("test:bad", nil)
+		if !ok {
+			t.Fatal("unsupported behaviour lost state identity")
+		}
+		unresolved, ok := b.(UnresolvedNetworkBlock)
+		if !ok || unresolved.BehaviourError() == nil {
+			t.Fatal("missing unresolved behaviour diagnostic")
+		}
+		if _, ok := b.(Breakable); ok {
+			t.Fatal("unsupported state is locally mineable")
+		}
+		good, ok := r.BlockByName("test:good", nil)
+		if !ok || BreakDuration(good, item.Stack{}, BreakContext{}) != 1500*time.Millisecond {
+			t.Fatal("unsupported neighbour affected supported state")
 		}
 	}
 }
