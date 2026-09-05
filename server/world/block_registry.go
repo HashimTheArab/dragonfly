@@ -5,12 +5,14 @@ import (
 	"maps"
 	"math"
 	"math/bits"
+	"reflect"
 	"slices"
 	"sort"
 	"sync"
 
 	"github.com/brentp/intintmap"
 	"github.com/df-mc/dragonfly/server/world/chunk"
+	"github.com/df-mc/worldupgrader/blockupgrader"
 	"github.com/segmentio/fasthash/fnv1"
 )
 
@@ -64,6 +66,33 @@ type BlockRegistry interface {
 	BlockHash(b Block) uint64
 	// RuntimeIDToHash resolves a runtime ID to its network block hash.
 	RuntimeIDToHash(runtimeID uint32) (hash uint32, ok bool)
+}
+
+// BlockStateResolver resolves versioned block states read from NBT. Registries
+// that support tolerant input and historical state upgrades may implement this
+// interface without expanding the core BlockRegistry contract.
+type BlockStateResolver interface {
+	ResolveBlockState(state BlockState) (Block, bool)
+}
+
+// ResolveBlockState upgrades and resolves a versioned block state using registry.
+// Registries may implement BlockStateResolver to accept loosely typed or otherwise
+// non-canonical state data. Other registries receive the upgraded state unchanged.
+func ResolveBlockState(registry BlockRegistry, state BlockState) (Block, bool) {
+	if resolver, ok := registry.(BlockStateResolver); ok {
+		return resolver.ResolveBlockState(state)
+	}
+	properties := maps.Clone(state.Properties)
+	if properties == nil {
+		properties = make(map[string]any)
+	}
+	if !validBlockPropertyValues(properties) {
+		return nil, false
+	}
+	upgraded := blockupgrader.Upgrade(blockupgrader.BlockState{
+		Name: state.Name, Properties: properties, Version: state.Version,
+	})
+	return registry.BlockByName(upgraded.Name, upgraded.Properties)
 }
 
 const (
@@ -560,11 +589,202 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 	if !br.finalized {
 		panic("BlockRegistry.BlockByName called on non finalized BlockRegistry")
 	}
+	if !validBlockPropertyValues(properties) {
+		return nil, false
+	}
 	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]
 	if !ok {
 		return nil, false
 	}
 	return br.blocks[rid], true
+}
+
+// validBlockPropertyValues reports whether properties contain only palette-supported scalar types.
+func validBlockPropertyValues(properties map[string]any) bool {
+	for _, value := range properties {
+		if !validBlockPropertyValue(value) {
+			return false
+		}
+	}
+	return true
+}
+
+// validBlockPropertyValue reports whether value is a scalar supported by Bedrock block palettes.
+func validBlockPropertyValue(value any) bool {
+	switch value.(type) {
+	case bool, uint8, int32, string:
+		return true
+	default:
+		return false
+	}
+}
+
+// ResolveBlockState upgrades and resolves a versioned block state decoded from NBT.
+//
+// Property values are hashed by type, so a boolean the palette holds as a byte
+// does not match the same property written as an int. Structure files and other
+// third-party sources do write them that way, and the resulting state would
+// otherwise silently fail to resolve. Values are coerced to the type the
+// palette declares for the block before the lookup, which leaves genuinely
+// numeric properties such as a stair's direction alone. Properties the palette
+// does not declare at all are dropped, since no registered state carries them.
+func (br *BasicBlockRegistry) ResolveBlockState(state BlockState) (Block, bool) {
+	properties := maps.Clone(state.Properties)
+	if properties == nil {
+		properties = make(map[string]any)
+	}
+	declared, knownName := br.blockProperties[state.Name]
+	for property, value := range properties {
+		if validBlockPropertyValue(value) {
+			continue
+		}
+		_, declaredProperty := declared[property]
+		if !knownName || declaredProperty || state.Version < chunk.CurrentBlockVersion {
+			return nil, false
+		}
+		delete(properties, property)
+	}
+	match, cost, matched := br.resolveBlockStateCandidate(BlockState{Name: state.Name, Properties: properties, Version: state.Version})
+	if matched && cost == 0 {
+		return match, true
+	}
+	keys := looseNumericCandidateProperties(properties)
+	if len(keys) == 0 {
+		return match, matched
+	}
+	const maxLooseNumericProperties = 8
+	if len(keys) > maxLooseNumericProperties {
+		return nil, false
+	}
+	var matchState stateHash
+	if matched {
+		name, resolvedProperties := match.EncodeBlock()
+		matchState = stateHash{name: name, properties: hashProperties(resolvedProperties)}
+	}
+	for mask := 1; mask < 1<<len(keys); mask++ {
+		candidate := maps.Clone(properties)
+		for index, key := range keys {
+			if mask&(1<<index) != 0 {
+				candidate[key] = alternateNumericEncoding(candidate[key])
+			}
+		}
+		b, candidateCost, ok := br.resolveBlockStateCandidate(BlockState{Name: state.Name, Properties: candidate, Version: state.Version})
+		if !ok || matched && candidateCost > cost {
+			continue
+		}
+		name, resolvedProperties := b.EncodeBlock()
+		resolvedState := stateHash{name: name, properties: hashProperties(resolvedProperties)}
+		if !matched || candidateCost < cost {
+			match, matchState, cost, matched = b, resolvedState, candidateCost, true
+			continue
+		}
+		if resolvedState != matchState {
+			return nil, false
+		}
+	}
+	return match, matched
+}
+
+// resolveBlockStateCandidate upgrades one type interpretation and reports its normalization cost.
+func (br *BasicBlockRegistry) resolveBlockStateCandidate(state BlockState) (Block, int, bool) {
+	upgraded := blockupgrader.Upgrade(blockupgrader.BlockState{
+		Name: state.Name, Properties: maps.Clone(state.Properties), Version: state.Version,
+	})
+	declared, ok := br.blockProperties[upgraded.Name]
+	if !ok {
+		return nil, 0, false
+	}
+	coerced := maps.Clone(declared)
+	cost := 0
+	for property, value := range upgraded.Properties {
+		declaredValue, ok := declared[property]
+		if !ok {
+			cost++
+			continue
+		}
+		coercedValue := coerceStateValue(value, declaredValue)
+		if reflect.TypeOf(coercedValue) != reflect.TypeOf(value) {
+			cost++
+		}
+		coerced[property] = coercedValue
+	}
+	b, ok := br.BlockByName(upgraded.Name, coerced)
+	return b, cost, ok
+}
+
+// looseNumericCandidateProperties returns deterministic keys whose value has another valid NBT numeric encoding.
+func looseNumericCandidateProperties(properties map[string]any) []string {
+	keys := make([]string, 0, len(properties))
+	for key, value := range properties {
+		switch value := value.(type) {
+		case bool:
+			keys = append(keys, key)
+		case uint8:
+			keys = append(keys, key)
+		case int32:
+			if value == 0 || value == 1 {
+				keys = append(keys, key)
+			}
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// alternateNumericEncoding switches a byte to an integer, or a boolean-like integer to a byte.
+func alternateNumericEncoding(value any) any {
+	if value, ok := value.(bool); ok {
+		if value {
+			return uint8(1)
+		}
+		return uint8(0)
+	}
+	if value, ok := value.(uint8); ok {
+		return int32(value)
+	}
+	return uint8(value.(int32))
+}
+
+// coerceStateValue converts one NBT property value to the type the palette
+// declares for it.
+//
+// A block state property is only ever a byte, an int or a string, so a string
+// never needs converting and only the two numeric spellings can disagree. A
+// value whose declared type cannot hold it is returned unchanged, so the caller
+// still fails the lookup rather than resolving to the wrong state.
+func coerceStateValue(value, declared any) any {
+	var number int32
+	switch v := value.(type) {
+	case bool:
+		if v {
+			number = 1
+		}
+	case uint8:
+		number = int32(v)
+	case int32:
+		number = v
+	default:
+		return value
+	}
+	switch declared.(type) {
+	case bool:
+		switch number {
+		case 0:
+			return false
+		case 1:
+			return true
+		default:
+			return value
+		}
+	case uint8:
+		if number < 0 || number > math.MaxUint8 {
+			return value
+		}
+		return uint8(number)
+	case int32:
+		return number
+	}
+	return value
 }
 
 // CustomBlocks returns a map of all custom blocks registered with their names as keys.
