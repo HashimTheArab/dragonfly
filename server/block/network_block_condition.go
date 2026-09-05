@@ -17,7 +17,7 @@ func evaluateBlockCondition(condition string, state map[string]any) (bool, error
 		return false, err
 	}
 	value, err := blockConditionValue(expression, func(name string, args []any) (any, error) {
-		if name != "block_state" || len(args) != 1 {
+		if (name != "block_state" && name != "block_property") || len(args) != 1 {
 			return nil, fmt.Errorf("unsupported block query %s", name)
 		}
 		key, ok := args[0].(string)

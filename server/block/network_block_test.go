@@ -161,3 +161,12 @@ func TestNetworkBlock_ItemSpecificHardness(t *testing.T) {
 		t.Fatalf("tagged diamond pickaxe duration=%v", got)
 	}
 }
+
+func TestNetworkBlock_LegacyBlockPropertyQuery(t *testing.T) {
+	for _, query := range []string{"q.block_property", "query.block_property", "q.block_state", "query.block_state"} {
+		got, err := evaluateBlockCondition(query+"('server:variant') == 1", map[string]any{"server:variant": int32(1)})
+		if err != nil || !got {
+			t.Fatalf("%s: got %v, error %v", query, got, err)
+		}
+	}
+}
