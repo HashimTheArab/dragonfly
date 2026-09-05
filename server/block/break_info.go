@@ -76,6 +76,9 @@ func BreakDuration(b world.Block, i item.Stack, ctx BreakContext) time.Duration 
 		return math.MaxInt64
 	}
 	info := breakable.BreakInfo()
+	if network, ok := b.(interface{ breakInfoForItem(item.Stack) BreakInfo }); ok {
+		info = network.breakInfoForItem(i)
+	}
 	hardness := float32(info.Hardness)
 	if hardness < 0 {
 		// Negative hardness yields no progress at all, rather than the instant break zero hardness gives.

@@ -1,10 +1,11 @@
-package world
+package block
 
 import (
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/df-mc/dragonfly/server/world"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
@@ -26,8 +27,8 @@ func TestAddCustomBlocksRejectsExcessStates(t *testing.T) {
 }
 
 func TestAddCustomBlocksPreservesVanillaRuntimeIDs(t *testing.T) {
-	DefaultBlockRegistry.Finalize()
-	registry := DefaultBlockRegistry.Clone()
+	world.DefaultBlockRegistry.Finalize()
+	registry := world.DefaultBlockRegistry.Clone()
 
 	oldCount := registry.BlockCount()
 	oldAir := registry.AirRuntimeID()
@@ -63,8 +64,8 @@ func TestAddCustomBlocksPreservesVanillaRuntimeIDs(t *testing.T) {
 }
 
 func TestAddCustomBlocksAcceptsTypedEnumSlices(t *testing.T) {
-	DefaultBlockRegistry.Finalize()
-	registry := DefaultBlockRegistry.Clone()
+	world.DefaultBlockRegistry.Finalize()
+	registry := world.DefaultBlockRegistry.Clone()
 
 	oldCount := registry.BlockCount()
 	entry := protocol.BlockEntry{
@@ -96,8 +97,8 @@ func TestAddCustomBlocksAcceptsTypedEnumSlices(t *testing.T) {
 }
 
 func TestAddCustomBlocksSkipsDuplicateStates(t *testing.T) {
-	DefaultBlockRegistry.Finalize()
-	registry := DefaultBlockRegistry.Clone()
+	world.DefaultBlockRegistry.Finalize()
+	registry := world.DefaultBlockRegistry.Clone()
 
 	entry := protocol.BlockEntry{Name: "dragonfly:plain_block", Properties: map[string]any{}}
 	if err := AddCustomBlocks(registry, []protocol.BlockEntry{entry}); err != nil {
@@ -113,17 +114,17 @@ func TestAddCustomBlocksSkipsDuplicateStates(t *testing.T) {
 }
 
 func TestNewCustomBlockRegistryPreservesVanillaRuntimeIDs(t *testing.T) {
-	DefaultBlockRegistry.Finalize()
+	world.DefaultBlockRegistry.Finalize()
 
 	registry, err := NewCustomBlockRegistry([]protocol.BlockEntry{{Name: "dragonfly:plain_block"}})
 	if err != nil {
 		t.Fatalf("NewCustomBlockRegistry() error = %v", err)
 	}
-	basic, ok := registry.(*BasicBlockRegistry)
+	basic, ok := registry.(*world.BasicBlockRegistry)
 	if !ok {
-		t.Fatalf("NewCustomBlockRegistry() returned %T, want *BasicBlockRegistry", registry)
+		t.Fatalf("NewCustomBlockRegistry() returned %T, want *world.BasicBlockRegistry", registry)
 	}
-	if got, want := basic.AirRuntimeID(), DefaultBlockRegistry.AirRuntimeID(); got != want {
+	if got, want := basic.AirRuntimeID(), world.DefaultBlockRegistry.AirRuntimeID(); got != want {
 		t.Fatalf("AirRuntimeID() = %d, want %d", got, want)
 	}
 }

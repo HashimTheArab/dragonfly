@@ -42,7 +42,24 @@ func (r BlockResult) BlockPosition() cube.Pos {
 // BlockIntercept returns a BlockResult with the block collided with and with the colliding vector closest to the start position,
 // if no colliding point was found, a zero BlockResult is returned and ok is false.
 func BlockIntercept(pos cube.Pos, src world.BlockSource, b world.Block, start, end mgl64.Vec3) (result BlockResult, ok bool) {
-	bbs := b.Model().BBox(pos, src)
+	return blockInterceptBoxes(pos, b.Model().BBox(pos, src), start, end)
+}
+
+// BlockSelectionIntercept traces the client selection shape, which may differ from collision.
+// Vanilla models without a separate selection shape retain their existing trace behaviour.
+func BlockSelectionIntercept(pos cube.Pos, src world.BlockSource, b world.Block, start, end mgl64.Vec3) (BlockResult, bool) {
+	model := b.Model()
+	if selection, ok := model.(interface {
+		SelectionBBox(cube.Pos, world.BlockSource) []cube.BBox
+	}); ok {
+		return blockInterceptBoxes(pos, selection.SelectionBBox(pos, src), start, end)
+	}
+	return blockInterceptBoxes(pos, model.BBox(pos, src), start, end)
+}
+
+// blockInterceptBoxes finds the nearest hit across a block's selected set of boxes.
+func blockInterceptBoxes(pos cube.Pos, bbs []cube.BBox, start, end mgl64.Vec3) (result BlockResult, ok bool) {
+
 	if len(bbs) == 0 {
 		return
 	}
