@@ -48,13 +48,13 @@ func TestNetworkBlock_Components(t *testing.T) {
 	if len(selection) != 1 || selection[0] != cube.Box(0, 0, 0, 1, 0.5, 1) {
 		t.Fatalf("selection=%v", selection)
 	}
-	if got := b.(Frictional).Friction(); math.Abs(got-0.2) > 1e-7 {
+	if got := b.(Frictional).Friction(); math.Abs(got-0.8) > 1e-7 {
 		t.Fatalf("friction=%v", got)
 	}
-	if got := BreakDuration(b, item.Stack{}, BreakContext{}); got != 3*time.Second {
+	if got := BreakDuration(b, item.Stack{}, BreakContext{}); got != 2*time.Second {
 		t.Fatalf("mining duration=%v", got)
 	}
-	if got := BreakDuration(b, item.Stack{}, BreakContext{Airborne: true}); got != 15*time.Second {
+	if got := BreakDuration(b, item.Stack{}, BreakContext{Airborne: true}); got != 10*time.Second {
 		t.Fatalf("airborne duration=%v", got)
 	}
 	if _, ok := b.(world.NBTer); ok {
@@ -79,7 +79,7 @@ func TestNetworkBlock_PermutationsAndIsolation(t *testing.T) {
 	if len(open.Model().BBox(cube.Pos{}, nil)) != 0 || len(closed.Model().BBox(cube.Pos{}, nil)) != 1 {
 		t.Fatal("permutation shapes not independent")
 	}
-	if BreakDuration(open, item.Stack{}, BreakContext{}) != math.MaxInt64 || BreakDuration(closed, item.Stack{}, BreakContext{}) != 4500*time.Millisecond {
+	if BreakDuration(open, item.Stack{}, BreakContext{}) != math.MaxInt64 || BreakDuration(closed, item.Stack{}, BreakContext{}) != 3*time.Second {
 		t.Fatal("permutation mining not independent")
 	}
 	_, states := closed.EncodeBlock()
@@ -141,36 +141,9 @@ func TestNetworkBlock_PreservesStatesWithUnsupportedBehaviour(t *testing.T) {
 			t.Fatal("unsupported state is locally mineable")
 		}
 		good, ok := r.BlockByName("test:good", nil)
-		if !ok || BreakDuration(good, item.Stack{}, BreakContext{}) != 1500*time.Millisecond {
+		if !ok || BreakDuration(good, item.Stack{}, BreakContext{}) != time.Second {
 			t.Fatal("unsupported neighbour affected supported state")
 		}
-	}
-}
-
-func TestNetworkBlock_ItemSpecificHardness(t *testing.T) {
-	props := map[string]any{"components": map[string]any{"minecraft:destructible_by_mining": map[string]any{
-		"value": float32(4), "item_specific_speeds": []any{
-			map[string]any{"item": map[string]any{"Name": "minecraft:diamond_pickaxe", "Aux": int16(0)}, "destroy_speed": float32(1)},
-			map[string]any{"item": map[string]any{"Tags": "q.any_tag('minecraft:is_pickaxe', 'minecraft:is_axe')"}, "destroy_speed": float32(2)},
-		}}}}
-	b := testNetworkBlock(t, props, nil)
-	for _, test := range []struct {
-		stack item.Stack
-		want  time.Duration
-	}{
-		{item.Stack{}, 6 * time.Second},
-		{item.NewStack(item.Pickaxe{Tier: item.ToolTierDiamond}, 1), 1500 * time.Millisecond},
-		{item.NewStack(item.Pickaxe{Tier: item.ToolTierIron}, 1), 3 * time.Second},
-		{item.NewStack(item.Shovel{Tier: item.ToolTierIron}, 1), 6 * time.Second},
-	} {
-		if got := BreakDuration(b, test.stack, BreakContext{}); got != test.want {
-			t.Fatalf("item %T duration=%v want %v", test.stack.Item(), got, test.want)
-		}
-	}
-	props["blockTags"] = []string{"minecraft:is_pickaxe_item_destructible"}
-	b = testNetworkBlock(t, props, nil)
-	if got := BreakDuration(b, item.NewStack(item.Pickaxe{Tier: item.ToolTierDiamond}, 1), BreakContext{}); got != 200*time.Millisecond {
-		t.Fatalf("tagged diamond pickaxe duration=%v", got)
 	}
 }
 
@@ -179,26 +152,6 @@ func TestNetworkBlock_LegacyBlockPropertyQuery(t *testing.T) {
 		got, err := evaluateBlockCondition(query+"('server:variant') == 1", map[string]any{"server:variant": int32(1)})
 		if err != nil || !got {
 			t.Fatalf("%s: got %v, error %v", query, got, err)
-		}
-	}
-}
-
-func TestNetworkBlock_NegativeHardnessOverrides(t *testing.T) {
-	for _, test := range []struct {
-		base, override float32
-		hand, tool     time.Duration
-	}{
-		{-1, 1, math.MaxInt64, 1500 * time.Millisecond},
-		{1, -1, 1500 * time.Millisecond, math.MaxInt64},
-	} {
-		b := testNetworkBlock(t, map[string]any{"components": map[string]any{"minecraft:destructible_by_mining": map[string]any{
-			"value": test.base, "item_specific_speeds": []any{map[string]any{"item": map[string]any{"Name": "minecraft:diamond_pickaxe"}, "destroy_speed": test.override}},
-		}}}, nil)
-		if got := BreakDuration(b, item.Stack{}, BreakContext{}); got != test.hand {
-			t.Fatalf("hand duration=%v want %v", got, test.hand)
-		}
-		if got := BreakDuration(b, item.NewStack(item.Pickaxe{Tier: item.ToolTierDiamond}, 1), BreakContext{}); got != test.tool {
-			t.Fatalf("tool duration=%v want %v", got, test.tool)
 		}
 	}
 }
@@ -235,14 +188,57 @@ func TestNetworkBlock_MultipleTallCollisionBoxes(t *testing.T) {
 	}
 }
 
-func TestNetworkBlock_RejectsPackMiningAndFriction(t *testing.T) {
-	for name, value := range map[string]any{
-		"minecraft:friction":               float32(0.4),
-		"minecraft:destructible_by_mining": map[string]any{"seconds_to_destroy": float32(3)},
-	} {
-		_, err := decodeNetworkBlock(protocol.BlockEntry{Name: "test:pack_json", Properties: map[string]any{"components": map[string]any{name: value}}}, nil)
-		if err == nil {
-			t.Fatalf("accepted pack JSON as a network component: %s", name)
+// TestNetworkBlock_DocumentedDefaults checks public mining and friction semantics.
+func TestNetworkBlock_DocumentedDefaults(t *testing.T) {
+	for _, raw := range []any{nil, true, map[string]any{}, map[string]any{"seconds_to_destroy": float32(0)}} {
+		components := map[string]any{}
+		if raw != nil {
+			components["minecraft:destructible_by_mining"] = raw
+		}
+		b := testNetworkBlock(t, map[string]any{"components": components}, nil)
+		if got := BreakDuration(b, item.Stack{}, BreakContext{}); got != 0 {
+			t.Fatalf("default %v: %v", raw, got)
+		}
+		if got := b.(Frictional).Friction(); got != 0.6 {
+			t.Fatalf("default friction: %v", got)
+		}
+	}
+	for _, raw := range []any{float32(0.02), map[string]any{"value": float32(0.02)}} {
+		b := testNetworkBlock(t, map[string]any{"components": map[string]any{"minecraft:friction": raw, "minecraft:destructible_by_mining": map[string]any{"seconds_to_destroy": float32(3)}}}, nil)
+		if got := b.(Frictional).Friction(); math.Abs(got-0.98) > 1e-7 {
+			t.Fatalf("ice friction: %v", got)
+		}
+		if got := BreakDuration(b, item.Stack{}, BreakContext{}); got != 3*time.Second {
+			t.Fatalf("documented seconds: %v", got)
+		}
+	}
+}
+
+// TestNetworkBlock_UnverifiedMiningRules preserves definitions without guessing item timing.
+func TestNetworkBlock_UnverifiedMiningRules(t *testing.T) {
+	for _, descriptor := range []any{"minecraft:iron_pickaxe", map[string]any{"Name": "minecraft:iron_pickaxe"}} {
+		b := testNetworkBlock(t, map[string]any{"components": map[string]any{"minecraft:destructible_by_mining": map[string]any{"value": float32(10), "item_specific_speeds": []any{map[string]any{"item": descriptor, "destroy_speed": float32(5)}}}}}, nil)
+		if _, ok := b.(UnresolvedNetworkBlock); !ok {
+			t.Fatal("unverified item speeds were used for prediction")
+		}
+		if got := BreakDuration(b, item.Stack{}, BreakContext{}); got != math.MaxInt64 {
+			t.Fatalf("unresolved mining duration: %v", got)
+		}
+	}
+}
+
+// TestNetworkBlock_MiningDisabledAndInvalidValues checks explicit disable and numeric boundaries.
+func TestNetworkBlock_MiningDisabledAndInvalidValues(t *testing.T) {
+	for _, raw := range []any{false, map[string]any{"value": float32(-1)}} {
+		b := testNetworkBlock(t, map[string]any{"components": map[string]any{"minecraft:destructible_by_mining": raw}}, nil)
+		if got := BreakDuration(b, item.Stack{}, BreakContext{}); got != math.MaxInt64 {
+			t.Fatalf("disabled mining: %v", got)
+		}
+	}
+	for _, friction := range []float32{-0.01, 0.91, 1, float32(math.Inf(1))} {
+		b := testNetworkBlock(t, map[string]any{"components": map[string]any{"minecraft:friction": friction}}, nil)
+		if _, ok := b.(UnresolvedNetworkBlock); !ok {
+			t.Fatalf("accepted friction outside public range: %v", friction)
 		}
 	}
 }

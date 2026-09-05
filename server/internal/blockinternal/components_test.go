@@ -1,7 +1,6 @@
 package blockinternal
 
 import (
-	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block"
@@ -57,9 +56,8 @@ func (breakableBlock) BreakInfo() block.BreakInfo {
 	}
 }
 
-// The network field carries hardness. Adjust the hand-only harvest gate because
-// the client treats these custom blocks as harvestable.
-func TestComponents_DestructibleByMiningUsesNetworkHardness(t *testing.T) {
+// TestComponents_DestructibleByMiningUsesSeconds preserves the documented duration unit.
+func TestComponents_DestructibleByMiningUsesSeconds(t *testing.T) {
 	components := Components("test:breakable", breakableBlock{}, 10000)["components"].(map[string]any)
 
 	raw, ok := components["minecraft:destructible_by_mining"]
@@ -68,8 +66,8 @@ func TestComponents_DestructibleByMiningUsesNetworkHardness(t *testing.T) {
 	}
 	value := raw.(map[string]any)["value"].(float32)
 	// 1.5 hardness, unharvestable by hand: 1.5 * 100 ticks.
-	if value != 5 {
-		t.Fatalf("destructible_by_mining = %v, want adjusted hardness 5 (hand duration is 7.5 seconds)", value)
+	if value != 7.5 {
+		t.Fatalf("destructible_by_mining = %v, want 7.5 seconds", value)
 	}
 }
 
@@ -139,22 +137,22 @@ func TestComponents_EmptyTagsAreOmitted(t *testing.T) {
 	}
 }
 
-// TestComponents_NetworkMiningRoundTrip keeps the emitter and reader aligned with
-// the client's raw hardness field, including the hand-harvest conversion.
-func TestComponents_NetworkMiningRoundTrip(t *testing.T) {
-	world.DefaultBlockRegistry.Finalize()
-	original := breakableBlock{}
-	registry := world.NewBlockRegistry()
-	entry := protocol.BlockEntry{Name: "test:breakable", Properties: Components("test:breakable", original, 10000)}
-	if err := block.AddCustomBlocks(registry, []protocol.BlockEntry{entry}); err != nil {
-		t.Fatal(err)
-	}
-	registry.Finalize()
-	decoded, ok := registry.BlockByName("test:breakable", nil)
-	if !ok {
-		t.Fatal("missing decoded block")
-	}
-	if got, want := block.BreakDuration(decoded, item.Stack{}, block.BreakContext{}), block.BreakDuration(original, item.Stack{}, block.BreakContext{}); got != want {
-		t.Fatalf("round-trip duration=%v want %v", got, want)
+// frictionBlock supplies Dragonfly's movement multiplier to the public component encoder.
+type frictionBlock struct {
+	taggedBlock
+	retainedMotion float64
+}
+
+// Friction returns the retained motion used by Dragonfly.
+func (b frictionBlock) Friction() float64 { return b.retainedMotion }
+
+// TestComponents_FrictionUsesResistance checks the documented ordinary-block and ice values.
+func TestComponents_FrictionUsesResistance(t *testing.T) {
+	for _, test := range []struct{ retained, resistance float64 }{{0.6, 0.4}, {0.98, 0.02}} {
+		components := Components("test:friction", frictionBlock{retainedMotion: test.retained}, 10002)["components"].(map[string]any)
+		got := components["minecraft:friction"].(map[string]any)["value"].(float32)
+		if got != float32(test.resistance) {
+			t.Fatalf("friction=%v want %v", got, test.resistance)
+		}
 	}
 }

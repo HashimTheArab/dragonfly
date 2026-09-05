@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
-	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
@@ -82,12 +81,11 @@ func (b networkBlock) LightDiffusionLevel() uint8 { return b.dampening }
 type mineableNetworkBlock struct {
 	networkBlock
 	hardness float64
-	rules    []networkMiningRule
 }
 
-// BreakInfo returns the hardness decoded from the network component.
+// BreakInfo adapts the documented mining duration to Dragonfly's hardness calculation.
 func (b mineableNetworkBlock) BreakInfo() BreakInfo {
-	return b.breakInfoForItem(item.Stack{})
+	return newBreakInfo(b.hardness, alwaysHarvestable, b.effectiveTool, simpleDrops())
 }
 
 type networkBlockModel struct{ collision, selection []cube.BBox }
@@ -167,14 +165,12 @@ func decodeNetworkBlock(entry protocol.BlockEntry, state map[string]any) (world.
 		return nil, fmt.Errorf("selection_box: %w", err)
 	}
 	if raw, ok := components["minecraft:friction"]; ok {
-		component, ok := raw.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("friction requires a network value compound, not a pack JSON scalar")
-		}
-		b.friction, err = networkComponentNumber(component, "value")
-		if err != nil || b.friction < 0 || b.friction > 1 {
+		friction, err := networkComponentNumber(raw, "value")
+		// The public component increases resistance; Dragonfly stores the retained motion.
+		if err != nil || friction < 0 || friction > float64(float32(0.9)) {
 			return nil, fmt.Errorf("invalid friction %v", raw)
 		}
+		b.friction = 1 - friction
 	}
 	for name, dst := range map[string]*uint8{"minecraft:light_emission": &b.emission, "minecraft:light_dampening": &b.dampening} {
 		if raw, ok := components[name]; ok {
@@ -197,31 +193,42 @@ func decodeNetworkBlock(entry protocol.BlockEntry, state map[string]any) (world.
 	}
 	raw, ok := components["minecraft:destructible_by_mining"]
 	if !ok {
-		return b, nil
-	} // The network representation omits this component for unbreakable blocks.
+		// The public component defaults to zero seconds when omitted.
+		return mineableNetworkBlock{networkBlock: b}, nil
+	}
 	if enabled, err := customBlockTraitEnabled(raw); err == nil {
 		if !enabled {
 			return b, nil
 		}
 		return mineableNetworkBlock{networkBlock: b}, nil
 	}
-	hardness, err := networkComponentNumber(raw, "value")
-	if err != nil {
-		return nil, fmt.Errorf("destructible_by_mining: %w", err)
-	}
 	if m, ok := raw.(map[string]any); ok {
-		rules, err := decodeNetworkMiningRules(m["item_specific_speeds"])
+		rules, err := customBlockMaps(m["item_specific_speeds"], "item_specific_speeds")
 		if err != nil {
 			return nil, err
 		}
 		if len(rules) != 0 {
-			return mineableNetworkBlock{networkBlock: b, hardness: hardness, rules: rules}, nil
+			return nil, fmt.Errorf("item-specific mining prediction is not supported")
+		}
+		if len(m) == 0 || (len(m) == 1 && m["item_specific_speeds"] != nil) {
+			return mineableNetworkBlock{networkBlock: b}, nil
+		}
+		if _, wire := m["value"]; wire {
+			if _, named := m["seconds_to_destroy"]; named {
+				return nil, fmt.Errorf("mining component has both value and seconds_to_destroy")
+			}
 		}
 	}
-	if hardness < 0 {
+	seconds, err := networkComponentNumber(raw, "seconds_to_destroy", "value")
+	if err != nil {
+		return nil, fmt.Errorf("destructible_by_mining: %w", err)
+	}
+	if seconds < 0 {
+		// Retain the existing network sentinel for indestructible blocks.
 		return b, nil
 	}
-	return mineableNetworkBlock{networkBlock: b, hardness: hardness}, nil
+	// Dragonfly's harvestable hand calculation is hardness * 30 ticks at 20 Hz.
+	return mineableNetworkBlock{networkBlock: b, hardness: seconds * 20 / 30}, nil
 }
 
 // networkComponentNumber reads the wire scalar or its named compound field.

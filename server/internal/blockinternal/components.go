@@ -24,20 +24,21 @@ func Components(identifier string, b world.CustomBlock, blockID int32) map[strin
 		})
 	}
 	if breakable, ok := b.(block.Breakable); ok {
-		// The 26.30 network value is hardness, even though the authoring JSON
-		// calls its input seconds_to_destroy. Custom blocks use the harvestable
-		// divisor, so preserve hand timing for implementations requiring a tool.
+		// Preserve the existing seconds encoding, matching the documented mining duration.
+		// Negative hardness retains the existing unbreakable sentinel.
 		info := breakable.BreakInfo()
-		hardness := info.Hardness
-		if hardness < 0 {
-			hardness = -1
-		} else if !info.Harvestable(item.ToolNone{}) {
-			hardness *= 100.0 / 30
+		seconds := info.Hardness * 30 / 20
+		switch {
+		case info.Hardness < 0:
+			seconds = -1
+		case !info.Harvestable(item.ToolNone{}):
+			seconds = info.Hardness * 100 / 20
 		}
-		builder.AddComponent("minecraft:destructible_by_mining", map[string]any{"value": float32(hardness)})
+		builder.AddComponent("minecraft:destructible_by_mining", map[string]any{"value": float32(seconds)})
 	}
 	if frictional, ok := b.(block.Frictional); ok {
-		builder.AddComponent("minecraft:friction", map[string]any{"value": float32(frictional.Friction())})
+		// Public friction measures resistance; Dragonfly stores retained motion.
+		builder.AddComponent("minecraft:friction", map[string]any{"value": float32(1 - frictional.Friction())})
 	}
 	if flammable, ok := b.(block.Flammable); ok {
 		info := flammable.FlammabilityInfo()
