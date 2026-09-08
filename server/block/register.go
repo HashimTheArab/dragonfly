@@ -13,6 +13,7 @@ import (
 func init() {
 	world.RegisterBlock(Air{})
 	world.RegisterBlock(Amethyst{})
+	world.RegisterBlock(BuddingAmethyst{})
 	world.RegisterBlock(AncientDebris{})
 	world.RegisterBlock(Andesite{Polished: true})
 	world.RegisterBlock(Andesite{})
@@ -274,6 +275,7 @@ func init() {
 func init() {
 	world.RegisterItem(Air{})
 	world.RegisterItem(Amethyst{})
+	world.RegisterItem(BuddingAmethyst{})
 	world.RegisterItem(AncientDebris{})
 	world.RegisterItem(Andesite{Polished: true})
 	world.RegisterItem(Andesite{})

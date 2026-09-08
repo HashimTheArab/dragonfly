@@ -2195,13 +2195,8 @@ func (p *Player) BreakBlock(pos cube.Pos) {
 	}
 
 	p.Exhaust(0.005)
-	// Only blocks that naturally break instantly (zero hardness) cost no durability; a block made to break
-	// within one tick by a fast tool or status effects still consumes durability.
-	if block.BreaksInstantly(b) {
-		return
-	}
-	if durable, ok := held.Item().(item.Durable); ok {
-		p.SetHeldItems(p.damageItem(held, durable.DurabilityInfo().BreakDurability), left)
+	if damage := block.BreakDurability(b, held); damage > 0 {
+		p.SetHeldItems(p.damageItem(held, damage), left)
 	}
 }
 
@@ -3271,10 +3266,7 @@ func (p *Player) damageItem(s item.Stack, d int) item.Stack {
 	if p.Handler().HandleItemDamage(ctx, s, &d); ctx.Cancelled() || d <= 0 {
 		return s
 	}
-	if e, ok := s.Enchantment(enchantment.Unbreaking); ok {
-		d = enchantment.Unbreaking.Reduce(s.Item(), e.Level(), d)
-	}
-	if s = s.Damage(d); s.Empty() {
+	if s = enchantment.DamageItem(s, d); s.Empty() {
 		p.tx.PlaySound(p.Position(), sound.ItemBreak{})
 	}
 	return s
