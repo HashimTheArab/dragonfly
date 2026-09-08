@@ -162,6 +162,15 @@ func (e *EntityHandle) UUID() uuid.UUID {
 	return e.id
 }
 
+// BindingVersion returns a monotonically increasing version changed whenever the EntityHandle is bound to or
+// unbound from a World. It may be used to detect whether an Entity opened in a transaction is still valid.
+func (e *EntityHandle) BindingVersion() uint64 {
+	if e == nil {
+		return 0
+	}
+	return e.worldVersion.Load()
+}
+
 // Closed reports whether the EntityHandle has been closed.
 func (e *EntityHandle) Closed() bool {
 	if e == nil {
@@ -387,7 +396,9 @@ func (e *EntityHandle) setAndUnlockWorldAt(w *World, pos mgl64.Vec3) {
 	}
 	e.data.Pos = pos
 	e.w = w
-	e.cond.Broadcast()
+	e.worldReady = false
+	e.worldVersion.Add(1)
+	e.notifyWorldChangedLocked()
 }
 
 // decodeNBT decodes the position, velocity, rotation, age, on-fire duration and
