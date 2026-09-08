@@ -134,7 +134,7 @@ func Resolve(registry world.BlockRegistry, state State) (world.BlockState, error
 		return world.BlockState{}, fmt.Errorf("invalid mapped Bedrock state: %w", err)
 	}
 	if bedrock.Name == "minecraft:air" && state.Name != "minecraft:air" && state.Name != "minecraft:cave_air" && state.Name != "minecraft:void_air" {
-		return world.BlockState{}, fmt.Errorf("Java block %s has no Bedrock equivalent", state.Name)
+		return world.BlockState{}, fmt.Errorf("java block %s has no Bedrock equivalent", state.Name)
 	}
 	values := make(map[string]any, len(bedrock.Properties))
 	for key, value := range bedrock.Properties {
