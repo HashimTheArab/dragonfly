@@ -86,7 +86,7 @@ func ResolveBlockState(registry BlockRegistry, state BlockState) (Block, bool) {
 	if properties == nil {
 		properties = make(map[string]any)
 	}
-	if !validBlockPropertyValues(properties) {
+	if !ValidBlockPropertyValues(properties) {
 		return nil, false
 	}
 	upgraded := blockupgrader.Upgrade(blockupgrader.BlockState{
@@ -602,7 +602,7 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 	if !br.finalized {
 		panic("BlockRegistry.BlockByName called on non finalized BlockRegistry")
 	}
-	if !validBlockPropertyValues(properties) {
+	if !ValidBlockPropertyValues(properties) {
 		return nil, false
 	}
 	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]
@@ -612,8 +612,10 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 	return br.blocks[rid], true
 }
 
-// validBlockPropertyValues reports whether properties contain only palette-supported scalar types.
-func validBlockPropertyValues(properties map[string]any) bool {
+// ValidBlockPropertyValues reports whether properties contain only the scalar
+// types a Bedrock block palette can hold, which is what the block upgrader and
+// the registry expect to be handed.
+func ValidBlockPropertyValues(properties map[string]any) bool {
 	for _, value := range properties {
 		if !validBlockPropertyValue(value) {
 			return false

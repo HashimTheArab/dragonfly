@@ -174,5 +174,30 @@ func Legacy(registry world.BlockRegistry, id uint16, metadata uint8) (world.Bloc
 	if err != nil {
 		return world.BlockState{}, err
 	}
-	return Resolve(registry, state)
+	return Resolve(registry, migrateLegacy(state))
+}
+
+// migrateLegacy rewrites property syntax the legacy table records in its
+// pre-flattening form, which the current Java state table no longer accepts.
+func migrateLegacy(state State) State {
+	switch {
+	case state.Name == "minecraft:cauldron":
+		// Filled cauldrons became their own block in Java 1.17.
+		if level, ok := state.Properties["level"]; ok && level != "0" {
+			state.Name = "minecraft:water_cauldron"
+		} else {
+			delete(state.Properties, "level")
+		}
+	case strings.HasSuffix(state.Name, "_wall"):
+		// Wall arms were booleans before Java 1.16 gave them a height.
+		for _, side := range []string{"north", "south", "east", "west"} {
+			switch state.Properties[side] {
+			case "true":
+				state.Properties[side] = "low"
+			case "false":
+				state.Properties[side] = "none"
+			}
+		}
+	}
+	return state
 }
