@@ -291,20 +291,27 @@ func (br *BasicBlockRegistry) Clone() *BasicBlockRegistry {
 	return br2
 }
 
-func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) ([]byte, error) {
+// AppendNetworkBlock installs a decoded block state without moving existing runtime IDs.
+// It leaves existing states untouched. Call it only on a private registry before publication.
+func (br *BasicBlockRegistry) AppendNetworkBlock(b Block) error {
+	if _, hash := b.Hash(); hash != math.MaxUint64 {
+		return fmt.Errorf("network blocks must use state-based hashing")
+	}
+	name, properties := b.EncodeBlock()
+	s := BlockState{Name: name, Properties: properties}
 	br.mu.Lock()
 	defer br.mu.Unlock()
 
 	h := stateHash{name: s.Name, properties: hashProperties(s.Properties)}
 	if _, ok := br.stateRuntimeIDs[h]; ok {
-		return scratch, nil
+		return nil
 	}
 	var netHash uint32
 	if br.finalized {
-		netHash, scratch = networkBlockHash(s.Name, s.Properties, scratch)
+		netHash, _ = networkBlockHash(s.Name, s.Properties, nil)
 		if other, ok := br.networkhashToRids[netHash]; ok {
 			otherName, otherProperties := br.blocks[other].EncodeBlock()
-			return scratch, fmt.Errorf("network block hash collision for (%s %+v) and (%s %+v)", s.Name, s.Properties, otherName, otherProperties)
+			return fmt.Errorf("network block hash collision for (%s %+v) and (%s %+v)", s.Name, s.Properties, otherName, otherProperties)
 		}
 	}
 	if _, ok := br.blockProperties[s.Name]; !ok {
@@ -312,21 +319,21 @@ func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) 
 	}
 
 	rid := uint32(len(br.blocks))
-	br.blocks = append(br.blocks, unknownBlock{BlockState: s})
+	br.blocks = append(br.blocks, b)
 	br.stateRuntimeIDs[h] = rid
 	if !br.finalized {
-		return scratch, nil
+		return nil
 	}
 
 	if bits.Len64(uint64(len(br.blocks))) != br.bitSize {
 		br.bitSize = bits.Len64(uint64(len(br.blocks)))
 		br.rebuildBlockHashesLocked()
 	}
-	br.blockInfos = append(br.blockInfos, defaultUnknownBlockInfo())
+	br.blockInfos = append(br.blockInfos, blockInfoFor(b))
 
 	br.networkhashToRids[netHash] = rid
 	br.ridsToNetworkhash = append(br.ridsToNetworkhash, netHash)
-	return scratch, nil
+	return nil
 }
 
 func (br *BasicBlockRegistry) rebuildBlockHashesLocked() {
@@ -464,27 +471,7 @@ func (br *BasicBlockRegistry) Finalize() {
 		}
 		br.stateRuntimeIDs[h] = rid
 
-		info := defaultUnknownBlockInfo()
-		// Default to fully opaque. Blocks that implement lightDiffuser may override this (e.g., air -> 0, leaves -> 1-14).
-		if diffuser, ok := b.(lightDiffuser); ok {
-			info.setLightFilter(diffuser.LightDiffusionLevel())
-		}
-		if emitter, ok := b.(lightEmitter); ok {
-			info.setLight(emitter.LightEmissionLevel())
-		}
-		if _, ok := b.(NBTer); ok {
-			info.set(blockFlagNBT)
-		}
-		if _, ok := b.(RandomTicker); ok {
-			info.set(blockFlagRandomTick)
-		}
-		if _, ok := b.(Liquid); ok {
-			info.set(blockFlagLiquid)
-		}
-		if _, ok := b.(LiquidDisplacer); ok {
-			info.set(blockFlagLiquidDisplacing)
-		}
-		br.blockInfos[rid] = info
+		br.blockInfos[rid] = blockInfoFor(b)
 
 		if _, hash := b.Hash(); hash != math.MaxUint64 {
 			h := int64(br.BlockHash(b))
@@ -823,4 +810,29 @@ func (br *BasicBlockRegistry) Air() Block {
 // runtime ID its index in that ordering. Finalize sorts by it too, so the two agree.
 func NetworkBlockHash(name string) uint64 {
 	return fnv1.HashString64(name)
+}
+
+// blockInfoFor derives chunk flags and lighting from the block implementation.
+func blockInfoFor(b Block) blockInfo {
+	info := defaultUnknownBlockInfo()
+	// Default to fully opaque. Blocks that implement lightDiffuser may override this (e.g., air -> 0, leaves -> 1-14).
+	if diffuser, ok := b.(lightDiffuser); ok {
+		info.setLightFilter(diffuser.LightDiffusionLevel())
+	}
+	if emitter, ok := b.(lightEmitter); ok {
+		info.setLight(emitter.LightEmissionLevel())
+	}
+	if _, ok := b.(NBTer); ok {
+		info.set(blockFlagNBT)
+	}
+	if _, ok := b.(RandomTicker); ok {
+		info.set(blockFlagRandomTick)
+	}
+	if _, ok := b.(Liquid); ok {
+		info.set(blockFlagLiquid)
+	}
+	if _, ok := b.(LiquidDisplacer); ok {
+		info.set(blockFlagLiquidDisplacing)
+	}
+	return info
 }

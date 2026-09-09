@@ -56,9 +56,8 @@ func (breakableBlock) BreakInfo() block.BreakInfo {
 	}
 }
 
-// The client reads the component as seconds to destroy, so sending the hardness through
-// makes every custom block break several times too fast.
-func TestComponents_DestructibleByMiningIsSeconds(t *testing.T) {
+// TestComponents_DestructibleByMiningUsesSeconds preserves the documented duration unit.
+func TestComponents_DestructibleByMiningUsesSeconds(t *testing.T) {
 	components := Components("test:breakable", breakableBlock{}, 10000)["components"].(map[string]any)
 
 	raw, ok := components["minecraft:destructible_by_mining"]
@@ -68,7 +67,7 @@ func TestComponents_DestructibleByMiningIsSeconds(t *testing.T) {
 	value := raw.(map[string]any)["value"].(float32)
 	// 1.5 hardness, unharvestable by hand: 1.5 * 100 ticks.
 	if value != 7.5 {
-		t.Fatalf("destructible_by_mining = %v, want 7.5 seconds (hardness is 1.5)", value)
+		t.Fatalf("destructible_by_mining = %v, want 7.5 seconds", value)
 	}
 }
 
@@ -135,5 +134,25 @@ func TestComponents_EmptyTagsAreOmitted(t *testing.T) {
 	components := Components("test:tagged", taggedBlock{}, 10000)
 	if _, ok := components["blockTags"]; ok {
 		t.Fatal("an empty tag slice must not produce a blockTags field")
+	}
+}
+
+// frictionBlock supplies Dragonfly's movement multiplier to the public component encoder.
+type frictionBlock struct {
+	taggedBlock
+	retainedMotion float64
+}
+
+// Friction returns the retained motion used by Dragonfly.
+func (b frictionBlock) Friction() float64 { return b.retainedMotion }
+
+// TestComponents_FrictionUsesResistance checks the documented ordinary-block and ice values.
+func TestComponents_FrictionUsesResistance(t *testing.T) {
+	for _, test := range []struct{ retained, resistance float64 }{{0.6, 0.4}, {0.98, 0.02}} {
+		components := Components("test:friction", frictionBlock{retainedMotion: test.retained}, 10002)["components"].(map[string]any)
+		got := components["minecraft:friction"].(map[string]any)["value"].(float32)
+		if got != float32(test.resistance) {
+			t.Fatalf("friction=%v want %v", got, test.resistance)
+		}
 	}
 }

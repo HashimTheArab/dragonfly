@@ -1,10 +1,11 @@
-package world
+package block
 
 import (
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/df-mc/dragonfly/server/world"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
@@ -29,25 +30,29 @@ var traitLookup = map[string][]any{
 const maxCustomBlockStates = 1 << 16
 
 type customBlockStateSpace struct {
-	name       string
+	entry      protocol.BlockEntry
 	properties []string
 	values     [][]any
 }
 
 // NewCustomBlockRegistry returns an independent registry with default block runtime IDs preserved and custom block
 // states appended after the default registry.
-func NewCustomBlockRegistry(entries []protocol.BlockEntry) (BlockRegistry, error) {
-	DefaultBlockRegistry.Finalize()
-	registry := DefaultBlockRegistry.Clone()
+func NewCustomBlockRegistry(entries []protocol.BlockEntry) (world.BlockRegistry, error) {
+	world.DefaultBlockRegistry.Finalize()
+	registry := world.DefaultBlockRegistry.Clone()
 	if err := AddCustomBlocks(registry, entries); err != nil {
 		return nil, err
 	}
 	return registry, nil
 }
 
-// AddCustomBlocks appends custom block states to registry while preserving its existing runtime IDs.
-func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) error {
-	basicRegistry, ok := registry.(*BasicBlockRegistry)
+// AddCustomBlocks appends StartGame network block states while preserving existing runtime IDs.
+// Entries contain compiled network components, not behaviour-pack JSON: for example, mining
+// uses hardness in value rather than seconds_to_destroy. Unsupported behaviour produces an
+// UnresolvedNetworkBlock without failing state registration. Invalid state declarations still
+// return an error; in that case, discard the registry.
+func AddCustomBlocks(registry world.BlockRegistry, entries []protocol.BlockEntry) error {
+	basicRegistry, ok := registry.(*world.BasicBlockRegistry)
 	if !ok {
 		return fmt.Errorf("unsupported block registry type %T", registry)
 	}
@@ -73,16 +78,16 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 			return fmt.Errorf("custom block %s: states exceed limit of %d", entry.Name, maxCustomBlockStates)
 		}
 		total += count
-		spaces = append(spaces, customBlockStateSpace{entry.Name, propertyNames, propertyValues})
+		spaces = append(spaces, customBlockStateSpace{entry, propertyNames, propertyValues})
 	}
 
-	scratch := make([]byte, 0, 0xff)
 	for _, space := range spaces {
 		err := forEachCustomBlockState(space.properties, space.values, func(properties map[string]any) error {
-			state := BlockState{Name: space.name, Properties: properties}
-			var stateErr error
-			scratch, stateErr = basicRegistry.addCustomBlockState(state, scratch)
-			return stateErr
+			b, err := decodeNetworkBlock(space.entry, properties)
+			if err != nil {
+				b = unresolvedBlock(space.entry, properties, err)
+			}
+			return basicRegistry.AppendNetworkBlock(b)
 		})
 		if err != nil {
 			return err
@@ -91,6 +96,7 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 	return nil
 }
 
+// customBlockPropertySpace reads the state declarations and traits in network order.
 func customBlockPropertySpace(entry protocol.BlockEntry) ([]string, [][]any, error) {
 	var propertyNames []string
 	var propertyValues [][]any
@@ -209,6 +215,7 @@ func anySlice[T any](values []T) []any {
 	return out
 }
 
+// customBlockMaps reads an NBT compound list without accepting malformed entries.
 func customBlockMaps(value any, field string) ([]map[string]any, error) {
 	switch value := value.(type) {
 	case nil:
@@ -230,6 +237,7 @@ func customBlockMaps(value any, field string) ([]map[string]any, error) {
 	}
 }
 
+// forEachCustomBlockState enumerates the Cartesian product in palette order.
 func forEachCustomBlockState(names []string, valueSets [][]any, yield func(map[string]any) error) error {
 	properties := make(map[string]any, len(names))
 	var visit func(int) error
@@ -252,6 +260,7 @@ func forEachCustomBlockState(names []string, valueSets [][]any, yield func(map[s
 	return visit(0)
 }
 
+// customBlockTraitEnabled decodes the supported NBT boolean representations.
 func customBlockTraitEnabled(v any) (bool, error) {
 	switch v := v.(type) {
 	case bool:

@@ -24,10 +24,8 @@ func Components(identifier string, b world.CustomBlock, blockID int32) map[strin
 		})
 	}
 	if breakable, ok := b.(block.Breakable); ok {
-		// The value is the seconds the client takes to destroy the block, not its hardness, and -1
-		// is its sentinel for a block mining never destroys. Bedrock has no per-tool speed
-		// component, so the bare-handed duration is the only one a static definition can carry, and
-		// it stays unrounded: the client turns the value back into a hardness and quantises itself.
+		// Preserve the existing seconds encoding, matching the documented mining duration.
+		// Negative hardness retains the existing unbreakable sentinel.
 		info := breakable.BreakInfo()
 		seconds := info.Hardness * 30 / 20
 		switch {
@@ -39,7 +37,8 @@ func Components(identifier string, b world.CustomBlock, blockID int32) map[strin
 		builder.AddComponent("minecraft:destructible_by_mining", map[string]any{"value": float32(seconds)})
 	}
 	if frictional, ok := b.(block.Frictional); ok {
-		builder.AddComponent("minecraft:friction", map[string]any{"value": float32(frictional.Friction())})
+		// Public friction measures resistance; Dragonfly stores retained motion.
+		builder.AddComponent("minecraft:friction", map[string]any{"value": float32(1 - frictional.Friction())})
 	}
 	if flammable, ok := b.(block.Flammable); ok {
 		info := flammable.FlammabilityInfo()
