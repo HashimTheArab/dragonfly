@@ -15,17 +15,33 @@ const (
 
 // ClassifyUseContinuation returns Dragonfly's continued-use classification for it.
 func ClassifyUseContinuation(it world.Item) UseContinuation {
-	switch crossbow := it.(type) {
+	switch held := it.(type) {
+	case GlassBottle, *GlassBottle, Bowl, *Bowl:
+		// Consumption remainders have no held-use phase of their own.
+		return UseContinuationInstant
+	case Bucket:
+		if held.CanConsume() {
+			return UseContinuationContinued
+		}
+		return UseContinuationInstant
+	case *Bucket:
+		if held == nil {
+			return UseContinuationUnclassified
+		}
+		if held.CanConsume() {
+			return UseContinuationContinued
+		}
+		return UseContinuationInstant
 	case Crossbow:
-		if crossbow.Item.Empty() {
+		if held.Item.Empty() {
 			return UseContinuationContinued
 		}
 		return UseContinuationInstant
 	case *Crossbow:
-		if crossbow == nil {
+		if held == nil {
 			return UseContinuationUnclassified
 		}
-		if crossbow.Item.Empty() {
+		if held.Item.Empty() {
 			return UseContinuationContinued
 		}
 		return UseContinuationInstant

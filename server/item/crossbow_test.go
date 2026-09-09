@@ -18,6 +18,15 @@ func TestClassifyUseContinuation(t *testing.T) {
 		{name: "loaded crossbow", item: Crossbow{Item: NewStack(Arrow{}, 1)}, want: UseContinuationInstant},
 		{name: "unloaded crossbow pointer", item: &Crossbow{}, want: UseContinuationContinued},
 		{name: "loaded crossbow pointer", item: &Crossbow{Item: NewStack(Arrow{}, 1)}, want: UseContinuationInstant},
+		{name: "glass bottle", item: GlassBottle{}, want: UseContinuationInstant},
+		{name: "glass bottle pointer", item: &GlassBottle{}, want: UseContinuationInstant},
+		{name: "bowl", item: Bowl{}, want: UseContinuationInstant},
+		{name: "bowl pointer", item: &Bowl{}, want: UseContinuationInstant},
+		{name: "empty bucket", item: Bucket{}, want: UseContinuationInstant},
+		{name: "empty bucket pointer", item: &Bucket{}, want: UseContinuationInstant},
+		{name: "milk bucket", item: Bucket{Content: MilkBucketContent()}, want: UseContinuationContinued},
+		{name: "milk bucket pointer", item: &Bucket{Content: MilkBucketContent()}, want: UseContinuationContinued},
+		{name: "nil bucket pointer", item: (*Bucket)(nil), want: UseContinuationUnclassified},
 		{name: "ordinary item", item: Stick{}, want: UseContinuationUnclassified},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
