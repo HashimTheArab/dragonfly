@@ -23,16 +23,7 @@ func EncodeLevelChunkPayloadFromMap(data SerialisedData, blockEntities map[cube.
 	for pos, blockNBT := range blockEntities {
 		entries = append(entries, BlockEntity{Pos: pos, Data: blockNBT})
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		a, b := entries[i].Pos, entries[j].Pos
-		if a[1] != b[1] {
-			return a[1] < b[1]
-		}
-		if a[2] != b[2] {
-			return a[2] < b[2]
-		}
-		return a[0] < b[0]
-	})
+	sortBlockEntities(entries)
 	return EncodeLevelChunkPayload(data, entries)
 }
 
@@ -95,4 +86,18 @@ func EncodeBlockEntities(blockEntities []BlockEntity) ([]byte, error) {
 		}
 	}
 	return buf.Bytes(), nil
+}
+
+// sortBlockEntities orders snapshots and map-backed payloads consistently.
+func sortBlockEntities(entities []BlockEntity) {
+	sort.Slice(entities, func(i, j int) bool {
+		a, b := entities[i].Pos, entities[j].Pos
+		if a[1] != b[1] {
+			return a[1] < b[1]
+		}
+		if a[2] != b[2] {
+			return a[2] < b[2]
+		}
+		return a[0] < b[0]
+	})
 }

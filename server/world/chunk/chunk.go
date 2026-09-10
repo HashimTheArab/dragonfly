@@ -76,6 +76,20 @@ func (chunk *Chunk) BlockEntityData(pos cube.Pos) (map[string]any, bool) {
 	return d, ok
 }
 
+// BlockEntities returns a detached snapshot of every block entity, ordered by
+// ascending Y, Z, then X. Nested NBT maps, lists, and arrays are copied too.
+// The snapshot is safe to modify independently of the chunk.
+func (chunk *Chunk) BlockEntities() []BlockEntity {
+	chunk.blockEntitiesMu.RLock()
+	entities := make([]BlockEntity, 0, len(chunk.blockEntities))
+	for pos, data := range chunk.blockEntities {
+		entities = append(entities, BlockEntity{Pos: pos, Data: cloneNBT(data).(map[string]any)})
+	}
+	chunk.blockEntitiesMu.RUnlock()
+	sortBlockEntities(entities)
+	return entities
+}
+
 // SetBlockEntityData stores raw block entity NBT at the position passed. If data is nil, the entry is deleted.
 func (chunk *Chunk) SetBlockEntityData(pos cube.Pos, data map[string]any) {
 	// Only Y is relevant for a chunk's range check. (cube.Pos.OutOfBounds only checks Y.)
@@ -138,6 +152,13 @@ func (chunk *Chunk) Clone() *Chunk {
 	}
 	for i, biomes := range chunk.biomes {
 		clone.biomes[i] = biomes.Clone()
+	}
+	entities := chunk.BlockEntities()
+	if len(entities) != 0 {
+		clone.blockEntities = make(map[cube.Pos]map[string]any, len(entities))
+		for _, entity := range entities {
+			clone.blockEntities[entity.Pos] = entity.Data
+		}
 	}
 	return clone
 }
