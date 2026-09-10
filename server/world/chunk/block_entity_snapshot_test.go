@@ -116,3 +116,33 @@ func TestBlockEntitiesSnapshotConcurrentReplacement(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestBlockEntityAPIBoundariesOwnNBT prevents caller-owned maps escaping the chunk lock.
+func TestBlockEntityAPIBoundariesOwnNBT(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	ch := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	pos := cube.Pos{1, 64, 1}
+	input := map[string]any{"id": "Chest", "nested": map[string]any{"value": int32(1)}}
+	ch.SetBlockEntityData(pos, input)
+	input["nested"].(map[string]any)["value"] = int32(2)
+	output, ok := ch.BlockEntityData(pos)
+	if !ok || output["nested"].(map[string]any)["value"] != int32(1) {
+		t.Fatal("setter retained caller-owned NBT")
+	}
+	output["nested"].(map[string]any)["value"] = int32(3)
+	if ch.BlockEntities()[0].Data["nested"].(map[string]any)["value"] != int32(1) {
+		t.Fatal("getter exposed stored NBT")
+	}
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for i := range 100 {
+			input["nested"].(map[string]any)["value"] = int32(i)
+			output["nested"].(map[string]any)["value"] = int32(i)
+		}
+	})
+	for range 100 {
+		_ = ch.BlockEntities()
+		_, _ = ch.BlockEntityData(pos)
+	}
+	wg.Wait()
+}

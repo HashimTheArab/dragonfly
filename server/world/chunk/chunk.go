@@ -65,7 +65,7 @@ func (chunk *Chunk) BlockRegistry() BlockRegistry {
 	return chunk.br
 }
 
-// BlockEntityData returns the raw block entity NBT at the position passed, if present.
+// BlockEntityData returns detached block entity NBT at the position passed, if present.
 func (chunk *Chunk) BlockEntityData(pos cube.Pos) (map[string]any, bool) {
 	chunk.blockEntitiesMu.RLock()
 	defer chunk.blockEntitiesMu.RUnlock()
@@ -73,7 +73,10 @@ func (chunk *Chunk) BlockEntityData(pos cube.Pos) (map[string]any, bool) {
 		return nil, false
 	}
 	d, ok := chunk.blockEntities[pos]
-	return d, ok
+	if !ok {
+		return nil, false
+	}
+	return cloneNBT(d).(map[string]any), true
 }
 
 // BlockEntities returns a detached snapshot of every block entity, ordered by
@@ -90,7 +93,8 @@ func (chunk *Chunk) BlockEntities() []BlockEntity {
 	return entities
 }
 
-// SetBlockEntityData stores raw block entity NBT at the position passed. If data is nil, the entry is deleted.
+// SetBlockEntityData stores a detached copy of block entity NBT at the position passed.
+// The caller must not mutate data during this call. Nil deletes the entry.
 func (chunk *Chunk) SetBlockEntityData(pos cube.Pos, data map[string]any) {
 	// Only Y is relevant for a chunk's range check. (cube.Pos.OutOfBounds only checks Y.)
 	// We allow deletes regardless of bounds, but ignore inserts that are out of range.
@@ -114,7 +118,7 @@ func (chunk *Chunk) SetBlockEntityData(pos cube.Pos, data map[string]any) {
 	if chunk.blockEntities == nil {
 		chunk.blockEntities = make(map[cube.Pos]map[string]any, 1)
 	}
-	chunk.blockEntities[pos] = data
+	chunk.blockEntities[pos] = cloneNBT(data).(map[string]any)
 }
 
 // ClearBlockEntityDataInRange clears raw block entity NBT entries within the inclusive position range passed.
