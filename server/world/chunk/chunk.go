@@ -60,6 +60,11 @@ func New(br BlockRegistry, r cube.Range) *Chunk {
 	}
 }
 
+// BlockRegistry returns the registry used by this chunk's runtime IDs.
+func (chunk *Chunk) BlockRegistry() BlockRegistry {
+	return chunk.br
+}
+
 // BlockEntityData returns the raw block entity NBT at the position passed, if present.
 func (chunk *Chunk) BlockEntityData(pos cube.Pos) (map[string]any, bool) {
 	chunk.blockEntitiesMu.RLock()

@@ -426,7 +426,6 @@ func (br *BasicBlockRegistry) Finalize() {
 		return
 	}
 
-	br.bitSize = bits.Len64(uint64(len(br.blocks)))
 	sort.SliceStable(br.blocks, func(i, j int) bool {
 		var nameOne string
 		if b1, ok := br.blocks[i].(unknownBlock); ok {
@@ -443,6 +442,13 @@ func (br *BasicBlockRegistry) Finalize() {
 		return NetworkBlockHash(nameOne) < NetworkBlockHash(nameTwo)
 	})
 
+	br.finalizeLocked()
+}
+
+// finalizeLocked builds lookup tables without changing block order. The registry
+// lock must be held; snapshot restore uses this to preserve recorded runtime IDs.
+func (br *BasicBlockRegistry) finalizeLocked() {
+	br.bitSize = bits.Len64(uint64(len(br.blocks)))
 	br.blockInfos = make([]blockInfo, len(br.blocks))
 	br.hashes = intintmap.New(len(br.blocks), 0.999)
 	br.networkhashToRids = make(map[uint32]uint32, len(br.blocks))
