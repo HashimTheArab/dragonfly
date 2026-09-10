@@ -65,7 +65,7 @@ func (chunk *Chunk) BlockRegistry() BlockRegistry {
 	return chunk.br
 }
 
-// BlockEntityData returns the raw block entity NBT at the position passed, if present.
+// BlockEntityData returns detached block entity NBT at the position passed, if present.
 func (chunk *Chunk) BlockEntityData(pos cube.Pos) (map[string]any, bool) {
 	chunk.blockEntitiesMu.RLock()
 	defer chunk.blockEntitiesMu.RUnlock()
@@ -73,10 +73,30 @@ func (chunk *Chunk) BlockEntityData(pos cube.Pos) (map[string]any, bool) {
 		return nil, false
 	}
 	d, ok := chunk.blockEntities[pos]
-	return d, ok
+	if !ok {
+		return nil, false
+	}
+	return CloneBlockEntityData(d), true
 }
 
-// SetBlockEntityData stores raw block entity NBT at the position passed. If data is nil, the entry is deleted.
+// BlockEntities returns a detached snapshot of every block entity, ordered by
+// ascending Y, Z, then X. Nested NBT maps, lists, and arrays are copied too.
+// The snapshot is safe to modify independently of the chunk.
+func (chunk *Chunk) BlockEntities() []BlockEntity {
+	chunk.blockEntitiesMu.RLock()
+	entities := make([]BlockEntity, 0, len(chunk.blockEntities))
+	for pos, data := range chunk.blockEntities {
+		entities = append(entities, BlockEntity{Pos: pos, Data: CloneBlockEntityData(data)})
+	}
+	chunk.blockEntitiesMu.RUnlock()
+	sortBlockEntities(entities)
+	return entities
+}
+
+// SetBlockEntityData stores detached raw NBT at the position passed: compounds,
+// lists, scalars, and fixed numeric arrays, as returned by the NBT decoder.
+// Arbitrary Go structs and pointers are not supported. The caller must not mutate
+// data during this call. Nil deletes the entry.
 func (chunk *Chunk) SetBlockEntityData(pos cube.Pos, data map[string]any) {
 	// Only Y is relevant for a chunk's range check. (cube.Pos.OutOfBounds only checks Y.)
 	// We allow deletes regardless of bounds, but ignore inserts that are out of range.
@@ -100,7 +120,7 @@ func (chunk *Chunk) SetBlockEntityData(pos cube.Pos, data map[string]any) {
 	if chunk.blockEntities == nil {
 		chunk.blockEntities = make(map[cube.Pos]map[string]any, 1)
 	}
-	chunk.blockEntities[pos] = data
+	chunk.blockEntities[pos] = CloneBlockEntityData(data)
 }
 
 // ClearBlockEntityDataInRange clears raw block entity NBT entries within the inclusive position range passed.
@@ -138,6 +158,13 @@ func (chunk *Chunk) Clone() *Chunk {
 	}
 	for i, biomes := range chunk.biomes {
 		clone.biomes[i] = biomes.Clone()
+	}
+	entities := chunk.BlockEntities()
+	if len(entities) != 0 {
+		clone.blockEntities = make(map[cube.Pos]map[string]any, len(entities))
+		for _, entity := range entities {
+			clone.blockEntities[entity.Pos] = entity.Data
+		}
 	}
 	return clone
 }
