@@ -93,8 +93,10 @@ func (chunk *Chunk) BlockEntities() []BlockEntity {
 	return entities
 }
 
-// SetBlockEntityData stores a detached copy of block entity NBT at the position passed.
-// The caller must not mutate data during this call. Nil deletes the entry.
+// SetBlockEntityData stores detached raw NBT at the position passed: compounds,
+// lists, scalars, and fixed numeric arrays, as returned by the NBT decoder.
+// Arbitrary Go structs and pointers are not supported. The caller must not mutate
+// data during this call. Nil deletes the entry.
 func (chunk *Chunk) SetBlockEntityData(pos cube.Pos, data map[string]any) {
 	// Only Y is relevant for a chunk's range check. (cube.Pos.OutOfBounds only checks Y.)
 	// We allow deletes regardless of bounds, but ignore inserts that are out of range.

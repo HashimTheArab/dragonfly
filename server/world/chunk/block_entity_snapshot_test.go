@@ -8,6 +8,7 @@ import (
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
+	"github.com/sandertv/gophertunnel/minecraft/nbt"
 )
 
 // TestBlockEntitiesSnapshotOrdersAndDetaches verifies that every mutable NBT
@@ -21,7 +22,7 @@ func TestBlockEntitiesSnapshotOrdersAndDetaches(t *testing.T) {
 		"list":       []any{map[string]any{"value": int32(1)}},
 		"typed_list": []map[string]any{{"value": int32(2)}},
 		"bytes":      []byte{3}, "ints": []int32{4}, "longs": []int64{5},
-		"array": [1][]int32{{6}},
+		"array": [2]int32{6, 7},
 	}
 	positions := []cube.Pos{{34, 64, 49}, {32, 63, 49}, {33, 64, 48}, {32, 64, 48}}
 	for _, pos := range positions {
@@ -44,7 +45,9 @@ func TestBlockEntitiesSnapshotOrdersAndDetaches(t *testing.T) {
 	first["bytes"].([]byte)[0] = 30
 	first["ints"].([]int32)[0] = 40
 	first["longs"].([]int64)[0] = 50
-	first["array"].([1][]int32)[0][0] = 60
+	array := first["array"].([2]int32)
+	array[0] = 60
+	first["array"] = array
 	snapshot[0].Pos = cube.Pos{}
 	fresh := ch.BlockEntities()
 	for i, entry := range fresh {
@@ -145,4 +148,32 @@ func TestBlockEntityAPIBoundariesOwnNBT(t *testing.T) {
 		_, _ = ch.BlockEntityData(pos)
 	}
 	wg.Wait()
+}
+
+// TestBlockEntitySnapshotPreservesDecodedNBT checks actual codec container shapes.
+func TestBlockEntitySnapshotPreservesDecodedNBT(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	data := map[string]any{
+		"byte": byte(1), "short": int16(2), "int": int32(3), "long": int64(4),
+		"float": float32(5), "double": float64(6), "string": "text",
+		"bytes": [2]byte{1, 2}, "ints": [2]int32{3, 4}, "longs": [2]int64{5, 6},
+		"byte_list": []byte{7}, "int_list": []int32{8}, "long_list": []int64{9},
+		"strings": []string{"a", "b"}, "compound": map[string]any{"value": int32(10)},
+		"compound_list": []map[string]any{{"value": int32(11)}},
+		"nested_list":   []any{[]any{map[string]any{"value": int32(12)}}},
+	}
+	encoded, err := nbt.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := nbt.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	ch := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	ch.SetBlockEntityData(cube.Pos{1, 64, 1}, decoded)
+	got := ch.Clone().BlockEntities()[0].Data
+	if !reflect.DeepEqual(got, decoded) {
+		t.Fatalf("snapshot changed decoded NBT: got %#v want %#v", got, decoded)
+	}
 }
