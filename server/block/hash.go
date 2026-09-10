@@ -241,7 +241,8 @@ func NextHash() uint64 {
 func hashBlock(b world.Block) uint64 {
 	base, state := b.Hash()
 	if base > 0xffff || state > 0xffff {
-		panic("material block hash exceeds 16-bit type or state")
+		name, _ := b.EncodeBlock()
+		panic("hash of block " + name + " exceeds 16-bit type or state")
 	}
 	return base | state<<16
 }
