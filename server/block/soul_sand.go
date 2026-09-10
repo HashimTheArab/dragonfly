@@ -1,6 +1,7 @@
 package block
 
 import (
+	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/sound"
 )
@@ -37,3 +38,7 @@ func (SoulSand) EncodeItem() (name string, meta int16) {
 func (SoulSand) EncodeBlock() (string, map[string]any) {
 	return "minecraft:soul_sand", nil
 }
+
+// Model returns the lowered entity collision shape. Soul sand retains solid
+// faces for block attachment even though entities sink one eighth of a block.
+func (SoulSand) Model() world.BlockModel { return model.SoulSand{} }
