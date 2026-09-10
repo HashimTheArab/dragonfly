@@ -2,13 +2,14 @@ package chunk
 
 import "reflect"
 
-// cloneNBT copies raw NBT compounds and lists. Scalars and fixed numeric arrays
-// are already values; arbitrary Go pointers and structs are not raw NBT.
-func cloneNBT(value any) any {
-	if value == nil {
+// CloneBlockEntityData detaches raw block entity NBT compounds and lists. Scalars
+// and fixed numeric arrays are already values; arbitrary Go pointers and structs
+// are not raw NBT. Nil stays nil.
+func CloneBlockEntityData(data map[string]any) map[string]any {
+	if data == nil {
 		return nil
 	}
-	return cloneNBTValue(reflect.ValueOf(value)).Interface()
+	return cloneNBTValue(reflect.ValueOf(data)).Interface().(map[string]any)
 }
 
 // cloneNBTValue detaches containers while preserving concrete list types.

@@ -76,7 +76,7 @@ func (chunk *Chunk) BlockEntityData(pos cube.Pos) (map[string]any, bool) {
 	if !ok {
 		return nil, false
 	}
-	return cloneNBT(d).(map[string]any), true
+	return CloneBlockEntityData(d), true
 }
 
 // BlockEntities returns a detached snapshot of every block entity, ordered by
@@ -86,7 +86,7 @@ func (chunk *Chunk) BlockEntities() []BlockEntity {
 	chunk.blockEntitiesMu.RLock()
 	entities := make([]BlockEntity, 0, len(chunk.blockEntities))
 	for pos, data := range chunk.blockEntities {
-		entities = append(entities, BlockEntity{Pos: pos, Data: cloneNBT(data).(map[string]any)})
+		entities = append(entities, BlockEntity{Pos: pos, Data: CloneBlockEntityData(data)})
 	}
 	chunk.blockEntitiesMu.RUnlock()
 	sortBlockEntities(entities)
@@ -120,7 +120,7 @@ func (chunk *Chunk) SetBlockEntityData(pos cube.Pos, data map[string]any) {
 	if chunk.blockEntities == nil {
 		chunk.blockEntities = make(map[cube.Pos]map[string]any, 1)
 	}
-	chunk.blockEntities[pos] = cloneNBT(data).(map[string]any)
+	chunk.blockEntities[pos] = CloneBlockEntityData(data)
 }
 
 // ClearBlockEntityDataInRange clears raw block entity NBT entries within the inclusive position range passed.
