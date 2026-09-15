@@ -94,6 +94,19 @@ type creativeItemEntry struct {
 //
 //lint:ignore U1000 Function is used through compiler directives.
 func registerCreativeItems() {
+	groups, items := VanillaItems()
+	for _, group := range groups {
+		RegisterGroup(group)
+	}
+	for _, entry := range items {
+		RegisterItem(entry)
+	}
+}
+
+// VanillaItems returns the creative groups and items from Minecraft's embedded
+// vanilla catalog. The returned slices are independent of the registered
+// creative inventory and may be inspected without constructing a Server.
+func VanillaItems() ([]Group, []Item) {
 	var m struct {
 		Groups []creativeGroupEntry `nbt:"groups"`
 		Items  []creativeItemEntry  `nbt:"items"`
@@ -101,6 +114,7 @@ func registerCreativeItems() {
 	if err := nbt.Unmarshal(creativeItemData, &m); err != nil {
 		panic(err)
 	}
+	groups := make([]Group, 0, len(m.Groups))
 	for i, group := range m.Groups {
 		name := group.Name
 		if name == "" {
@@ -108,18 +122,20 @@ func registerCreativeItems() {
 		}
 		st, _ := itemStackFromEntry(group.Icon)
 		c := Category{category(group.Category)}
-		RegisterGroup(Group{Category: c, Name: name, Icon: st})
+		groups = append(groups, Group{Category: c, Name: name, Icon: st})
 	}
+	items := make([]Item, 0, len(m.Items))
 	for _, data := range m.Items {
-		if data.GroupIndex >= int32(len(creativeGroups)) {
+		if data.GroupIndex >= int32(len(groups)) {
 			panic(fmt.Errorf("invalid group index %v for item %v", data.GroupIndex, data.Name))
 		}
 		st, ok := itemStackFromEntry(data)
 		if !ok {
 			continue
 		}
-		RegisterItem(Item{st, creativeGroups[data.GroupIndex].Name})
+		items = append(items, Item{st, groups[data.GroupIndex].Name})
 	}
+	return groups, items
 }
 
 func itemStackFromEntry(data creativeItemEntry) (item.Stack, bool) {
