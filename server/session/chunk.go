@@ -67,6 +67,7 @@ func (s *Session) ViewSubChunks(centre world.SubChunkPos, offsets []protocol.Sub
 	})
 }
 
+// subChunkEntry builds one response using the column’s prepared surface summary.
 func (s *Session) subChunkEntry(
 	offset protocol.SubChunkOffset, ind int16, col *world.Column, heightMaps chunk.SubChunkHeightMaps,
 	transaction map[uint64]struct{},

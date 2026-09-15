@@ -2,17 +2,18 @@ module github.com/df-mc/dragonfly
 
 go 1.26.1
 
-replace github.com/sandertv/gophertunnel => github.com/hashimthearab/gophertunnel v1.25.3-0.20260815112140-b447e59f716d
+replace github.com/sandertv/gophertunnel => github.com/hashimthearab/gophertunnel v1.25.3-0.20260915204658-97bc9f0cd971
 
 require (
 	github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/df-mc/go-nethernet v1.0.20-0.20260912144515-1248f352d699
 	github.com/df-mc/goleveldb v1.1.9
 	github.com/df-mc/worldupgrader v1.0.21
 	github.com/go-gl/mathgl v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml v1.9.5
-	github.com/sandertv/gophertunnel v1.59.0
+	github.com/sandertv/gophertunnel v1.59.1-0.20260819162346-27901ba2e835
 	github.com/segmentio/fasthash v1.0.3
 	golang.org/x/exp v0.0.0-20260611194520-c48552f49976
 	golang.org/x/mod v0.37.0
@@ -23,9 +24,8 @@ require (
 require (
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
-	github.com/df-mc/go-nethernet v1.0.20 // indirect
-	github.com/df-mc/go-playfab/v2 v2.0.2 // indirect
-	github.com/df-mc/go-xsapi/v2 v2.0.3 // indirect
+	github.com/df-mc/go-playfab/v2 v2.0.3 // indirect
+	github.com/df-mc/go-xsapi/v2 v2.0.4-0.20260911132654-00ba4fd7f5c0 // indirect
 	github.com/df-mc/jsonc v1.0.5 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect

@@ -26,6 +26,7 @@ func NewSubChunkHeightMaps(c *Chunk) SubChunkHeightMaps {
 
 // At describes where the surface sits within the sub-chunk at index. The
 // returned heights are nil unless the type is protocol.HeightMapDataHasData.
+// Each of the 16 Z rows starts with its sample count, followed by 16 X heights.
 func (m SubChunkHeightMaps) At(index int16) (byte, []int8) {
 	switch {
 	case index < m.lowest:
@@ -33,11 +34,12 @@ func (m SubChunkHeightMaps) At(index int16) (byte, []int8) {
 	case index > m.highest:
 		return protocol.HeightMapDataTooLow, nil
 	}
-	heightMap := make([]int8, 256)
-	for x := uint8(0); x < 16; x++ {
-		for z := uint8(0); z < 16; z++ {
+	heightMap := make([]int8, 272)
+	for z := uint8(0); z < 16; z++ {
+		heightMap[uint16(z)*17] = 16
+		for x := uint8(0); x < 16; x++ {
 			y := m.heights.At(x, z)
-			at, i := m.c.SubIndex(y), (uint16(z)<<4)|uint16(x)
+			at, i := m.c.SubIndex(y), uint16(z)*17+uint16(x)+1
 			switch {
 			case at > index:
 				heightMap[i] = 16
