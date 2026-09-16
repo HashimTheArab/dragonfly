@@ -81,14 +81,17 @@ func (c Cake) Activate(pos cube.Pos, face cube.Face, tx *world.Tx, u item.User, 
 		}
 	}
 
-	if _, ok := held.Enchantment(enchantment.FireAspect); ok {
-		c.Ignite(pos, tx, nil)
-		ctx.DamageItem(1)
-		return true
-	}
-
-	if _, ok := held.Item().(item.FlintAndSteel); ok {
-		return false
+	if c.Candle {
+		if _, ok := held.Enchantment(enchantment.FireAspect); ok {
+			c.Ignite(pos, tx, nil)
+			ctx.DamageItem(1)
+			return true
+		}
+		switch held.Item().(type) {
+		case item.FlintAndSteel, item.FireCharge:
+			// These items handle ignition after block activation declines the action.
+			return false
+		}
 	}
 
 	if c.Candle && c.CandleLit && face == cube.FaceUp && held.Empty() {

@@ -269,6 +269,14 @@ func (u *placementUser) Position() mgl64.Vec3 {
 	return u.user.Position()
 }
 
+// EyeHeight preserves the optional eye offset used by vertical placement rules.
+func (u *placementUser) EyeHeight() float64 {
+	if eyed, ok := u.user.(interface{ EyeHeight() float64 }); ok {
+		return eyed.EyeHeight()
+	}
+	return 0
+}
+
 func (u *placementUser) Rotation() cube.Rotation {
 	if u.user == nil {
 		u.view.known = false
