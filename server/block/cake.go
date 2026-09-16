@@ -67,7 +67,7 @@ func (c Cake) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 	}
 }
 
-// Activate ...
+// Activate handles candle interactions before eating a slice when the actor is eligible.
 func (c Cake) Activate(pos cube.Pos, face cube.Face, tx *world.Tx, u item.User, ctx *item.UseContext) bool {
 	held, _ := u.HeldItems()
 	if c.Bites == 0 && !c.Candle {
@@ -102,7 +102,16 @@ func (c Cake) Activate(pos cube.Pos, face cube.Face, tx *world.Tx, u item.User, 
 
 	if i, ok := u.(interface {
 		Saturate(food int, saturation float64)
+		Food() int
+		GameMode() world.GameMode
 	}); ok {
+		mode := i.GameMode()
+		if mode == nil || !mode.AllowsInteraction() {
+			return false
+		}
+		if !mode.CreativeInventory() && i.Food() >= 20 && tx.World().Difficulty() != world.DifficultyPeaceful {
+			return false
+		}
 		if c.Candle {
 			dropItem(tx, item.NewStack(Candle{Colour: c.CandleColour}, 1), pos.Vec3Centre())
 
