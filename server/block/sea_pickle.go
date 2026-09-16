@@ -35,6 +35,9 @@ func (SeaPickle) canSurvive(pos cube.Pos, tx *world.Tx) bool {
 			return false
 		}
 	}
+	if _, pot := below.(DecoratedPot); pot {
+		return true
+	}
 	if emitter, ok := below.(LightDiffuser); ok && emitter.LightDiffusionLevel() != 15 {
 		return false
 	}
