@@ -106,6 +106,7 @@ const (
 	hashHayBale
 	hashHoneycomb
 	hashHopper
+	hashIce
 	hashInfestedCobblestone
 	hashInfestedDeepslate
 	hashInfestedStone
@@ -138,6 +139,7 @@ const (
 	hashMud
 	hashMudBricks
 	hashMuddyMangroveRoots
+	hashMycelium
 	hashNetherBrickFence
 	hashNetherBricks
 	hashNetherGoldOre
@@ -180,6 +182,7 @@ const (
 	hashResinBricks
 	hashSand
 	hashSandstone
+	hashSapling
 	hashSeaLantern
 	hashSeaPickle
 	hashShortGrass
@@ -651,6 +654,10 @@ func (h Hopper) Hash() (uint64, uint64) {
 	return hashHopper, uint64(h.Facing) | uint64(boolByte(h.Powered))<<3
 }
 
+func (Ice) Hash() (uint64, uint64) {
+	return hashIce, 0
+}
+
 func (InfestedCobblestone) Hash() (uint64, uint64) {
 	return hashInfestedCobblestone, 0
 }
@@ -777,6 +784,10 @@ func (MudBricks) Hash() (uint64, uint64) {
 
 func (m MuddyMangroveRoots) Hash() (uint64, uint64) {
 	return hashMuddyMangroveRoots, uint64(m.Axis)
+}
+
+func (Mycelium) Hash() (uint64, uint64) {
+	return hashMycelium, 0
 }
 
 func (NetherBrickFence) Hash() (uint64, uint64) {
@@ -945,6 +956,10 @@ func (s Sand) Hash() (uint64, uint64) {
 
 func (s Sandstone) Hash() (uint64, uint64) {
 	return hashSandstone, uint64(s.Type.Uint8()) | uint64(boolByte(s.Red))<<2
+}
+
+func (s Sapling) Hash() (uint64, uint64) {
+	return hashSapling, uint64(s.Type.Uint8()) | uint64(boolByte(s.Aged))<<3
 }
 
 func (SeaLantern) Hash() (uint64, uint64) {
