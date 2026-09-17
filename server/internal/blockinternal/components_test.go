@@ -137,3 +137,40 @@ func TestComponents_EmptyTagsAreOmitted(t *testing.T) {
 		t.Fatal("an empty tag slice must not produce a blockTags field")
 	}
 }
+
+func TestComponents_GeometryCulling(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name       string
+		properties customblock.Properties
+		identifier string
+	}{
+		{
+			name:       "default cube",
+			properties: customblock.Properties{Cube: true},
+			identifier: "minecraft:geometry.full_block",
+		},
+		{
+			name:       "custom geometry",
+			properties: customblock.Properties{Geometry: "geometry.test.block"},
+			identifier: "geometry.test.block",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			test.properties.GeometryCulling = "test:shared_faces"
+			test.properties.GeometryCullingLayer = "test_xray"
+			components := componentsFromProperties(test.properties)
+			geometry := components["minecraft:geometry"].(map[string]any)
+			if got := geometry["identifier"]; got != test.identifier {
+				t.Errorf("identifier = %v, want %s", got, test.identifier)
+			}
+			if got := geometry["culling"]; got != "test:shared_faces" {
+				t.Errorf("culling = %v, want test:shared_faces", got)
+			}
+			if got := geometry["culling_layer"]; got != "test_xray" {
+				t.Errorf("culling_layer = %v, want test_xray", got)
+			}
+		})
+	}
+}

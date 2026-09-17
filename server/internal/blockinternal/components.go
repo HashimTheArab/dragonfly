@@ -75,10 +75,19 @@ func componentsFromProperties(props customblock.Properties) map[string]any {
 	if props.SelectionBox != (cube.BBox{}) {
 		components["minecraft:selection_box"] = selectionBoxComponent(props.SelectionBox)
 	}
-	if props.Geometry != "" {
-		components["minecraft:geometry"] = map[string]any{"identifier": props.Geometry}
-	} else if props.Cube {
-		components["minecraft:geometry"] = map[string]any{"identifier": "minecraft:geometry.full_block"}
+	geometry := props.Geometry
+	if geometry == "" && props.Cube {
+		geometry = "minecraft:geometry.full_block"
+	}
+	if geometry != "" {
+		component := map[string]any{"identifier": geometry}
+		if props.GeometryCulling != "" {
+			component["culling"] = props.GeometryCulling
+		}
+		if props.GeometryCullingLayer != "" {
+			component["culling_layer"] = props.GeometryCullingLayer
+		}
+		components["minecraft:geometry"] = component
 	}
 	if props.MapColour != "" {
 		components["minecraft:map_color"] = map[string]any{"value": props.MapColour}
