@@ -2,7 +2,7 @@ module github.com/df-mc/dragonfly
 
 go 1.26.1
 
-replace github.com/sandertv/gophertunnel => github.com/hashimthearab/gophertunnel v1.25.3-0.20260917110738-66e910a2ef41
+replace github.com/sandertv/gophertunnel => github.com/hashimthearab/gophertunnel v1.25.3-0.20260917112806-03a63de1b3f0
 
 require (
 	github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479
