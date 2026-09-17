@@ -8,8 +8,8 @@ github.com/coreos/go-oidc/v3 v3.17.0 h1:hWBGaQfbi0iVviX4ibC7bk8OKT5qNr4klBaCHVNv
 github.com/coreos/go-oidc/v3 v3.17.0/go.mod h1:wqPbKFrVnE90vty060SB40FCJ8fTHTxSwyXJqZH+sI8=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/df-mc/go-nethernet v1.0.20-0.20260912144515-1248f352d699 h1:BUdbe0Cvqe3W3CLuy6C4kATJ8ZKN8uLerIknulMf4R0=
-github.com/df-mc/go-nethernet v1.0.20-0.20260912144515-1248f352d699/go.mod h1:11MfQo5F7PDKfHg1H0zM5mMkrCv29jRE0lK5B4egW9w=
+github.com/df-mc/go-nethernet v1.0.20-0.20260915174748-4ead02dfc551 h1:BtV2OMkIrWJL2KRcv8jxupFpHfiR33AILLDifiBShvs=
+github.com/df-mc/go-nethernet v1.0.20-0.20260915174748-4ead02dfc551/go.mod h1:11MfQo5F7PDKfHg1H0zM5mMkrCv29jRE0lK5B4egW9w=
 github.com/df-mc/go-playfab/v2 v2.0.3 h1:7L46Zp1Ca17Mmw7Zd5m4kGDDr8XhzGbaEv9SN2GIYdk=
 github.com/df-mc/go-playfab/v2 v2.0.3/go.mod h1:CS3FV3tJlohvGQiX0IJiaYKOVNfy0p778B84oEVyxlw=
 github.com/df-mc/goleveldb v1.1.9 h1:ihdosZyy5jkQKrxucTQmN90jq/2lUwQnJZjIYIC/9YU=
@@ -37,8 +37,8 @@ github.com/hashimthearab/go-raknet v1.14.2-0.20260625072737-109968c5e6ff h1:KXq7
 github.com/hashimthearab/go-raknet v1.14.2-0.20260625072737-109968c5e6ff/go.mod h1:/yysjwfCXm2+2OY8mBazLzcxJ3irnylKCyG3FLgUPVU=
 github.com/hashimthearab/go-xsapi/v2 v2.0.0-20260629063438-188b35931d3e h1:dayVyGUZtq/2Gd1OWY66p5DcSShNk+TWCYWjs+rken4=
 github.com/hashimthearab/go-xsapi/v2 v2.0.0-20260629063438-188b35931d3e/go.mod h1:Gi/zQG2DFMJOMt4DIjuBuINTnU4YnZINe+RyFyza8oo=
-github.com/hashimthearab/gophertunnel v1.25.3-0.20260915204658-97bc9f0cd971 h1:vaoNnlm0xoR/dcucm5fpgAAakt5qcr8YdQRNjC0CJjs=
-github.com/hashimthearab/gophertunnel v1.25.3-0.20260915204658-97bc9f0cd971/go.mod h1:D8b7DKKth3SGdMZXl68B/BRPik3ubOO193YwfF0S6yY=
+github.com/hashimthearab/gophertunnel v1.25.3-0.20260917110738-66e910a2ef41 h1:X+B4JAHZHj/ryUaAbSt8RJ8d/WgymiHCt9IUJC9R3QQ=
+github.com/hashimthearab/gophertunnel v1.25.3-0.20260917110738-66e910a2ef41/go.mod h1:M+013cMvX3f3V8DfbR5q9wsr+y58bk2raBS22TMZ0tU=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/klauspost/compress v1.13.6/go.mod h1:/3/Vjq9QcHkK5uEr5lBEmyoZ1iFhe47etQ6QUkpK6sk=
 github.com/klauspost/compress v1.18.4 h1:RPhnKRAQ4Fh8zU2FY/6ZFDwTVTxgJ/EMydqSTzE9a2c=

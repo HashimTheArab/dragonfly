@@ -25,32 +25,30 @@ func NewSubChunkHeightMaps(c *Chunk) SubChunkHeightMaps {
 }
 
 // At describes where the surface sits within the sub-chunk at index. The
-// returned heights are nil unless the type is protocol.HeightMapDataHasData.
-// Each of the 16 Z rows starts with its sample count, followed by 16 X heights.
-func (m SubChunkHeightMaps) At(index int16) (byte, []int8) {
+// returned height map is present only when the type is protocol.HeightMapDataHasData.
+func (m SubChunkHeightMaps) At(index int16) (byte, protocol.Optional[protocol.HeightMap]) {
 	switch {
 	case index < m.lowest:
-		return protocol.HeightMapDataTooHigh, nil
+		return protocol.HeightMapDataTooHigh, protocol.Optional[protocol.HeightMap]{}
 	case index > m.highest:
-		return protocol.HeightMapDataTooLow, nil
+		return protocol.HeightMapDataTooLow, protocol.Optional[protocol.HeightMap]{}
 	}
-	heightMap := make([]int8, 272)
+	var heightMap protocol.HeightMap
 	for z := uint8(0); z < 16; z++ {
-		heightMap[uint16(z)*17] = 16
 		for x := uint8(0); x < 16; x++ {
 			y := m.heights.At(x, z)
-			at, i := m.c.SubIndex(y), uint16(z)*17+uint16(x)+1
+			at := m.c.SubIndex(y)
 			switch {
 			case at > index:
-				heightMap[i] = 16
+				heightMap[z][x] = 16
 			case at < index:
-				heightMap[i] = -1
+				heightMap[z][x] = -1
 			default:
-				heightMap[i] = int8(y - m.c.SubY(at))
+				heightMap[z][x] = int8(y - m.c.SubY(at))
 			}
 		}
 	}
-	return protocol.HeightMapDataHasData, heightMap
+	return protocol.HeightMapDataHasData, protocol.Option(heightMap)
 }
 
 // RequestModeLevelChunk returns the SubChunkCount and SubChunkLimit a LevelChunk carries to

@@ -72,11 +72,7 @@ func (s *Session) subChunkEntry(
 	offset protocol.SubChunkOffset, ind int16, col *world.Column, heightMaps chunk.SubChunkHeightMaps,
 	transaction map[uint64]struct{},
 ) protocol.SubChunkEntry {
-	subMapType, subMap := heightMaps.At(ind)
-	var subMapData protocol.Optional[[]int8]
-	if subMap != nil {
-		subMapData = protocol.Option(subMap)
-	}
+	subMapType, subMapData := heightMaps.At(ind)
 
 	sub := col.Sub()[ind]
 	if sub.Empty() {

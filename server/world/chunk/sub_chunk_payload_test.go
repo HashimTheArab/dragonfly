@@ -44,8 +44,8 @@ func TestSubChunkHeightMaps(t *testing.T) {
 		if mapType != protocol.HeightMapDataTooHigh {
 			t.Fatalf("type = %d, want TooHigh", mapType)
 		}
-		if heights != nil {
-			t.Errorf("carried %d heights, want none", len(heights))
+		if _, ok := heights.Value(); ok {
+			t.Error("carried heights, want none")
 		}
 	})
 
@@ -54,8 +54,8 @@ func TestSubChunkHeightMaps(t *testing.T) {
 		if mapType != protocol.HeightMapDataTooLow {
 			t.Fatalf("type = %d, want TooLow", mapType)
 		}
-		if heights != nil {
-			t.Errorf("carried %d heights, want none", len(heights))
+		if _, ok := heights.Value(); ok {
+			t.Error("carried heights, want none")
 		}
 	})
 
@@ -64,21 +64,18 @@ func TestSubChunkHeightMaps(t *testing.T) {
 		if mapType != protocol.HeightMapDataHasData {
 			t.Fatalf("type = %d, want HasData", mapType)
 		}
-		if len(heights) != 272 {
-			t.Fatalf("carried %d height-map bytes, want 272", len(heights))
+		heightMap, ok := heights.Value()
+		if !ok {
+			t.Fatal("carried no heights, want height map")
 		}
 		// The height map holds the first free Y above the surface, expressed relative to
 		// the sub-chunk's own base rather than to world Y.
 		want := int8(65 - c.SubY(surface))
-		for i, h := range heights {
-			if i%17 == 0 {
-				if h != 16 {
-					t.Fatalf("row length[%d] = %d, want 16", i/17, h)
+		for z, row := range heightMap {
+			for x, h := range row {
+				if h != want {
+					t.Fatalf("height[%d][%d] = %d, want %d", z, x, h, want)
 				}
-				continue
-			}
-			if h != want {
-				t.Fatalf("height[%d] = %d, want %d", i, h, want)
 			}
 		}
 	})
@@ -88,25 +85,27 @@ func TestSubChunkHeightMaps(t *testing.T) {
 		c.SetBlock(4, 70, 5, 0, stone)
 		mixed := chunk.NewSubChunkHeightMaps(c)
 		mapType, heights := mixed.At(c.SubIndex(80))
-		if mapType != protocol.HeightMapDataHasData || len(heights) != 272 {
-			t.Fatalf("mixed map = (%d, %d bytes), want HasData and 272 bytes", mapType, len(heights))
+		heightMap, ok := heights.Value()
+		if mapType != protocol.HeightMapDataHasData || !ok {
+			t.Fatalf("mixed map = (type %d, present %v), want HasData and present", mapType, ok)
 		}
 		for z := 0; z < 16; z++ {
-			if heights[z*17] != 16 {
-				t.Fatalf("row %d length = %d, want 16", z, heights[z*17])
-			}
 			for x := 0; x < 16; x++ {
 				want := int8(-1)
 				if x == 2 && z == 3 {
 					want = 16
 				}
-				if got := heights[z*17+x+1]; got != want {
+				if got := heightMap[z][x]; got != want {
 					t.Fatalf("height at (%d, %d) = %d, want %d", x, z, got, want)
 				}
 			}
 		}
 		_, heights = mixed.At(surface)
-		if got := heights[5*17+4+1]; got != 7 {
+		heightMap, ok = heights.Value()
+		if !ok {
+			t.Fatal("surface map is absent")
+		}
+		if got := heightMap[5][4]; got != 7 {
 			t.Fatalf("height at (4, 5) = %d, want 7", got)
 		}
 	})
