@@ -110,6 +110,7 @@ const (
 	hashHayBale
 	hashHoneycomb
 	hashHopper
+	hashIce
 	hashInfestedCobblestone
 	hashInfestedDeepslate
 	hashInfestedStone
@@ -145,6 +146,7 @@ const (
 	hashMud
 	hashMudBricks
 	hashMuddyMangroveRoots
+	hashMycelium
 	hashNetherBrickFence
 	hashNetherBricks
 	hashNetherGoldOre
@@ -179,6 +181,7 @@ const (
 	hashRawCopper
 	hashRawGold
 	hashRawIron
+	hashRedShrub
 	hashRedstoneBlock
 	hashRedstoneOre
 	hashRedstoneTorch
@@ -192,6 +195,7 @@ const (
 	hashSapling
 	hashSeaLantern
 	hashSeaPickle
+	hashShelfMushroom
 	hashShortGrass
 	hashShroomlight
 	hashShulkerBox
@@ -214,6 +218,7 @@ const (
 	hashStone
 	hashStoneBricks
 	hashStonecutter
+	hashStrawBed
 	hashString
 	hashSugarCane
 	hashSulfur
@@ -246,6 +251,17 @@ var customBlockBase = uint64(hashCustomBlockBase - 1)
 func NextHash() uint64 {
 	customBlockBase++
 	return customBlockBase
+}
+
+// hashBlock packs a material block's type and state into the 32 bits reserved by generated hashes.
+// Each half uses 16 bits so the result does not depend on a registry's size or initialization.
+func hashBlock(b world.Block) uint64 {
+	base, state := b.Hash()
+	if base > 0xffff || state > 0xffff {
+		name, _ := b.EncodeBlock()
+		panic("hash of block " + name + " exceeds 16-bit type or state")
+	}
+	return base | state<<16
 }
 
 func (Air) Hash() (uint64, uint64) {
@@ -305,7 +321,7 @@ func (Beacon) Hash() (uint64, uint64) {
 }
 
 func (b Bed) Hash() (uint64, uint64) {
-	return hashBed, uint64(b.Facing) | uint64(boolByte(b.Head))<<2
+	return hashBed, uint64(b.Facing) | uint64(boolByte(b.Head))<<2 | uint64(boolByte(b.Occupied))<<3
 }
 
 func (b Bedrock) Hash() (uint64, uint64) {
@@ -349,7 +365,7 @@ func (BuddingAmethyst) Hash() (uint64, uint64) {
 }
 
 func (b Button) Hash() (uint64, uint64) {
-	return hashButton, world.BlockHash(b.Block) | uint64(b.Facing)<<32 | uint64(boolByte(b.Pressed))<<35
+	return hashButton, hashBlock(b.Block) | uint64(b.Facing)<<32 | uint64(boolByte(b.Pressed))<<35
 }
 
 func (c Cactus) Hash() (uint64, uint64) {
@@ -668,6 +684,10 @@ func (h Hopper) Hash() (uint64, uint64) {
 	return hashHopper, uint64(h.Facing) | uint64(boolByte(h.Powered))<<3
 }
 
+func (Ice) Hash() (uint64, uint64) {
+	return hashIce, 0
+}
+
 func (InfestedCobblestone) Hash() (uint64, uint64) {
 	return hashInfestedCobblestone, 0
 }
@@ -808,6 +828,10 @@ func (m MuddyMangroveRoots) Hash() (uint64, uint64) {
 	return hashMuddyMangroveRoots, uint64(m.Axis)
 }
 
+func (Mycelium) Hash() (uint64, uint64) {
+	return hashMycelium, 0
+}
+
 func (n NetherBrickFence) Hash() (uint64, uint64) {
 	return hashNetherBrickFence, uint64(n.Connections.Uint8())
 }
@@ -897,7 +921,7 @@ func (p Potato) Hash() (uint64, uint64) {
 }
 
 func (p PressurePlate) Hash() (uint64, uint64) {
-	return hashPressurePlate, world.BlockHash(p.Block) | uint64(p.RedstoneSignal)<<32
+	return hashPressurePlate, hashBlock(p.Block) | uint64(p.RedstoneSignal)<<32
 }
 
 func (p Prismarine) Hash() (uint64, uint64) {
@@ -944,6 +968,10 @@ func (RawIron) Hash() (uint64, uint64) {
 	return hashRawIron, 0
 }
 
+func (RedShrub) Hash() (uint64, uint64) {
+	return hashRedShrub, 0
+}
+
 func (RedstoneBlock) Hash() (uint64, uint64) {
 	return hashRedstoneBlock, 0
 }
@@ -985,7 +1013,7 @@ func (s Sandstone) Hash() (uint64, uint64) {
 }
 
 func (s Sapling) Hash() (uint64, uint64) {
-	return hashSapling, uint64(s.Wood.Uint8()) | uint64(boolByte(s.AgeBit))<<4
+	return hashSapling, uint64(s.Type.Uint8()) | uint64(boolByte(s.Aged))<<4
 }
 
 func (SeaLantern) Hash() (uint64, uint64) {
@@ -994,6 +1022,10 @@ func (SeaLantern) Hash() (uint64, uint64) {
 
 func (s SeaPickle) Hash() (uint64, uint64) {
 	return hashSeaPickle, uint64(s.AdditionalCount) | uint64(boolByte(s.Dead))<<8
+}
+
+func (s ShelfMushroom) Hash() (uint64, uint64) {
+	return hashShelfMushroom, uint64(s.Facing) | uint64(boolByte(s.Large))<<2
 }
 
 func (ShortGrass) Hash() (uint64, uint64) {
@@ -1017,7 +1049,7 @@ func (s Skull) Hash() (uint64, uint64) {
 }
 
 func (s Slab) Hash() (uint64, uint64) {
-	return hashSlab, world.BlockHash(s.Block) | uint64(boolByte(s.Top))<<32 | uint64(boolByte(s.Double))<<33
+	return hashSlab, hashBlock(s.Block) | uint64(boolByte(s.Top))<<32 | uint64(boolByte(s.Double))<<33
 }
 
 func (Slime) Hash() (uint64, uint64) {
@@ -1069,7 +1101,7 @@ func (t StainedTerracotta) Hash() (uint64, uint64) {
 }
 
 func (s Stairs) Hash() (uint64, uint64) {
-	return hashStairs, world.BlockHash(s.Block) | uint64(boolByte(s.UpsideDown))<<32 | uint64(s.Facing)<<33 | uint64(s.Corner.Uint8())<<35
+	return hashStairs, hashBlock(s.Block) | uint64(boolByte(s.UpsideDown))<<32 | uint64(s.Facing)<<33 | uint64(s.Corner.Uint8())<<35
 }
 
 func (s Stone) Hash() (uint64, uint64) {
@@ -1082,6 +1114,10 @@ func (s StoneBricks) Hash() (uint64, uint64) {
 
 func (s Stonecutter) Hash() (uint64, uint64) {
 	return hashStonecutter, uint64(s.Facing)
+}
+
+func (s StrawBed) Hash() (uint64, uint64) {
+	return hashStrawBed, uint64(s.Facing) | uint64(boolByte(s.Head))<<2 | uint64(boolByte(s.Occupied))<<3
 }
 
 func (s String) Hash() (uint64, uint64) {
@@ -1137,7 +1173,7 @@ func (v Vines) Hash() (uint64, uint64) {
 }
 
 func (w Wall) Hash() (uint64, uint64) {
-	return hashWall, world.BlockHash(w.Block) | uint64(w.NorthConnection.Uint8())<<32 | uint64(w.EastConnection.Uint8())<<34 | uint64(w.SouthConnection.Uint8())<<36 | uint64(w.WestConnection.Uint8())<<38 | uint64(boolByte(w.Post))<<40
+	return hashWall, hashBlock(w.Block) | uint64(w.NorthConnection.Uint8())<<32 | uint64(w.EastConnection.Uint8())<<34 | uint64(w.SouthConnection.Uint8())<<36 | uint64(w.WestConnection.Uint8())<<38 | uint64(boolByte(w.Post))<<40
 }
 
 func (w Water) Hash() (uint64, uint64) {

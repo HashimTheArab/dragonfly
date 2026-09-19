@@ -9,7 +9,7 @@ import (
 func TestSapling_SupportedByDirtAndMudBlocks(t *testing.T) {
 	t.Parallel()
 
-	sapling := Sapling{Wood: OakWood()}
+	sapling := Sapling{Type: OakSapling()}
 	for name, support := range map[string]world.Block{
 		"dirt":                 Dirt{},
 		"coarse dirt":          Dirt{Coarse: true},

@@ -20,6 +20,8 @@ type Chunk struct {
 	// recalculateHeightMap is true if at least one column of the chunk's height map
 	// must be recalculated on the next call to HeightMap.
 	recalculateHeightMap bool
+	// legacyStates is true if the Chunk was decoded holding a block entry older than CurrentBlockVersion.
+	legacyStates bool
 	// heightMap is the height map of the chunk.
 	heightMap HeightMap
 	// heightMapValid records which columns in heightMap are current.
@@ -148,6 +150,7 @@ func (chunk *Chunk) Clone() *Chunk {
 		br:                   chunk.br,
 		air:                  chunk.air,
 		recalculateHeightMap: chunk.recalculateHeightMap,
+		legacyStates:         chunk.legacyStates,
 		heightMap:            slices.Clone(chunk.heightMap),
 		heightMapValid:       chunk.heightMapValid,
 		sub:                  make([]*SubChunk, len(chunk.sub)),
@@ -186,6 +189,17 @@ func (chunk *Chunk) Equals(c *Chunk) bool {
 	}
 
 	return true
+}
+
+// LegacyStates returns true if the Chunk holds block entries older than CurrentBlockVersion, whose
+// states derived from surrounding blocks were defaulted rather than stored.
+func (chunk *Chunk) LegacyStates() bool {
+	return chunk.legacyStates
+}
+
+// MarkStatesUpgraded clears the flag returned by LegacyStates.
+func (chunk *Chunk) MarkStatesUpgraded() {
+	chunk.legacyStates = false
 }
 
 // Range returns the cube.Range of the Chunk as passed to New.
@@ -258,6 +272,11 @@ func (chunk *Chunk) Light(x uint8, y int16, z uint8) uint8 {
 // SkyLight returns the skylight level at a specific position in the chunk.
 func (chunk *Chunk) SkyLight(x uint8, y int16, z uint8) uint8 {
 	return chunk.SubChunk(y).SkyLight(x&15, uint8(y&15), z&15)
+}
+
+// BlockLight returns the block light level at a specific position in the chunk.
+func (chunk *Chunk) BlockLight(x uint8, y int16, z uint8) uint8 {
+	return chunk.SubChunk(y).BlockLight(x&15, uint8(y&15), z&15)
 }
 
 // HighestLightBlocker iterates from the highest non-empty sub chunk downwards to find the Y value of the
