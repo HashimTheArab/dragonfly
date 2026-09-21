@@ -23,12 +23,12 @@ func TestCallRethrowsPanic(t *testing.T) {
 			t.Fatalf("Call panic = %v, want original value %v", recovered, panicValue)
 		}
 	}()
-	_, _ = Call(context.Background(), w, func(*Tx) (struct{}, error) {
+	_, _ = w.Call(context.Background(), func(*Tx) (struct{}, error) {
 		panic(panicValue)
 	})
 }
 
-func TestCallRefRethrowsPanic(t *testing.T) {
+func TestEntityRefCallRethrowsPanic(t *testing.T) {
 	w := Config{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}.New()
 	t.Cleanup(func() { _ = w.Close() })
 	h := NewEntity(taskTestEntityType{}, taskTestEntityConfig{})
@@ -39,10 +39,10 @@ func TestCallRefRethrowsPanic(t *testing.T) {
 	panicValue := &struct{ message string }{"call ref panic"}
 	defer func() {
 		if recovered := recover(); recovered != panicValue {
-			t.Fatalf("CallRef panic = %v, want original value %v", recovered, panicValue)
+			t.Fatalf("EntityRef.Call panic = %v, want original value %v", recovered, panicValue)
 		}
 	}()
-	_, _ = CallRef(context.Background(), NewEntityRef[Entity](h), func(*Tx, Entity) (struct{}, error) {
+	_, _ = NewEntityRef[Entity](h).Call(context.Background(), func(*Tx, Entity) (struct{}, error) {
 		panic(panicValue)
 	})
 }
@@ -65,7 +65,7 @@ func TestCallRethrowsPanicWhenCancellationLoses(t *testing.T) {
 			out.panicValue = recover()
 			result <- out
 		}()
-		_, out.err = Call(ctx, w, func(*Tx) (struct{}, error) {
+		_, out.err = w.Call(ctx, func(*Tx) (struct{}, error) {
 			close(started)
 			<-release
 			panic(panicValue)
