@@ -37,14 +37,7 @@ func (c CocoaBean) HasLiquidDrops() bool {
 
 // NeighbourUpdateTick ...
 func (c CocoaBean) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
-	var woodType WoodType
-	switch b := tx.Block(pos.Side(c.Facing.Face())).(type) {
-	case Log:
-		woodType = b.Wood
-	case Wood:
-		woodType = b.Wood
-	}
-	if woodType != JungleWood() {
+	if support, _ := c.Support(pos); !c.SupportedBy(tx.Block(support)) {
 		breakBlock(c, pos, tx)
 	}
 }
@@ -60,14 +53,7 @@ func (c CocoaBean) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *wo
 		return false
 	}
 
-	var woodType WoodType
-	oppositePos := pos.Side(face.Opposite())
-	if log, ok := tx.Block(oppositePos).(Log); ok {
-		woodType = log.Wood
-	} else if wood, ok := tx.Block(oppositePos).(Wood); ok {
-		woodType = wood.Wood
-	}
-	if woodType == JungleWood() {
+	if c.SupportedBy(tx.Block(pos.Side(face.Opposite()))) {
 		c.Facing = face.Opposite().Direction()
 		ctx.IgnoreBBox = true
 

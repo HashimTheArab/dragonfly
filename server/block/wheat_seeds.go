@@ -37,7 +37,7 @@ func (s WheatSeeds) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *w
 		return false
 	}
 
-	if _, ok := tx.Block(pos.Side(cube.FaceDown)).(Farmland); !ok {
+	if !s.SupportedBy(tx.Block(pos.Side(cube.FaceDown))) {
 		return false
 	}
 
