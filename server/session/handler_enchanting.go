@@ -30,7 +30,7 @@ func (h *ItemStackRequestHandler) handleEnchant(a *protocol.CraftRecipeStackRequ
 	}
 
 	// Now ensure we have an input and only one input.
-	input, err := s.ui.Item(enchantingInputSlot)
+	input, err := h.plan.ItemAt(protocol.FullContainerName{ContainerID: protocol.ContainerEnchantingInput}, enchantingInputSlot)
 	if err != nil {
 		return err
 	}
@@ -52,16 +52,17 @@ func (h *ItemStackRequestHandler) handleEnchant(a *protocol.CraftRecipeStackRequ
 
 	// If we don't have infinite resources, we need to deduct Lapis Lazuli and experience.
 	if !c.GameMode().CreativeInventory() {
+		level := c.ExperienceLevel()
 		// First ensure that the experience level is both underneath the requirement and the cost.
-		if c.ExperienceLevel() < requirement {
+		if level < requirement {
 			return fmt.Errorf("not enough levels to meet requirement")
 		}
-		if c.ExperienceLevel() < cost {
+		if level < cost {
 			return fmt.Errorf("not enough levels to meet cost")
 		}
 
 		// Then ensure that the player has input Lapis Lazuli, and enough of it to meet the cost.
-		lapis, err := s.ui.Item(enchantingLapisSlot)
+		lapis, err := h.plan.ItemAt(protocol.FullContainerName{ContainerID: protocol.ContainerEnchantingMaterial}, enchantingLapisSlot)
 		if err != nil {
 			return err
 		}
@@ -73,7 +74,9 @@ func (h *ItemStackRequestHandler) handleEnchant(a *protocol.CraftRecipeStackRequ
 		}
 
 		// Deduct the experience and Lapis Lazuli.
-		c.SetExperienceLevel(c.ExperienceLevel() - cost)
+		h.plan.Defer(stackRequestEffect(func() {
+			c.SetExperienceLevel(level - cost)
+		}))
 		h.setItemInSlot(protocol.StackRequestSlotInfo{
 			Container: protocol.FullContainerName{ContainerID: protocol.ContainerEnchantingMaterial},
 			Slot:      enchantingLapisSlot,
@@ -81,7 +84,7 @@ func (h *ItemStackRequestHandler) handleEnchant(a *protocol.CraftRecipeStackRequ
 	}
 
 	// Reset the enchantment seed so different enchantments can be selected.
-	c.ResetEnchantmentSeed()
+	h.plan.Defer(stackRequestEffect(c.ResetEnchantmentSeed))
 
 	// Clear the existing input item, and apply the new item into the crafting result slot of the UI. The client will
 	// automatically move the item into the input slot.
