@@ -37,7 +37,7 @@ func (n NetherWart) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *w
 	if !used {
 		return false
 	}
-	if _, ok := tx.Block(pos.Side(cube.FaceDown)).(SoulSand); !ok {
+	if !n.SupportedBy(tx.Block(pos.Side(cube.FaceDown))) {
 		return false
 	}
 
@@ -47,7 +47,7 @@ func (n NetherWart) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *w
 
 // NeighbourUpdateTick ...
 func (n NetherWart) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
-	if _, ok := tx.Block(pos.Side(cube.FaceDown)).(SoulSand); !ok {
+	if !n.SupportedBy(tx.Block(pos.Side(cube.FaceDown))) {
 		breakBlock(n, pos, tx)
 	}
 }

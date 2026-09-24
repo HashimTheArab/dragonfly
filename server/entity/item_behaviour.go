@@ -122,6 +122,13 @@ func (i *ItemBehaviour) tick(e *Ent, tx *world.Tx) {
 	}
 }
 
+// ItemCollectBox returns the box around an item entity at pos that a
+// collector's box must intersect for the collector to pick the item up, and
+// another item's box must intersect for the two stacks to merge.
+func ItemCollectBox(pos mgl64.Vec3) cube.BBox {
+	return ItemType.BBox(nil).GrowVec3(mgl64.Vec3{1, 0.5, 1}).Translate(pos)
+}
+
 // checkNearby checks the nearby entities for item collectors and other item
 // stacks. If a collector is found in range, the item will be picked up. If
 // another item stack with the same item type is found in range, the item
@@ -129,7 +136,7 @@ func (i *ItemBehaviour) tick(e *Ent, tx *world.Tx) {
 func (i *ItemBehaviour) checkNearby(e *Ent, tx *world.Tx) {
 	pos := e.Position()
 	bbox := e.H().Type().BBox(e)
-	grown := bbox.GrowVec3(mgl64.Vec3{1, 0.5, 1}).Translate(pos)
+	grown := ItemCollectBox(pos)
 
 	for other := range tx.EntitiesWithin(bbox.Translate(pos).Grow(2)) {
 		if e.H() == other.H() || !other.H().Type().BBox(other).Translate(other.Position()).IntersectsWith(grown) {

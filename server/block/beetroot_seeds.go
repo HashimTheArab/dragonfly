@@ -40,7 +40,7 @@ func (b BeetrootSeeds) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx
 		return false
 	}
 
-	if _, ok := tx.Block(pos.Side(cube.FaceDown)).(Farmland); !ok {
+	if !b.SupportedBy(tx.Block(pos.Side(cube.FaceDown))) {
 		return false
 	}
 
