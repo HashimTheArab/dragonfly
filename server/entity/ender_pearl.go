@@ -18,12 +18,18 @@ func NewEnderPearl(opts world.EntitySpawnOpts, owner world.Entity) *world.Entity
 }
 
 var enderPearlConf = ProjectileBehaviourConfig{
-	Gravity:  0.03,
-	Drag:     0.01,
+	Gravity:  EnderPearlGravity,
+	Drag:     EnderPearlDrag,
 	Particle: particle.EndermanTeleport{},
 	Sound:    sound.Teleport{},
 	Hit:      teleport,
 }
+
+// EnderPearlGravity and EnderPearlDrag are the default per-tick projectile forces.
+const (
+	EnderPearlGravity = 0.03
+	EnderPearlDrag    = 0.01
+)
 
 // teleporter represents a living entity that can teleport.
 type teleporter interface {

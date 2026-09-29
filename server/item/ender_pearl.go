@@ -9,10 +9,13 @@ import (
 // EnderPearl is a smooth, greenish-blue item used to teleport and to make an eye of ender.
 type EnderPearl struct{}
 
+// EnderPearlThrowSpeed is the pearl's initial speed in blocks per tick.
+const EnderPearlThrowSpeed = 1.5
+
 // Use ...
 func (e EnderPearl) Use(tx *world.Tx, user User, ctx *UseContext) bool {
 	create := tx.World().EntityRegistry().Config().EnderPearl
-	opts := world.EntitySpawnOpts{Position: eyePosition(user), Velocity: user.Rotation().Vec3().Mul(1.5)}
+	opts := world.EntitySpawnOpts{Position: eyePosition(user), Velocity: user.Rotation().Vec3().Mul(EnderPearlThrowSpeed)}
 	tx.AddEntity(create(opts, user))
 	tx.PlaySound(user.Position(), sound.ItemThrow{})
 
