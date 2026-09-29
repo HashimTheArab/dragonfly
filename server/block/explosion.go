@@ -241,6 +241,12 @@ func (c ExplosionConfig) Impact(src world.BlockSource, origin mgl64.Vec3, size f
 	return bound * c.Exposure(src, origin, box)
 }
 
+// ExplosionDamage returns the raw player damage for an explosion impact, before
+// armour, enchantments, and effects reduce it.
+func ExplosionDamage(size, impact float64) float64 {
+	return math.Floor((impact*impact+impact)*3.5*size*2 + 1)
+}
+
 // Exposure returns the fraction of rays from origin to box that reach it without hitting a
 // block in src. SuppressUnderwaterImpact only applies if src is a world.LiquidSource.
 func (c ExplosionConfig) Exposure(src world.BlockSource, origin mgl64.Vec3, box cube.BBox) float64 {

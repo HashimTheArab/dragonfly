@@ -67,6 +67,9 @@ func TestExplosionImpact(t *testing.T) {
 	if got := cfg.Impact(blockSource{}, origin, 5, mgl64.Vec3{11, .5, .5}, box); got != 0 {
 		t.Fatalf("out-of-range impact = %v, want 0", got)
 	}
+	if got := ExplosionDamage(5, .8); got != 51 {
+		t.Fatalf("raw damage = %v, want 51", got)
+	}
 }
 
 // liquidSource adds liquids to blockSource.
