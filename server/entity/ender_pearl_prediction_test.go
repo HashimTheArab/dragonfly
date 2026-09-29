@@ -21,11 +21,11 @@ func (pearlPredictionBlocks) Block(pos cube.Pos) world.Block {
 func TestPredictEnderPearlLanding_BlockAndUnknownTerrain(t *testing.T) {
 	start, velocity := mgl64.Vec3{0.5, 0.5, 0.5}, mgl64.Vec3{0, 0, 1}
 	hit, ok := PredictEnderPearlLanding(pearlPredictionBlocks{}, func(cube.Pos) bool { return true }, start, velocity, 0, 0, 8)
-	if !ok || hit != (mgl64.Vec3{0.5, 0.5, 3}) {
+	if !ok || !hit.Hit || hit.Position != (mgl64.Vec3{0.5, 0.5, 3}) || hit.Block != (cube.Pos{0, 0, 3}) {
 		t.Fatalf("landing = %v, %t", hit, ok)
 	}
-	_, ok = PredictEnderPearlLanding(pearlPredictionBlocks{}, func(pos cube.Pos) bool { return pos.Z() < 2 }, start, velocity, 0, 0, 8)
-	if ok {
-		t.Fatal("unknown terrain produced a landing")
+	partial, ok := PredictEnderPearlLanding(pearlPredictionBlocks{}, func(pos cube.Pos) bool { return pos.Z() < 2 }, start, velocity, 0, 0, 8)
+	if !ok || partial.Hit || partial.Position != (mgl64.Vec3{0.5, 0.5, 1.5}) {
+		t.Fatalf("unknown terrain = %v, %t", partial, ok)
 	}
 }
