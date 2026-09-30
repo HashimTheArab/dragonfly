@@ -178,7 +178,7 @@ func TestPredictEnderPearlLanding_ObservedBDSLaunchAndImpact(t *testing.T) {
 	}
 	for i, shot := range fixture.Samples {
 		t.Run(fmt.Sprintf("shot%d_pitch%g_yaw%g", i+1, shot.Rotation.Pitch, shot.Rotation.Yaw), func(t *testing.T) {
-			velocity := ProjectileLaunchVelocity(cube.Rotation{shot.Rotation.Yaw, shot.Rotation.Pitch}, 1.5)
+			velocity := ProjectileLaunchVelocity(cube.Rotation{shot.Rotation.Yaw, shot.Rotation.Pitch}, 1.5, 0)
 			if velocity != shot.CapturedVelocity {
 				t.Fatalf("launch velocity = %v; observed %v", velocity, shot.CapturedVelocity)
 			}
@@ -202,7 +202,7 @@ func TestPredictEnderPearlLanding_GrazesBlockEdge(t *testing.T) {
 	rotation := cube.Rotation{30, -20}
 	blocks := pearlPredictionBlocks{{1269, 63, 1355}: block.Stone{}}
 	available := func(cube.Pos) bool { return true }
-	got, ok := PredictProjectileLanding(blocks, available, start, ProjectileLaunchVelocity(rotation, 1.5), 0.025, 0, 240)
+	got, ok := PredictProjectileLanding(blocks, available, start, ProjectileLaunchVelocity(rotation, 1.5, 0), 0.025, 0, 240)
 	want := mgl64.Vec3{1269.0008544921875, 64, 1355.3297119140625}
 	if !ok || !got.Hit || got.Block != (cube.Pos{1269, 63, 1355}) || got.Position != want {
 		t.Fatalf("grazing impact = %+v, %t; want block {1269, 63, 1355} at %v", got, ok, want)
@@ -236,7 +236,7 @@ func TestPredictEnderPearlLanding_RejectsInvalidSinglePrecision(t *testing.T) {
 			}
 		})
 	}
-	velocity := ProjectileLaunchVelocity(cube.Rotation{math.NaN(), 0}, 1.5)
+	velocity := ProjectileLaunchVelocity(cube.Rotation{math.NaN(), 0}, 1.5, 0)
 	if _, ok := PredictProjectileLanding(pearlPredictionBlocks{}, func(cube.Pos) bool { return true }, mgl64.Vec3{}, velocity, 0.025, 0, 2); ok {
 		t.Fatal("invalid launch rotation produced a usable prediction")
 	}

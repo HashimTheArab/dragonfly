@@ -13,23 +13,30 @@ import (
 const projectileRadiansToIndex float32 = 10430.3779296875
 
 // ProjectileLaunchVelocity returns the Bedrock projectile launch velocity for
-// rotation and speed. Bedrock uses indexed, single-precision trigonometry;
+// rotation, speed, and the projectile definition's angle offset. Bedrock uses indexed, single-precision trigonometry;
 // Rotation.Vec3 uses continuous, double-precision trigonometry instead.
 // Values outside finite single precision return a non-finite velocity that
 // PredictProjectileLanding rejects.
-func ProjectileLaunchVelocity(rotation cube.Rotation, speed float64) mgl64.Vec3 {
+func ProjectileLaunchVelocity(rotation cube.Rotation, speed, angleOffset float64) mgl64.Vec3 {
 	const (
 		degreesToRadians float32 = -0.01745329238474369
 		negativePi       float32 = -3.1415927410125732
 		quarterTurn      float32 = 16384
 	)
-	for _, value := range []float64{rotation.Yaw(), rotation.Pitch(), speed} {
+	for _, value := range []float64{rotation.Yaw(), rotation.Pitch(), speed, angleOffset} {
 		if !projectileFinite32(value) {
 			return mgl64.Vec3{math.NaN(), math.NaN(), math.NaN()}
 		}
 	}
+	pitch := float32(rotation.Pitch())
+	// Since Bedrock 1.20.20, the angle offset is dampened towards vertical
+	// aim using the positive-pitch indexed cosine before adjusting pitch.
+	if angleOffset != 0 {
+		index := float32(float32(pitch*-degreesToRadians) * projectileRadiansToIndex)
+		pitch += float32(angleOffset) * projectileIndexedSin(index+quarterTurn)
+	}
 	yawRadians := float32(float32(rotation.Yaw()) * degreesToRadians)
-	pitchRadians := float32(float32(rotation.Pitch()) * degreesToRadians)
+	pitchRadians := float32(pitch * degreesToRadians)
 	yawIndex := float32(float32(yawRadians+negativePi) * projectileRadiansToIndex)
 	pitchIndex := float32(pitchRadians * projectileRadiansToIndex)
 	cosPitch := projectileIndexedSin(pitchIndex + quarterTurn)
