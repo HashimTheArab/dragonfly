@@ -2,6 +2,7 @@ package entity
 
 import (
 	"github.com/df-mc/dragonfly/server/item"
+	"github.com/df-mc/dragonfly/server/item/enchantment"
 	"slices"
 )
 
@@ -69,6 +70,28 @@ func ProjectileProfileForItem(itemType string) (ProjectileProfile, bool) {
 		}
 	}
 	return ProjectileProfile{}, false
+}
+
+// ProjectileProfileForStack finds the air-launch profile for a held stack.
+// Empty stacks, firework crossbows, and Riptide tridents have no such profile.
+// An unloaded crossbow retains its arrow profile for aiming before loading.
+func ProjectileProfileForStack(stack item.Stack) (ProjectileProfile, bool) {
+	if stack.Empty() {
+		return ProjectileProfile{}, false
+	}
+	if crossbow, ok := stack.Item().(item.Crossbow); ok {
+		if _, firework := crossbow.Item.Item().(item.Firework); firework {
+			return ProjectileProfile{}, false
+		}
+	}
+	name, _ := stack.Item().EncodeItem()
+	profile, ok := ProjectileProfileForItem(name)
+	if ok && profile.Charge == ProjectileChargeTrident {
+		if _, riptide := stack.Enchantment(enchantment.Riptide); riptide {
+			return ProjectileProfile{}, false
+		}
+	}
+	return profile, ok
 }
 
 // ChargePower returns the fraction of maximum speed a held item can launch

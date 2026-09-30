@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/item"
+	"github.com/df-mc/dragonfly/server/item/enchantment"
 	"github.com/go-gl/mathgl/mgl64"
 )
 
@@ -59,6 +61,42 @@ func TestProjectileProfiles_VanillaLaunchKinds(t *testing.T) {
 		t.Fatalf("wind charge profile = %+v", wind)
 	}
 }
+
+func TestProjectileProfiles_HeldStackEligibility(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		stack  item.Stack
+		wantID string
+	}{
+		{name: "empty"},
+		{name: "non-projectile", stack: item.NewStack(item.Apple{}, 1)},
+		{name: "pearl", stack: item.NewStack(item.EnderPearl{}, 1), wantID: "pearl"},
+		{name: "unloaded crossbow", stack: item.NewStack(item.Crossbow{}, 1), wantID: "crossbow"},
+		{name: "arrow crossbow", stack: item.NewStack(item.Crossbow{Item: item.NewStack(item.Arrow{}, 1)}, 1), wantID: "crossbow"},
+		{name: "firework crossbow", stack: item.NewStack(item.Crossbow{Item: item.NewStack(item.Firework{}, 1)}, 1)},
+		{name: "trident", stack: item.NewStack(projectileProfileTestItem("minecraft:trident"), 1), wantID: "trident"},
+		{name: "riptide trident", stack: item.NewStack(projectileProfileTestItem("minecraft:trident"), 1).WithEnchantments(item.NewEnchantment(enchantment.Riptide, 1))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := ProjectileProfileForStack(tc.stack)
+			if ok != (tc.wantID != "") || got.ID != tc.wantID {
+				t.Fatalf("held stack profile = %+v, %v; want %q", got, ok, tc.wantID)
+			}
+		})
+	}
+	// Server-defined item implementations retain their encoded catalog identity.
+	for _, profile := range ProjectileProfiles() {
+		got, ok := ProjectileProfileForStack(item.NewStack(projectileProfileTestItem(profile.ItemType), 1))
+		if !ok || got != profile {
+			t.Fatalf("encoded %s profile = %+v, %v; want %+v", profile.ItemType, got, ok, profile)
+		}
+	}
+}
+
+type projectileProfileTestItem string
+
+func (i projectileProfileTestItem) EncodeItem() (string, int16) { return string(i), 0 }
+func (i projectileProfileTestItem) Trident() bool               { return i == "minecraft:trident" }
 
 func TestProjectileLaunchVelocity_AngleOffsetDampensAtVerticalAim(t *testing.T) {
 	for _, pitch := range []float64{-90, 90} {
