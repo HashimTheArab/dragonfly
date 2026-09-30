@@ -23,6 +23,7 @@ type ProjectileProfile struct {
 	Physics                   ProjectilePhysics
 	HeightOffset, AngleOffset float64
 	Charge                    ProjectileCharge
+	RandomSpread              bool
 }
 
 // Vanilla values come from Mojang's Bedrock 1.26.50 entity definitions at
@@ -35,13 +36,13 @@ var projectileProfiles = []ProjectileProfile{
 	{ID: "pearl", ItemType: "minecraft:ender_pearl", EntityType: "minecraft:ender_pearl", Physics: ProjectilePhysics{Speed: 1.5, Gravity: 0.025}},
 	{ID: "snowball", ItemType: "minecraft:snowball", EntityType: "minecraft:snowball", Physics: ProjectilePhysics{Speed: 1.5, Gravity: 0.03, Drag: projectileAirDrag}, HeightOffset: -0.1},
 	{ID: "egg", ItemType: "minecraft:egg", EntityType: "minecraft:egg", Physics: ProjectilePhysics{Speed: 1.5, Gravity: 0.03, Drag: projectileAirDrag}},
-	{ID: "bow", ItemType: "minecraft:bow", EntityType: "minecraft:arrow", Physics: ProjectilePhysics{Speed: 3, Gravity: 0.05, Drag: projectileAirDrag}, HeightOffset: -0.1, Charge: ProjectileChargeBow},
-	{ID: "crossbow", ItemType: "minecraft:crossbow", EntityType: "minecraft:arrow", Physics: ProjectilePhysics{Speed: 3.15, Gravity: 0.05, Drag: projectileAirDrag}, HeightOffset: -0.1},
+	{ID: "bow", ItemType: "minecraft:bow", EntityType: "minecraft:arrow", Physics: ProjectilePhysics{Speed: 3, Gravity: 0.05, Drag: projectileAirDrag}, HeightOffset: -0.1, Charge: ProjectileChargeBow, RandomSpread: true},
+	{ID: "crossbow", ItemType: "minecraft:crossbow", EntityType: "minecraft:arrow", Physics: ProjectilePhysics{Speed: 3.15, Gravity: 0.05, Drag: projectileAirDrag}, HeightOffset: -0.1, RandomSpread: true},
 	{ID: "splash_potion", ItemType: "minecraft:splash_potion", EntityType: "minecraft:splash_potion", Physics: ProjectilePhysics{Speed: 0.5, Gravity: 0.05, Drag: projectileAirDrag}, AngleOffset: -20},
 	{ID: "lingering_potion", ItemType: "minecraft:lingering_potion", EntityType: "minecraft:lingering_potion", Physics: ProjectilePhysics{Speed: 0.5, Gravity: 0.05, Drag: projectileAirDrag}, AngleOffset: -20},
 	{ID: "xp_bottle", ItemType: "minecraft:experience_bottle", EntityType: "minecraft:xp_bottle", Physics: ProjectilePhysics{Speed: 0.5, Gravity: 0.05, Drag: projectileAirDrag}, AngleOffset: -20},
-	{ID: "trident", ItemType: "minecraft:trident", EntityType: "minecraft:thrown_trident", Physics: ProjectilePhysics{Speed: 4, Gravity: 0.1, Drag: projectileAirDrag}, HeightOffset: -0.1, Charge: ProjectileChargeTrident},
-	{ID: "wind_charge", ItemType: "minecraft:wind_charge", EntityType: "minecraft:wind_charge_projectile", Physics: ProjectilePhysics{Speed: 1.5}},
+	{ID: "trident", ItemType: "minecraft:trident", EntityType: "minecraft:thrown_trident", Physics: ProjectilePhysics{Speed: 4, Gravity: 0.1, Drag: projectileAirDrag}, HeightOffset: -0.1, Charge: ProjectileChargeTrident, RandomSpread: true},
+	{ID: "wind_charge", ItemType: "minecraft:wind_charge", EntityType: "minecraft:wind_charge_projectile", Physics: ProjectilePhysics{Speed: 1.5}, RandomSpread: true},
 }
 
 // ProjectileProfiles returns the supported vanilla Bedrock launch profiles.

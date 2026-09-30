@@ -38,24 +38,24 @@ func TestProjectileProfiles_CatalogLookupsAndIsolation(t *testing.T) {
 
 func TestProjectileProfiles_VanillaLaunchKinds(t *testing.T) {
 	pearl, _ := ProjectileProfileByID("pearl")
-	if pearl.Physics != (ProjectilePhysics{Speed: 1.5, Gravity: .025}) || pearl.HeightOffset != 0 || pearl.AngleOffset != 0 {
+	if pearl.Physics != (ProjectilePhysics{Speed: 1.5, Gravity: .025}) || pearl.HeightOffset != 0 || pearl.AngleOffset != 0 || pearl.RandomSpread {
 		t.Fatalf("BDS pearl profile = %+v", pearl)
 	}
 	bow, _ := ProjectileProfileByID("bow")
 	crossbow, _ := ProjectileProfileByID("crossbow")
-	if bow.Physics.Speed != 3 || crossbow.Physics.Speed != 3.15 || bow.Charge != ProjectileChargeBow || crossbow.Charge != ProjectileChargeNone {
+	if bow.Physics.Speed != 3 || crossbow.Physics.Speed != 3.15 || bow.Charge != ProjectileChargeBow || crossbow.Charge != ProjectileChargeNone || !bow.RandomSpread || !crossbow.RandomSpread {
 		t.Fatalf("charged arrow profiles = %+v, %+v", bow, crossbow)
 	}
 	trident, _ := ProjectileProfileByID("trident")
-	if trident.EntityType != "minecraft:thrown_trident" || trident.Charge != ProjectileChargeTrident {
+	if trident.EntityType != "minecraft:thrown_trident" || trident.Charge != ProjectileChargeTrident || !trident.RandomSpread {
 		t.Fatalf("trident identity/draw = %+v", trident)
 	}
 	potion, _ := ProjectileProfileByID("splash_potion")
-	if potion.AngleOffset != -20 || potion.Physics.Speed != .5 {
+	if potion.AngleOffset != -20 || potion.Physics.Speed != .5 || potion.RandomSpread {
 		t.Fatalf("potion angled launch = %+v", potion)
 	}
 	wind, _ := ProjectileProfileByID("wind_charge")
-	if wind.Physics.Gravity != 0 || wind.Physics.Drag != 0 || wind.EntityType != "minecraft:wind_charge_projectile" {
+	if wind.Physics.Gravity != 0 || wind.Physics.Drag != 0 || wind.EntityType != "minecraft:wind_charge_projectile" || !wind.RandomSpread {
 		t.Fatalf("wind charge profile = %+v", wind)
 	}
 }
