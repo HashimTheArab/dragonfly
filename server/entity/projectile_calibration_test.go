@@ -33,6 +33,27 @@ func TestProjectileCalibration_IrregularObservations(t *testing.T) {
 	}
 }
 
+func TestProjectileCalibration_Float32CoordinateDrift(t *testing.T) {
+	// Golden float32 observations at ticks 1, 10, 20, 30, 50, 70 and 90.
+	// Coordinate rounding changes the apparent horizontal direction even
+	// though the projectile has constant horizontal velocity and zero drag.
+	start := mgl64.Vec3{4000.5, 65.62000274658203, 4000.5}
+	velocity := mgl64.Vec3{1.2000000476837158, .4000000059604645, .8999999761581421}
+	positions := []mgl64.Vec3{
+		{4001.699951171875, 66.02000427246094, 4001.39990234375},
+		{4012.49951171875, 68.49500274658203, 4009.4990234375},
+		{4024.4990234375, 68.87000274658203, 4018.498046875},
+		{4036.49853515625, 66.74500274658203, 4027.4970703125},
+		{4060.49755859375, 54.99500274658203, 4045.4951171875},
+		{4084.49658203125, 33.24501037597656, 4063.4931640625},
+		{4108.498046875, 1.4950299263000488, 4081.4912109375},
+	}
+	physics, ok := FitProjectilePhysics(start, velocity, positions, 240)
+	if !ok || math.Abs(physics.Gravity-.025) > 1e-4 || math.Abs(physics.Drag) > 1e-4 {
+		t.Fatalf("rounded flight physics = %+v, accepted = %t; want gravity .025, drag 0", physics, ok)
+	}
+}
+
 func TestProjectileCalibration_RejectsUnreliableObservations(t *testing.T) {
 	start, velocity := mgl64.Vec3{.5, 65.62, .5}, mgl64.Vec3{.7, .6, 1.2}
 	valid := calibrationObservations(start, velocity, .04, .03, []int{1, 2, 3, 5, 8, 13, 20})

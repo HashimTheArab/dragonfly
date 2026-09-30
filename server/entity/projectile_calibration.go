@@ -40,13 +40,6 @@ func FitProjectilePhysics(start, velocity mgl64.Vec3, positions []mgl64.Vec3, ma
 		if distance <= previous {
 			return ProjectilePhysics{}, false
 		}
-		// A sideways deflection is not constant gravity/drag and must not be
-		// mistaken for a different elapsed tick.
-		perpendicular := delta.Sub(direction.Mul(distance))
-		perpendicular[1] = 0
-		if perpendicular.Len() > projectileObservationTolerance(position) {
-			return ProjectilePhysics{}, false
-		}
 		previous = distance
 	}
 
