@@ -3,6 +3,7 @@ package entity
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"testing"
 
@@ -152,5 +153,34 @@ func TestPredictEnderPearlLanding_GrazesBlockEdge(t *testing.T) {
 	continuous, ok := PredictEnderPearlLanding(blocks, available, start, rotation.Vec3().Mul(1.5), 0.025, 0, 240)
 	if !ok || continuous.Hit {
 		t.Fatalf("continuous direction must miss this grazing block: %+v, %t", continuous, ok)
+	}
+}
+
+func TestPredictEnderPearlLanding_RejectsInvalidSinglePrecision(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		start, motion mgl64.Vec3
+		gravity, drag float64
+	}{
+		{name: "nan gravity", gravity: math.NaN()},
+		{name: "infinite gravity", gravity: math.Inf(1)},
+		{name: "nan drag", drag: math.NaN()},
+		{name: "gravity overflows float32", gravity: math.MaxFloat64},
+		{name: "start overflows float32", start: mgl64.Vec3{math.MaxFloat64}},
+		{name: "motion overflows float32", motion: mgl64.Vec3{math.MaxFloat64}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			available := func(cube.Pos) bool {
+				t.Fatal("invalid inputs reached terrain traversal")
+				return false
+			}
+			if got, ok := PredictEnderPearlLanding(pearlPredictionBlocks{}, available, tt.start, tt.motion, tt.gravity, tt.drag, 2); ok {
+				t.Fatalf("invalid inputs were accepted: %+v", got)
+			}
+		})
+	}
+	velocity := EnderPearlLaunchVelocity(cube.Rotation{math.NaN(), 0}, 1.5)
+	if _, ok := PredictEnderPearlLanding(pearlPredictionBlocks{}, func(cube.Pos) bool { return true }, mgl64.Vec3{}, velocity, 0.025, 0, 2); ok {
+		t.Fatal("invalid launch rotation produced a usable prediction")
 	}
 }
