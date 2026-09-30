@@ -24,6 +24,8 @@ type EnderPearlPrediction struct {
 // unavailable terrain or the tick budget, the last known position is returned
 // without a block hit. It returns false only when the inputs are invalid or no
 // complete flight step could be simulated.
+// Movement uses the current velocity before drag and gravity are applied for
+// the following tick, matching Bedrock Dedicated Server projectiles.
 // Moving entities are intentionally outside this block-only prediction.
 func PredictEnderPearlLanding(src world.BlockSource, available func(cube.Pos) bool, start, velocity mgl64.Vec3, gravity, drag float64, maxTicks int) (EnderPearlPrediction, bool) {
 	if src == nil || available == nil || maxTicks <= 0 || gravity < 0 || drag < 0 || drag >= 1 {
@@ -39,26 +41,26 @@ func PredictEnderPearlLanding(src world.BlockSource, available func(cube.Pos) bo
 	pos := start
 	advanced := false
 	for range maxTicks {
-		// ProjectileBehaviour applies drag before gravity to Y, and drag to X/Z.
-		velocity = velocity.Mul(1 - drag)
-		velocity[1] -= gravity
 		end := pos.Add(velocity)
-		if mgl64.FloatEqual(end.Sub(pos).LenSqr(), 0) {
-			return EnderPearlPrediction{Position: pos}, advanced
-		}
 		var hit trace.BlockResult
 		found, known := false, true
-		trace.TraverseBlocks(pos, end, func(cell cube.Pos) bool {
-			if !available(cell) {
-				known = false
-				return false
-			}
-			if result, ok := trace.BlockIntercept(cell, src, src.Block(cell), pos, end); ok {
-				hit, found = result, true
-				return false
-			}
-			return true
-		})
+		if mgl64.FloatEqual(end.Sub(pos).LenSqr(), 0) {
+			// A vertical throw may have a stationary tick at its apex. Do not
+			// stop its flight before gravity starts its descent.
+			known = available(cube.PosFromVec3(pos))
+		} else {
+			trace.TraverseBlocks(pos, end, func(cell cube.Pos) bool {
+				if !available(cell) {
+					known = false
+					return false
+				}
+				if result, ok := trace.BlockIntercept(cell, src, src.Block(cell), pos, end); ok {
+					hit, found = result, true
+					return false
+				}
+				return true
+			})
+		}
 		if !known {
 			return EnderPearlPrediction{Position: pos}, advanced
 		}
@@ -67,6 +69,8 @@ func PredictEnderPearlLanding(src world.BlockSource, available func(cube.Pos) bo
 		}
 		pos = end
 		advanced = true
+		velocity = velocity.Mul(1 - drag)
+		velocity[1] -= gravity
 	}
 	return EnderPearlPrediction{Position: pos}, advanced
 }
