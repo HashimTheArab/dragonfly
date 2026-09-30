@@ -66,10 +66,11 @@ func pearlFinite32(value float64) bool {
 
 // EnderPearlPrediction is the first block hit of a newly thrown pearl, or the
 // last position reached before its flight leaves available terrain or its tick
-// budget. Hit is false for the latter case; Block is then undefined.
+// budget. Hit is false for the latter case; Block and Face are then undefined.
 type EnderPearlPrediction struct {
 	Position mgl64.Vec3
 	Block    cube.Pos
+	Face     cube.Face
 	Hit      bool
 }
 
@@ -125,7 +126,7 @@ func PredictEnderPearlLanding(src world.BlockSource, available func(cube.Pos) bo
 		}
 		if found {
 			point := hit.Position()
-			return EnderPearlPrediction{Position: mgl64.Vec3{float64(float32(point[0])), float64(float32(point[1])), float64(float32(point[2]))}, Block: hit.BlockPosition(), Hit: true}, true
+			return EnderPearlPrediction{Position: mgl64.Vec3{float64(float32(point[0])), float64(float32(point[1])), float64(float32(point[2]))}, Block: hit.BlockPosition(), Face: hit.Face(), Hit: true}, true
 		}
 		pos = end
 		advanced = true

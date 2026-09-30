@@ -67,6 +67,63 @@ func TestPredictEnderPearlLanding_FirstTickBlockAtLaunchHeight(t *testing.T) {
 	}
 }
 
+func TestPredictEnderPearlLanding_RaisedBlockFacesAndPartialModels(t *testing.T) {
+	pos := cube.Pos{0, 5, 0}
+	for _, tt := range []struct {
+		name            string
+		block           world.Block
+		start, velocity mgl64.Vec3
+		want            mgl64.Vec3
+		face            cube.Face
+	}{
+		{
+			name: "raised full block top", block: block.Stone{},
+			start: mgl64.Vec3{0.5, 6.5, 0.5}, velocity: mgl64.Vec3{0, -1.5, 0},
+			want: mgl64.Vec3{0.5, 6, 0.5}, face: cube.FaceUp,
+		},
+		{
+			name: "raised wall side", block: block.Stone{},
+			start: mgl64.Vec3{0.5, 5.5, -0.5}, velocity: mgl64.Vec3{0, 0, 1.5},
+			want: mgl64.Vec3{0.5, 5.5, 0}, face: cube.FaceNorth,
+		},
+		{
+			name: "overhang underside", block: block.Stone{},
+			start: mgl64.Vec3{0.5, 4.5, 0.5}, velocity: mgl64.Vec3{0, 1.5, 0},
+			want: mgl64.Vec3{0.5, 5, 0.5}, face: cube.FaceDown,
+		},
+		{
+			name: "lower slab top", block: block.Slab{Block: block.Stone{}},
+			start: mgl64.Vec3{0.5, 6.5, 0.5}, velocity: mgl64.Vec3{0, -1.5, 0},
+			want: mgl64.Vec3{0.5, 5.5, 0.5}, face: cube.FaceUp,
+		},
+		{
+			name: "upper slab underside", block: block.Slab{Block: block.Stone{}, Top: true},
+			start: mgl64.Vec3{0.5, 4.5, 0.5}, velocity: mgl64.Vec3{0, 1.5, 0},
+			want: mgl64.Vec3{0.5, 5.5, 0.5}, face: cube.FaceDown,
+		},
+		{
+			name: "stairs lower step", block: block.Stairs{Block: block.Stone{}, Facing: cube.South},
+			start: mgl64.Vec3{0.5, 6.5, 0.25}, velocity: mgl64.Vec3{0, -1.5, 0},
+			want: mgl64.Vec3{0.5, 5.5, 0.25}, face: cube.FaceUp,
+		},
+		{
+			name: "stairs upper step", block: block.Stairs{Block: block.Stone{}, Facing: cube.South},
+			start: mgl64.Vec3{0.5, 6.5, 0.75}, velocity: mgl64.Vec3{0, -1.5, 0},
+			want: mgl64.Vec3{0.5, 6, 0.75}, face: cube.FaceUp,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// A floor well below the obstacle must not replace its actual hit
+			// height or face. The first BDS tick uses the launch velocity.
+			blocks := pearlPredictionBlocks{pos: tt.block, {0, 0, 0}: block.Stone{}}
+			got, ok := PredictEnderPearlLanding(blocks, func(cube.Pos) bool { return true }, tt.start, tt.velocity, 0.025, 0, 8)
+			if !ok || !got.Hit || got.Block != pos || got.Face != tt.face || got.Position != tt.want {
+				t.Fatalf("impact = %+v, %t; want block %v, face %v, position %v", got, ok, pos, tt.face, tt.want)
+			}
+		})
+	}
+}
+
 type pearlPredictionBDSWorld struct {
 	FloorY    int `json:"floor_y"`
 	FloorMinX int `json:"floor_min_x"`
