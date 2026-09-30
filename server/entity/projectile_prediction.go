@@ -73,9 +73,12 @@ func projectileFinite32(value float64) bool {
 
 // ProjectilePhysics contains launch speed and the per-tick forces used by a
 // projectile. Drag reduces each velocity component by its fraction before
-// gravity is subtracted from vertical velocity for the following tick.
+// gravity is subtracted from vertical velocity.
 type ProjectilePhysics struct {
 	Speed, Gravity, Drag float64
+	// ForcesBeforeMove applies those forces before each displacement, as native
+	// Dragonfly projectiles do. The zero value moves first, matching BDS.
+	ForcesBeforeMove bool
 }
 
 // ProjectilePrediction is the first block hit of a projectile, or the
@@ -94,11 +97,13 @@ type ProjectilePrediction struct {
 // unavailable terrain or the tick budget, the last known position is returned
 // without a block hit. It returns false only when the inputs are invalid or no
 // complete flight step could be simulated.
-// Movement uses the current velocity before drag and gravity are applied for
-// the following tick, matching Bedrock Dedicated Server projectiles.
+// ForcesBeforeMove selects whether drag and gravity precede displacement.
+// Its zero value uses the current velocity before applying the following tick's
+// forces, matching Bedrock Dedicated Server projectiles.
 // Position, velocity, and per-tick forces use Bedrock's single precision.
 // Moving entities are intentionally outside this block-only prediction.
-func PredictProjectileLanding(src world.BlockSource, available func(cube.Pos) bool, start, velocity mgl64.Vec3, gravity, drag float64, maxTicks int) (ProjectilePrediction, bool) {
+func PredictProjectileLanding(src world.BlockSource, available func(cube.Pos) bool, start, velocity mgl64.Vec3, physics ProjectilePhysics, maxTicks int) (ProjectilePrediction, bool) {
+	gravity, drag := physics.Gravity, physics.Drag
 	if src == nil || available == nil || maxTicks <= 0 || !projectileFinite32(gravity) || !projectileFinite32(drag) || gravity < 0 || drag < 0 || drag >= 1 {
 		return ProjectilePrediction{}, false
 	}
@@ -112,6 +117,9 @@ func PredictProjectileLanding(src world.BlockSource, available func(cube.Pos) bo
 	pos := mgl32.Vec3{float32(start[0]), float32(start[1]), float32(start[2])}
 	motion := mgl32.Vec3{float32(velocity[0]), float32(velocity[1]), float32(velocity[2])}
 	inertia, gravity32 := float32(1-drag), float32(gravity)
+	if physics.ForcesBeforeMove {
+		motion = projectileNextVelocity(motion, inertia, gravity32)
+	}
 	advanced := false
 	for range maxTicks {
 		end := pos.Add(motion)
