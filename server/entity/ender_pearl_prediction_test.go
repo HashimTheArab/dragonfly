@@ -25,11 +25,11 @@ func (blocks pearlPredictionBlocks) Block(pos cube.Pos) world.Block {
 func TestPredictEnderPearlLanding_BlockAndUnknownTerrain(t *testing.T) {
 	start, velocity := mgl64.Vec3{0.5, 0.5, 0.5}, mgl64.Vec3{0, 0, 1}
 	blocks := pearlPredictionBlocks{{0, 0, 3}: block.Stone{}}
-	hit, ok := PredictEnderPearlLanding(blocks, func(cube.Pos) bool { return true }, start, velocity, 0, 0, 8)
+	hit, ok := PredictProjectileLanding(blocks, func(cube.Pos) bool { return true }, start, velocity, 0, 0, 8)
 	if !ok || !hit.Hit || hit.Position != (mgl64.Vec3{0.5, 0.5, 3}) || hit.Block != (cube.Pos{0, 0, 3}) {
 		t.Fatalf("landing = %v, %t", hit, ok)
 	}
-	partial, ok := PredictEnderPearlLanding(blocks, func(pos cube.Pos) bool { return pos.Z() < 2 }, start, velocity, 0, 0, 8)
+	partial, ok := PredictProjectileLanding(blocks, func(pos cube.Pos) bool { return pos.Z() < 2 }, start, velocity, 0, 0, 8)
 	if !ok || partial.Hit || partial.Position != (mgl64.Vec3{0.5, 0.5, 1.5}) {
 		t.Fatalf("unknown terrain = %v, %t", partial, ok)
 	}
@@ -50,7 +50,7 @@ func TestPredictEnderPearlLanding_BDSMovementBeforeForces(t *testing.T) {
 		{"stationary apex", mgl64.Vec3{}, 0.25, 0.5, 2, mgl64.Vec3{0.5, 10.25, 0.5}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := PredictEnderPearlLanding(pearlPredictionBlocks{}, func(cube.Pos) bool { return true }, mgl64.Vec3{0.5, 10.5, 0.5}, tt.velocity, tt.gravity, tt.drag, tt.ticks)
+			got, ok := PredictProjectileLanding(pearlPredictionBlocks{}, func(cube.Pos) bool { return true }, mgl64.Vec3{0.5, 10.5, 0.5}, tt.velocity, tt.gravity, tt.drag, tt.ticks)
 			if !ok || got.Hit || got.Position.Sub(tt.want).Len() > 1e-10 {
 				t.Fatalf("flight after %d ticks = %v, %t; want %v", tt.ticks, got, ok, tt.want)
 			}
@@ -60,7 +60,7 @@ func TestPredictEnderPearlLanding_BDSMovementBeforeForces(t *testing.T) {
 
 func TestPredictEnderPearlLanding_FirstTickBlockAtLaunchHeight(t *testing.T) {
 	blocks := pearlPredictionBlocks{{0, 1, 1}: block.Stone{}}
-	got, ok := PredictEnderPearlLanding(blocks, func(cube.Pos) bool { return true }, mgl64.Vec3{0.5, 1.01, 0.5}, mgl64.Vec3{0, 0, 1}, 0.025, 0, 1)
+	got, ok := PredictProjectileLanding(blocks, func(cube.Pos) bool { return true }, mgl64.Vec3{0.5, 1.01, 0.5}, mgl64.Vec3{0, 0, 1}, 0.025, 0, 1)
 	want := mgl64.Vec3{0.5, 1.0099999904632568, 1}
 	if !ok || !got.Hit || got.Block != (cube.Pos{0, 1, 1}) || got.Position.Sub(want).Len() > 1e-10 {
 		t.Fatalf("first tick collision = %v, %t; want block {0, 1, 1} at %v", got, ok, want)
@@ -116,7 +116,7 @@ func TestPredictEnderPearlLanding_RaisedBlockFacesAndPartialModels(t *testing.T)
 			// A floor well below the obstacle must not replace its actual hit
 			// height or face. The first BDS tick uses the launch velocity.
 			blocks := pearlPredictionBlocks{pos: tt.block, {0, 0, 0}: block.Stone{}}
-			got, ok := PredictEnderPearlLanding(blocks, func(cube.Pos) bool { return true }, tt.start, tt.velocity, 0.025, 0, 8)
+			got, ok := PredictProjectileLanding(blocks, func(cube.Pos) bool { return true }, tt.start, tt.velocity, 0.025, 0, 8)
 			if !ok || !got.Hit || got.Block != pos || got.Face != tt.face || got.Position != tt.want {
 				t.Fatalf("impact = %+v, %t; want block %v, face %v, position %v", got, ok, pos, tt.face, tt.want)
 			}
@@ -178,16 +178,16 @@ func TestPredictEnderPearlLanding_ObservedBDSLaunchAndImpact(t *testing.T) {
 	}
 	for i, shot := range fixture.Samples {
 		t.Run(fmt.Sprintf("shot%d_pitch%g_yaw%g", i+1, shot.Rotation.Pitch, shot.Rotation.Yaw), func(t *testing.T) {
-			velocity := EnderPearlLaunchVelocity(cube.Rotation{shot.Rotation.Yaw, shot.Rotation.Pitch}, 1.5)
+			velocity := ProjectileLaunchVelocity(cube.Rotation{shot.Rotation.Yaw, shot.Rotation.Pitch}, 1.5)
 			if velocity != shot.CapturedVelocity {
 				t.Fatalf("launch velocity = %v; observed %v", velocity, shot.CapturedVelocity)
 			}
 			available := func(cube.Pos) bool { return true }
-			before, ok := PredictEnderPearlLanding(shot.World, available, shot.Start, velocity, 0.025, 0, shot.Ticks-1)
+			before, ok := PredictProjectileLanding(shot.World, available, shot.Start, velocity, 0.025, 0, shot.Ticks-1)
 			if !ok || before.Hit {
 				t.Fatalf("predicted impact before fixture tick %d: %+v, %t", shot.Ticks, before, ok)
 			}
-			got, ok := PredictEnderPearlLanding(shot.World, available, shot.Start, velocity, 0.025, 0, shot.Ticks)
+			got, ok := PredictProjectileLanding(shot.World, available, shot.Start, velocity, 0.025, 0, shot.Ticks)
 			if !ok || !got.Hit || got.Block != shot.Block || got.Position != shot.Contact {
 				t.Fatalf("impact = %+v, %t; observed block %v at %v with fixture flight %d ticks", got, ok, shot.Block, shot.Contact, shot.Ticks)
 			}
@@ -202,12 +202,12 @@ func TestPredictEnderPearlLanding_GrazesBlockEdge(t *testing.T) {
 	rotation := cube.Rotation{30, -20}
 	blocks := pearlPredictionBlocks{{1269, 63, 1355}: block.Stone{}}
 	available := func(cube.Pos) bool { return true }
-	got, ok := PredictEnderPearlLanding(blocks, available, start, EnderPearlLaunchVelocity(rotation, 1.5), 0.025, 0, 240)
+	got, ok := PredictProjectileLanding(blocks, available, start, ProjectileLaunchVelocity(rotation, 1.5), 0.025, 0, 240)
 	want := mgl64.Vec3{1269.0008544921875, 64, 1355.3297119140625}
 	if !ok || !got.Hit || got.Block != (cube.Pos{1269, 63, 1355}) || got.Position != want {
 		t.Fatalf("grazing impact = %+v, %t; want block {1269, 63, 1355} at %v", got, ok, want)
 	}
-	continuous, ok := PredictEnderPearlLanding(blocks, available, start, rotation.Vec3().Mul(1.5), 0.025, 0, 240)
+	continuous, ok := PredictProjectileLanding(blocks, available, start, rotation.Vec3().Mul(1.5), 0.025, 0, 240)
 	if !ok || continuous.Hit {
 		t.Fatalf("continuous direction must miss this grazing block: %+v, %t", continuous, ok)
 	}
@@ -231,13 +231,13 @@ func TestPredictEnderPearlLanding_RejectsInvalidSinglePrecision(t *testing.T) {
 				t.Fatal("invalid inputs reached terrain traversal")
 				return false
 			}
-			if got, ok := PredictEnderPearlLanding(pearlPredictionBlocks{}, available, tt.start, tt.motion, tt.gravity, tt.drag, 2); ok {
+			if got, ok := PredictProjectileLanding(pearlPredictionBlocks{}, available, tt.start, tt.motion, tt.gravity, tt.drag, 2); ok {
 				t.Fatalf("invalid inputs were accepted: %+v", got)
 			}
 		})
 	}
-	velocity := EnderPearlLaunchVelocity(cube.Rotation{math.NaN(), 0}, 1.5)
-	if _, ok := PredictEnderPearlLanding(pearlPredictionBlocks{}, func(cube.Pos) bool { return true }, mgl64.Vec3{}, velocity, 0.025, 0, 2); ok {
+	velocity := ProjectileLaunchVelocity(cube.Rotation{math.NaN(), 0}, 1.5)
+	if _, ok := PredictProjectileLanding(pearlPredictionBlocks{}, func(cube.Pos) bool { return true }, mgl64.Vec3{}, velocity, 0.025, 0, 2); ok {
 		t.Fatal("invalid launch rotation produced a usable prediction")
 	}
 }
