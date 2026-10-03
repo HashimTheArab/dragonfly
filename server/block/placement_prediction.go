@@ -48,20 +48,29 @@ type PredictedBlockChange struct {
 // or rotation. Non-block side effects such as sounds, particles and scheduled
 // updates are intentionally discarded.
 func PredictPlacement(src PlacementSource, user PlacementUser, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) (changes []PredictedBlockChange, known bool) {
+	return PredictPlacementWithPrior(src, user, clickedPos, face, clickPos, placed, nil)
+}
+
+// PredictPlacementWithPrior runs canonical placement against preceding predicted
+// writes without publishing them to src. Prior writes retain order and layer;
+// only writes produced by the current placement are returned. Neither src nor
+// prior is modified, so callers can bound staging by their admitted action queue.
+func PredictPlacementWithPrior(src PlacementSource, user PlacementUser, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block, prior []PredictedBlockChange) (changes []PredictedBlockChange, known bool) {
 	if src == nil || placed == nil {
 		return nil, false
 	}
 
 	view := &placementView{
-		src:   src,
-		known: true,
+		src:     src,
+		changes: append([]PredictedBlockChange(nil), prior...),
+		known:   true,
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			if _, ok := recovered.(placementUserUnsupported); !ok {
 				panic(recovered)
 			}
-			changes, known = view.changes, false
+			changes, known = view.changes[len(prior):], false
 		}
 	}()
 	complete := world.RunBlockTransaction(view, func(tx *world.Tx) {
@@ -76,7 +85,7 @@ func PredictPlacement(src PlacementSource, user PlacementUser, clickedPos cube.P
 		}
 		place(tx, pos, placed, u, ctx)
 	})
-	return view.changes, complete && view.known
+	return view.changes[len(prior):], complete && view.known
 }
 
 type placementView struct {
