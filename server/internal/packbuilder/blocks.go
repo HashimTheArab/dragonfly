@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	_ "unsafe" // Imported for compiler directives.
 
@@ -24,24 +25,45 @@ func buildBlocks(reg world.BlockRegistry, dir string) (count int, lang []string)
 	}
 
 	textureData := make(map[string]any)
+	var flipbooks []map[string]any
 	for identifier, blk := range reg.CustomBlocks() {
 		b, ok := blk.(world.CustomBlockBuildable)
 		if !ok {
 			continue
 		}
 
-		name := strings.Split(identifier, ":")[1]
 		lang = append(lang, fmt.Sprintf("tile.%s.name=%s", identifier, b.Name()))
-		for name, texture := range b.Textures() {
+		textures := b.Textures()
+		for name, texture := range textures {
 			textureData[name] = map[string]string{"textures": "textures/blocks/" + name}
 			buildBlockTexture(dir, name, texture)
 		}
+		if animated, ok := b.(world.CustomBlockAnimated); ok {
+			for name, flipbook := range animated.Flipbooks() {
+				if _, ok := textures[name]; !ok {
+					panic(fmt.Sprintf("flipbook of %s animates texture %s, which the block does not have", identifier, name))
+				}
+				flipbooks = append(flipbooks, flipbook.Encode(name, "textures/blocks/"+name))
+			}
+		}
 		if b.Geometry() != nil {
-			if err := os.WriteFile(filepath.Join(dir, "models/blocks", fmt.Sprintf("%s.geo.json", name)), b.Geometry(), 0666); err != nil {
+			// Geometry files are named by the whole identifier: blocks of two namespaces may share a name.
+			namespace, name, _ := strings.Cut(identifier, ":")
+			if err := os.MkdirAll(filepath.Join(dir, "models/blocks", namespace), os.ModePerm); err != nil {
+				panic(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "models/blocks", namespace, name+".geo.json"), b.Geometry(), 0666); err != nil {
 				panic(err)
 			}
 		}
 		count++
+	}
+	if len(flipbooks) > 0 {
+		// Sorted, so that the pack, and with it its UUID, only changes when a flipbook does.
+		slices.SortFunc(flipbooks, func(a, b map[string]any) int {
+			return strings.Compare(a["atlas_tile"].(string), b["atlas_tile"].(string))
+		})
+		buildBlockFlipbooks(dir, flipbooks)
 	}
 
 	buildBlockAtlas(dir, map[string]any{
@@ -65,6 +87,17 @@ func buildBlockTexture(dir, name string, img image.Image) {
 		panic(err)
 	}
 	if err := texture.Close(); err != nil {
+		panic(err)
+	}
+}
+
+// buildBlockFlipbooks writes the animations of block textures to the pack.
+func buildBlockFlipbooks(dir string, flipbooks []map[string]any) {
+	b, err := json.Marshal(flipbooks)
+	if err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "textures/flipbook_textures.json"), b, 0666); err != nil {
 		panic(err)
 	}
 }

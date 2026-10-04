@@ -56,6 +56,11 @@ func Components(identifier string, b world.CustomBlock, blockID int32) map[strin
 			builder.AddPermutation(permutation.Condition, componentsFromProperties(permutation.Properties))
 		}
 	}
+	if traited, ok := b.(block.Traited); ok {
+		for _, trait := range traited.Traits() {
+			builder.AddTrait(trait)
+		}
+	}
 	if item, ok := b.(world.CustomItem); ok {
 		builder.SetMenuCategory(item.Category())
 	}
@@ -86,6 +91,13 @@ func componentsFromProperties(props customblock.Properties) map[string]any {
 		}
 		if props.GeometryCullingLayer != "" {
 			component["culling_layer"] = props.GeometryCullingLayer
+		}
+		if len(props.BoneVisibility) > 0 {
+			visibility := make(map[string]any, len(props.BoneVisibility))
+			for bone, expression := range props.BoneVisibility {
+				visibility[bone] = expression
+			}
+			component["bone_visibility"] = visibility
 		}
 		components["minecraft:geometry"] = component
 	}

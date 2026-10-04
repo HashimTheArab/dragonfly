@@ -45,6 +45,14 @@ type CustomBlockBuildable interface {
 	Textures() map[string]image.Image
 }
 
+// CustomBlockAnimated is a CustomBlockBuildable with animated textures.
+type CustomBlockAnimated interface {
+	CustomBlockBuildable
+	// Flipbooks returns the animation of each animated texture, indexed by the texture's name in Textures. An
+	// animated texture is a vertical strip of square frames.
+	Flipbooks() map[string]customblock.Flipbook
+}
+
 // Liquid represents a block that can be moved through and which can flow in the world after placement. There
 // are two liquids in vanilla, which are lava and water.
 type Liquid interface {

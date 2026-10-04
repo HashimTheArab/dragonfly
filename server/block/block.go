@@ -120,6 +120,13 @@ type Permutable interface {
 	Permutations() []customblock.Permutation
 }
 
+// Traited represents a custom block with vanilla traits. Each trait adds states the client sets when the block is
+// placed, so, as for Permutable, a block must be registered in dragonfly for each combination of their values.
+type Traited interface {
+	// Traits returns the traits of the block.
+	Traits() []customblock.Trait
+}
+
 // unknownFace is a face that is used for certain block items. This should not be exposed in the API.
 var unknownFace = cube.Face(len(cube.Faces()))
 

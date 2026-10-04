@@ -1,12 +1,15 @@
 package blockinternal
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/customblock"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
+	"github.com/sandertv/gophertunnel/minecraft/nbt"
+	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
 // taggedBlock is a custom block carrying vanilla block tags.
@@ -172,5 +175,130 @@ func TestComponents_GeometryCulling(t *testing.T) {
 				t.Errorf("culling_layer = %v, want test_xray", got)
 			}
 		})
+	}
+}
+
+// orientedBlock is a custom block with both placement traits.
+type orientedBlock struct{}
+
+func (orientedBlock) EncodeBlock() (string, map[string]any) { return "test:oriented", nil }
+func (orientedBlock) Model() world.BlockModel               { return nil }
+func (orientedBlock) Hash() (uint64, uint64)                { return 0, 0 }
+
+func (orientedBlock) Properties() customblock.Properties {
+	return customblock.Properties{Cube: true}
+}
+
+func (orientedBlock) Traits() []customblock.Trait {
+	return []customblock.Trait{
+		customblock.PlacementDirection{FacingDirection: true, YRotationOffset: 180},
+		customblock.PlacementPosition{BlockFace: true},
+	}
+}
+
+// Traits are a list beside properties, each naming the trait and flagging its enabled
+// states as bytes keyed by their name without the namespace, with the direction's offset a
+// float: the tags BlockTrait::PlacementDirection and PlacementPosition read in
+// initializeFromNetwork (26.30 reference).
+func TestComponents_Traits(t *testing.T) {
+	components := Components("test:oriented", orientedBlock{}, 10000)
+	want := []map[string]any{
+		{
+			"name": "minecraft:placement_direction",
+			"enabled_states": map[string]any{
+				"cardinal_direction": uint8(0),
+				"facing_direction":   uint8(1),
+			},
+			"y_rotation_offset": float32(180),
+		},
+		{
+			"name": "minecraft:placement_position",
+			"enabled_states": map[string]any{
+				"block_face":    uint8(1),
+				"vertical_half": uint8(0),
+			},
+		},
+	}
+	if got := components["traits"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("traits = %#v, want %#v", got, want)
+	}
+}
+
+func TestComponents_NoTraitsWithoutTraited(t *testing.T) {
+	components := Components("test:untagged", untaggedBlock{}, 10000)
+	if _, ok := components["traits"]; ok {
+		t.Fatal("a block without traits must not carry a traits field")
+	}
+}
+
+// The encoded definition, sent through NBT, gives a client registry the trait states: the
+// same states the server must register the block in.
+func TestComponents_TraitStatesReachClientRegistry(t *testing.T) {
+	data, err := nbt.Marshal(Components("test:oriented", orientedBlock{}, 10000))
+	if err != nil {
+		t.Fatalf("marshal components: %v", err)
+	}
+	var properties map[string]any
+	if err := nbt.Unmarshal(data, &properties); err != nil {
+		t.Fatalf("unmarshal components: %v", err)
+	}
+	registry, err := world.NewCustomBlockRegistry([]protocol.BlockEntry{{Name: "test:oriented", Properties: properties}})
+	if err != nil {
+		t.Fatalf("NewCustomBlockRegistry: %v", err)
+	}
+	for _, state := range []map[string]any{
+		{"minecraft:facing_direction": "up", "minecraft:block_face": "north"},
+		{"minecraft:facing_direction": "west", "minecraft:block_face": "down"},
+	} {
+		// StateToRuntimeID falls back to the block's first state, so the state found is checked.
+		rid, _ := registry.StateToRuntimeID("test:oriented", state)
+		if _, got, _ := registry.RuntimeIDToState(rid); !reflect.DeepEqual(got, state) {
+			t.Errorf("state %v not registered, found %v", state, got)
+		}
+	}
+}
+
+// Bone visibility is a compound in the geometry component from bone name to a Molang string.
+// The client binds it as a map of bone name to Expression Node (BlockGeometryDescription's
+// bindType in the 26.30 reference), the type of a permutation's condition, which the vanilla
+// definitions (data_driven_blocks.nbt) carry as a plain string.
+func TestComponents_BoneVisibility(t *testing.T) {
+	t.Parallel()
+
+	components := componentsFromProperties(customblock.Properties{
+		Geometry: "geometry.test.cable",
+		BoneVisibility: map[string]string{
+			"north": "q.block_state('test:north')",
+			"core":  "!q.block_state('test:straight')",
+		},
+	})
+	geometry := components["minecraft:geometry"].(map[string]any)
+	want := map[string]any{
+		"north": "q.block_state('test:north')",
+		"core":  "!q.block_state('test:straight')",
+	}
+	if got := geometry["bone_visibility"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("bone_visibility = %#v, want %#v", got, want)
+	}
+
+	data, err := nbt.Marshal(components)
+	if err != nil {
+		t.Fatalf("marshal components: %v", err)
+	}
+	var decoded map[string]any
+	if err := nbt.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal components: %v", err)
+	}
+	if got := decoded["minecraft:geometry"].(map[string]any)["bone_visibility"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("bone_visibility through NBT = %#v, want %#v", got, want)
+	}
+}
+
+func TestComponents_NoBoneVisibilityByDefault(t *testing.T) {
+	t.Parallel()
+
+	components := componentsFromProperties(customblock.Properties{Geometry: "geometry.test.block"})
+	if _, ok := components["minecraft:geometry"].(map[string]any)["bone_visibility"]; ok {
+		t.Fatal("geometry without bone visibility must not carry the field")
 	}
 }

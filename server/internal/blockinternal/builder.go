@@ -1,6 +1,7 @@
 package blockinternal
 
 import (
+	"github.com/df-mc/dragonfly/server/block/customblock"
 	"github.com/df-mc/dragonfly/server/item/category"
 	"maps"
 	"slices"
@@ -10,6 +11,7 @@ import (
 type ComponentBuilder struct {
 	permutations map[string]map[string]any
 	properties   []map[string]any
+	traits       []map[string]any
 	components   map[string]any
 	blockID      int32
 
@@ -45,6 +47,11 @@ func (builder *ComponentBuilder) AddProperty(name string, values []any) {
 		"name": name,
 		"enum": values,
 	})
+}
+
+// AddTrait adds the provided block trait to the builder.
+func (builder *ComponentBuilder) AddTrait(trait customblock.Trait) {
+	builder.traits = append(builder.traits, trait.Encode())
 }
 
 // AddComponent adds the provided component to the builder. If the component already exists, it will be overwritten.
@@ -93,6 +100,9 @@ func (builder *ComponentBuilder) Construct() map[string]any {
 	}
 	if len(properties) > 0 {
 		result["properties"] = properties
+	}
+	if len(builder.traits) > 0 {
+		result["traits"] = slices.Clone(builder.traits)
 	}
 	if len(builder.tags) > 0 {
 		tags := make([]any, 0, len(builder.tags))
