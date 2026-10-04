@@ -18,6 +18,8 @@ type ComponentBuilder struct {
 	traits       []map[string]any
 	components   map[string]any
 	blockID      int32
+	// conditions holds the conditions of permutations in the order they were first added.
+	conditions []string
 
 	identifier   string
 	menuCategory category.Category
@@ -75,6 +77,7 @@ func (builder *ComponentBuilder) AddPermutation(condition string, components map
 	}
 	if builder.permutations[condition] == nil {
 		builder.permutations[condition] = map[string]any{}
+		builder.conditions = append(builder.conditions, condition)
 	}
 	for key, value := range components {
 		builder.permutations[condition][key] = value
@@ -116,15 +119,17 @@ func (builder *ComponentBuilder) Construct() map[string]any {
 		result["blockTags"] = tags
 	}
 
-	permutations := maps.Clone(builder.permutations)
-	if len(permutations) > 0 {
-		result["permutations"] = []map[string]any{}
-		for condition, values := range permutations {
-			result["permutations"] = append(result["permutations"].([]map[string]any), map[string]any{
+	if len(builder.conditions) > 0 {
+		// The client applies permutations in list order, a later one's components winning where two hold, so they
+		// keep the order they were added in.
+		permutations := make([]map[string]any, 0, len(builder.conditions))
+		for _, condition := range builder.conditions {
+			permutations = append(permutations, map[string]any{
 				"condition":  condition,
-				"components": values,
+				"components": maps.Clone(builder.permutations[condition]),
 			})
 		}
+		result["permutations"] = permutations
 	}
 	return result
 }

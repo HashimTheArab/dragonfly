@@ -345,3 +345,27 @@ func TestComponents_PropertiesSortedByName(t *testing.T) {
 		}
 	}
 }
+
+// The client applies a block's permutations in list order, the later one's components winning
+// where two hold, so they keep the order the block lists them in; a repeated condition adds its
+// components to the first permutation with it.
+func TestBuilder_PermutationsKeepTheirOrder(t *testing.T) {
+	builder := NewComponentBuilder("test:ordered", nil, 1)
+	conditions := []string{"q.block_state('a') == 3", "q.block_state('a') == 1", "q.block_state('a') == 2", "true", "false"}
+	for i, condition := range conditions {
+		builder.AddPermutation(condition, map[string]any{"index": i})
+	}
+	builder.AddPermutation(conditions[1], map[string]any{"again": true})
+	permutations := builder.Construct()["permutations"].([]map[string]any)
+	if len(permutations) != len(conditions) {
+		t.Fatalf("%d permutations, want %d", len(permutations), len(conditions))
+	}
+	for i, permutation := range permutations {
+		if permutation["condition"] != conditions[i] || permutation["components"].(map[string]any)["index"] != i {
+			t.Fatalf("permutation %d = %v, want condition %q", i, permutation, conditions[i])
+		}
+	}
+	if permutations[1]["components"].(map[string]any)["again"] != true {
+		t.Errorf("the repeated condition's components went elsewhere: %v", permutations)
+	}
+}

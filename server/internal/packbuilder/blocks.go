@@ -46,15 +46,18 @@ func buildBlocks(reg world.BlockRegistry, dir string) (count int, lang []string)
 				flipbooks = append(flipbooks, flipbook.Encode(name, "textures/blocks/"+name))
 			}
 		}
+		// Geometry files are named by the whole identifier: blocks of two namespaces may share a name.
+		namespace, name, _ := strings.Cut(identifier, ":")
 		if b.Geometry() != nil {
-			// Geometry files are named by the whole identifier: blocks of two namespaces may share a name.
-			namespace, name, _ := strings.Cut(identifier, ":")
 			if err := os.MkdirAll(filepath.Join(dir, "models/blocks", namespace), os.ModePerm); err != nil {
 				panic(err)
 			}
 			if err := os.WriteFile(filepath.Join(dir, "models/blocks", namespace, name+".geo.json"), b.Geometry(), 0666); err != nil {
 				panic(err)
 			}
+		}
+		if further, ok := b.(world.CustomBlockGeometries); ok {
+			buildBlockGeometries(filepath.Join(dir, "models/blocks", namespace, name), identifier, further.Geometries())
 		}
 		count++
 	}
@@ -88,6 +91,25 @@ func buildBlockTexture(dir, name string, img image.Image) {
 	}
 	if err := texture.Close(); err != nil {
 		panic(err)
+	}
+}
+
+// buildBlockGeometries writes the further geometries of the block with the identifier passed into dir, one file
+// per name. A name that is not a plain file name panics.
+func buildBlockGeometries(dir, identifier string, geometries map[string][]byte) {
+	if len(geometries) == 0 {
+		return
+	}
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		panic(err)
+	}
+	for name, geometry := range geometries {
+		if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+			panic(fmt.Sprintf("further geometry %q of %s is not a plain file name", name, identifier))
+		}
+		if err := os.WriteFile(filepath.Join(dir, name+".geo.json"), geometry, 0666); err != nil {
+			panic(err)
+		}
 	}
 }
 

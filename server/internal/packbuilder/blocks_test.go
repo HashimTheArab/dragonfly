@@ -140,3 +140,66 @@ func TestBuildBlocks_FlipbookForUnknownTexturePanics(t *testing.T) {
 		flipbooks: map[string]customblock.Flipbook{"test.missing": {}},
 	})
 }
+
+// geometriesBlock is a testBlock whose permutations draw geometries of their own.
+type geometriesBlock struct {
+	testBlock
+	geometries map[string][]byte
+}
+
+func (b geometriesBlock) Geometries() map[string][]byte { return b.geometries }
+
+// Further geometries go in a directory named by the whole identifier, so they collide neither
+// with another namespace's block of the same name nor with a block named like one of them.
+func TestBuildBlocks_FurtherGeometriesNamedByIdentifier(t *testing.T) {
+	dir := buildTestBlocks(t,
+		geometriesBlock{
+			testBlock: testBlock{identifier: "first:controller", geometry: []byte(`{"base":true}`)},
+			geometries: map[string][]byte{
+				"online":        []byte(`{"online":true}`),
+				"column_online": []byte(`{"column":true}`),
+			},
+		},
+		geometriesBlock{
+			testBlock:  testBlock{identifier: "second:controller"},
+			geometries: map[string][]byte{"online": []byte(`{"second":true}`)},
+		},
+		testBlock{identifier: "first:online", geometry: []byte(`{"block":true}`)},
+	)
+	for path, want := range map[string]string{
+		"models/blocks/first/controller.geo.json":               `{"base":true}`,
+		"models/blocks/first/controller/online.geo.json":        `{"online":true}`,
+		"models/blocks/first/controller/column_online.geo.json": `{"column":true}`,
+		"models/blocks/second/controller/online.geo.json":       `{"second":true}`,
+		"models/blocks/first/online.geo.json":                   `{"block":true}`,
+	} {
+		got, err := os.ReadFile(filepath.Join(dir, path))
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if string(got) != want {
+			t.Errorf("%s = %s, want %s", path, got, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "models/blocks/second/controller.geo.json")); !os.IsNotExist(err) {
+		t.Errorf("a block without its own geometry got a file (err = %v)", err)
+	}
+}
+
+// A further geometry's name is a file name: one that is empty, reaches another directory or
+// holds a separator panics instead of writing outside the block's directory.
+func TestBuildBlocks_FurtherGeometryNameOutsideDirectoryPanics(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "../escape", "a/b", `a\b`} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("buildBlocks did not panic for %q", name)
+				}
+			}()
+			buildTestBlocks(t, geometriesBlock{
+				testBlock:  testBlock{identifier: "test:controller"},
+				geometries: map[string][]byte{name: []byte(`{}`)},
+			})
+		})
+	}
+}
