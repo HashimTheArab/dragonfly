@@ -5,7 +5,21 @@ package customblock
 type Trait interface {
 	// Encode returns the trait encoded as an entry of the block's traits list.
 	Encode() map[string]any
+	// States returns the states the trait adds, in the order the client adds them to the block.
+	States() []TraitState
 }
+
+// TraitState is a block state a trait adds, with its values in the order the client enumerates
+// them: the order of its Direction and Facing enums, which vanilla's own block states share.
+type TraitState struct {
+	Name   string
+	Values []any
+}
+
+var (
+	cardinalDirections = []any{"south", "west", "north", "east"}
+	facingDirections   = []any{"down", "up", "north", "south", "west", "east"}
+)
 
 // PlacementDirection is the minecraft:placement_direction trait. Each enabled state is set from
 // the direction the placing player faces.
@@ -33,6 +47,18 @@ func (t PlacementDirection) Encode() map[string]any {
 	}
 }
 
+// States returns the enabled states, cardinal before facing, as the client adds them.
+func (t PlacementDirection) States() []TraitState {
+	var states []TraitState
+	if t.CardinalDirection {
+		states = append(states, TraitState{Name: "minecraft:cardinal_direction", Values: cardinalDirections})
+	}
+	if t.FacingDirection {
+		states = append(states, TraitState{Name: "minecraft:facing_direction", Values: facingDirections})
+	}
+	return states
+}
+
 // PlacementPosition is the minecraft:placement_position trait. Each enabled state is set from
 // where the placing player clicked.
 type PlacementPosition struct {
@@ -53,6 +79,18 @@ func (t PlacementPosition) Encode() map[string]any {
 			"vertical_half": boolByte(t.VerticalHalf),
 		},
 	}
+}
+
+// States returns the enabled states, block face before vertical half, as the client adds them.
+func (t PlacementPosition) States() []TraitState {
+	var states []TraitState
+	if t.BlockFace {
+		states = append(states, TraitState{Name: "minecraft:block_face", Values: facingDirections})
+	}
+	if t.VerticalHalf {
+		states = append(states, TraitState{Name: "minecraft:vertical_half", Values: []any{"bottom", "top"}})
+	}
+	return states
 }
 
 // boolByte returns b as the byte a client reads an enabled state flag as.

@@ -312,3 +312,36 @@ func TestComponents_MolangVersion(t *testing.T) {
 		t.Errorf("molangVersion = %#v, want int32(13)", got)
 	}
 }
+
+// statefulBlock is a custom block with several properties.
+type statefulBlock struct{}
+
+func (statefulBlock) EncodeBlock() (string, map[string]any) { return "test:stateful", nil }
+func (statefulBlock) Model() world.BlockModel               { return nil }
+func (statefulBlock) Hash() (uint64, uint64)                { return 0, 0 }
+func (statefulBlock) Permutations() []customblock.Permutation {
+	return nil
+}
+
+func (statefulBlock) Properties() customblock.Properties {
+	return customblock.Properties{Cube: true}
+}
+
+func (statefulBlock) States() map[string][]any {
+	return map[string][]any{"test:c": {false, true}, "test:a": {false, true}, "test:b": {false, true}}
+}
+
+// The client adds properties to the block in the order of the list, which decides the order of
+// its runtime IDs, so the list is sorted by name rather than left to map iteration.
+func TestComponents_PropertiesSortedByName(t *testing.T) {
+	for range 20 {
+		properties := Components("test:stateful", statefulBlock{}, 10000)["properties"].([]map[string]any)
+		var names []any
+		for _, property := range properties {
+			names = append(names, property["name"])
+		}
+		if want := []any{"test:a", "test:b", "test:c"}; !reflect.DeepEqual(names, want) {
+			t.Fatalf("property names = %v, want %v", names, want)
+		}
+	}
+}

@@ -1,6 +1,9 @@
 package blockinternal
 
 import (
+	"maps"
+	"slices"
+
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/block/customblock"
@@ -49,8 +52,11 @@ func Components(identifier string, b world.CustomBlock, blockID int32) map[strin
 		})
 	}
 	if permutable, ok := b.(block.Permutable); ok {
-		for name, values := range permutable.States() {
-			builder.AddProperty(name, values)
+		// The client adds properties in the order of the list, which orders the block's runtime IDs, so
+		// they are sent sorted by name, the order the registry gives the states runtime IDs in.
+		states := permutable.States()
+		for _, name := range slices.Sorted(maps.Keys(states)) {
+			builder.AddProperty(name, states[name])
 		}
 		for _, permutation := range permutable.Permutations() {
 			builder.AddPermutation(permutation.Condition, componentsFromProperties(permutation.Properties))

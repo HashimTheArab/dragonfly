@@ -117,6 +117,9 @@ func customBlockPropertySpace(entry protocol.BlockEntry) ([]string, [][]any, err
 		propertyValues = append(propertyValues, enum)
 	}
 
+	// The client adds trait states to the block before its properties.
+	var traitNames []string
+	var traitValues [][]any
 	traits, err := customBlockMaps(entry.Properties["traits"], "traits")
 	if err != nil {
 		return nil, nil, err
@@ -141,8 +144,8 @@ func customBlockPropertySpace(entry protocol.BlockEntry) ([]string, [][]any, err
 					"minecraft:connection_west",
 					"minecraft:connection_east",
 				} {
-					propertyNames = append(propertyNames, state)
-					propertyValues = append(propertyValues, []any{uint8(0), uint8(1)})
+					traitNames = append(traitNames, state)
+					traitValues = append(traitValues, []any{uint8(0), uint8(1)})
 				}
 				continue
 			}
@@ -170,12 +173,12 @@ func customBlockPropertySpace(entry protocol.BlockEntry) ([]string, [][]any, err
 				return nil, nil, fmt.Errorf("unresolved trait %s", k)
 			}
 
-			propertyNames = append(propertyNames, k)
-			propertyValues = append(propertyValues, v)
+			traitNames = append(traitNames, k)
+			traitValues = append(traitValues, v)
 		}
 	}
 
-	return propertyNames, propertyValues, nil
+	return append(traitNames, propertyNames...), append(traitValues, propertyValues...), nil
 }
 
 // customBlockEnumValues coerces a property enum to []any. NBT decoders produce typed
@@ -232,11 +235,13 @@ func customBlockMaps(value any, field string) ([]map[string]any, error) {
 	}
 }
 
+// forEachCustomBlockState yields every combination of the values passed in the order the client
+// gives them runtime IDs: by permutation index, in which the first state varies fastest.
 func forEachCustomBlockState(names []string, valueSets [][]any, yield func(map[string]any) error) error {
 	properties := make(map[string]any, len(names))
 	var visit func(int) error
 	visit = func(index int) error {
-		if index == len(names) {
+		if index < 0 {
 			state := make(map[string]any, len(properties))
 			for name, value := range properties {
 				state[name] = value
@@ -245,13 +250,13 @@ func forEachCustomBlockState(names []string, valueSets [][]any, yield func(map[s
 		}
 		for _, value := range valueSets[index] {
 			properties[names[index]] = value
-			if err := visit(index + 1); err != nil {
+			if err := visit(index - 1); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	return visit(0)
+	return visit(len(names) - 1)
 }
 
 func customBlockTraitEnabled(v any) (bool, error) {

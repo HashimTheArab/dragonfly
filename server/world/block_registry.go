@@ -7,7 +7,6 @@ import (
 	"math/bits"
 	"reflect"
 	"slices"
-	"sort"
 	"sync"
 
 	"github.com/brentp/intintmap"
@@ -426,21 +425,7 @@ func (br *BasicBlockRegistry) Finalize() {
 		return
 	}
 
-	sort.SliceStable(br.blocks, func(i, j int) bool {
-		var nameOne string
-		if b1, ok := br.blocks[i].(unknownBlock); ok {
-			nameOne = b1.Name
-		} else {
-			nameOne, _ = br.blocks[i].EncodeBlock()
-		}
-		var nameTwo string
-		if b2, ok := br.blocks[j].(unknownBlock); ok {
-			nameTwo = b2.Name
-		} else {
-			nameTwo, _ = br.blocks[j].EncodeBlock()
-		}
-		return NetworkBlockHash(nameOne) < NetworkBlockHash(nameTwo)
-	})
+	br.sortForNetworkLocked()
 
 	br.finalizeLocked()
 }
