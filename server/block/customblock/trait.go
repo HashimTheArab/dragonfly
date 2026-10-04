@@ -10,8 +10,8 @@ type Trait interface {
 // PlacementDirection is the minecraft:placement_direction trait. Each enabled state is set from
 // the direction the placing player faces.
 type PlacementDirection struct {
-	// CardinalDirection enables the minecraft:cardinal_direction state, one of "north", "east",
-	// "south" and "west".
+	// CardinalDirection enables the minecraft:cardinal_direction state, one of "south", "west",
+	// "north" and "east".
 	CardinalDirection bool
 	// FacingDirection enables the minecraft:facing_direction state, one of "down", "up",
 	// "north", "south", "west" and "east".

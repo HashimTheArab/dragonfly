@@ -302,3 +302,13 @@ func TestComponents_NoBoneVisibilityByDefault(t *testing.T) {
 		t.Fatal("geometry without bone visibility must not carry the field")
 	}
 }
+
+// Definitions are sent at the latest Molang version, 13 (1.21.100), as vanilla's are
+// (data_driven_blocks.nbt); 1.26.50 clients reject anything newer
+// (BlockDefinitionGroup::digestServerBlockProperties).
+func TestComponents_MolangVersion(t *testing.T) {
+	components := Components("test:untagged", untaggedBlock{}, 10000)
+	if got := components["molangVersion"]; got != int32(13) {
+		t.Errorf("molangVersion = %#v, want int32(13)", got)
+	}
+}

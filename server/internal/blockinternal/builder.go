@@ -7,6 +7,10 @@ import (
 	"slices"
 )
 
+// molangVersion is the Molang version the client parses the definition's expressions at: the
+// latest, which vanilla's own definitions use.
+const molangVersion = int32(13)
+
 // ComponentBuilder represents a builder that can be used to construct a block components map to be sent to a client.
 type ComponentBuilder struct {
 	permutations map[string]map[string]any
@@ -89,7 +93,7 @@ func (builder *ComponentBuilder) Construct() map[string]any {
 
 	result := map[string]any{
 		"components":    components,
-		"molangVersion": int32(10),
+		"molangVersion": molangVersion,
 		"menu_category": map[string]any{
 			"category": builder.menuCategory.String(),
 			"group":    builder.menuCategory.Group(),

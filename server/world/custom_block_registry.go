@@ -8,18 +8,20 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
+// traitLookup holds the values of each trait state in the order the client enumerates them: the
+// order of its Direction and Facing enums, which vanilla's own block states share.
 var traitLookup = map[string][]any{
 	"minecraft:facing_direction": {
-		"north", "east", "south", "west", "down", "up",
+		"down", "up", "north", "south", "west", "east",
 	},
 	"minecraft:cardinal_direction": {
-		"north", "east", "south", "west",
+		"south", "west", "north", "east",
 	},
 	"minecraft:vertical_half": {
-		"top", "bottom",
+		"bottom", "top",
 	},
 	"minecraft:block_face": {
-		"north", "east", "south", "west", "down", "up",
+		"down", "up", "north", "south", "west", "east",
 	},
 	"minecraft:corner_and_cardinal_direction": {
 		"none", "inner_left", "inner_right", "outer_left", "outer_right",

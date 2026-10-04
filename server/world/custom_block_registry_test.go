@@ -169,3 +169,45 @@ func TestAddCustomBlocks_UnknownBitmaskTraitErrors(t *testing.T) {
 		t.Fatal("expected an unknown bitmask trait to error")
 	}
 }
+
+// Trait states take the client's values in the client's order: Direction::TO_STRING_MAP for
+// minecraft:cardinal_direction, Facing for minecraft:facing_direction and minecraft:block_face,
+// all serialized as strings (StateSerializationUtils::toNBT, 26.30 reference), the same order
+// vanilla's own block states list them in (block_states.nbt).
+func TestAddCustomBlocksTraitStateOrder(t *testing.T) {
+	facing := []any{"down", "up", "north", "south", "west", "east"}
+	for _, test := range []struct {
+		trait, state string
+		want         []any
+	}{
+		{"minecraft:placement_direction", "cardinal_direction", []any{"south", "west", "north", "east"}},
+		{"minecraft:placement_direction", "facing_direction", facing},
+		{"minecraft:placement_position", "block_face", facing},
+		{"minecraft:placement_position", "vertical_half", []any{"bottom", "top"}},
+	} {
+		t.Run(test.state, func(t *testing.T) {
+			DefaultBlockRegistry.Finalize()
+			registry := DefaultBlockRegistry.Clone()
+			base := uint32(registry.BlockCount())
+			entry := protocol.BlockEntry{
+				Name: "dragonfly:test_block",
+				Properties: map[string]any{"traits": []any{map[string]any{
+					"name":           test.trait,
+					"enabled_states": map[string]any{test.state: uint8(1)},
+				}}},
+			}
+			if err := AddCustomBlocks(registry, []protocol.BlockEntry{entry}); err != nil {
+				t.Fatalf("AddCustomBlocks() error = %v", err)
+			}
+			if got := registry.BlockCount() - int(base); got != len(test.want) {
+				t.Fatalf("states = %d, want %d", got, len(test.want))
+			}
+			for i, want := range test.want {
+				_, properties, _ := registry.RuntimeIDToState(base + uint32(i))
+				if got := properties["minecraft:"+test.state]; got != want {
+					t.Errorf("state %d = %v, want %v", i, got, want)
+				}
+			}
+		})
+	}
+}
