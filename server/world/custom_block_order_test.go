@@ -63,9 +63,9 @@ func orderedState(i int) orderedBlock {
 }
 
 // The client gives a custom block's states runtime IDs in the order of its permutation index,
-// in which the first state added to the block varies fastest. Traits add their states first
-// (BlockDefinitionGroup::registerBlockFromDefinition), then the properties follow in the order
-// of the definition's properties list, which dragonfly sends sorted by name.
+// in which the first state added to the block varies fastest. Traits add their states first,
+// then the properties follow in the order of the definition's properties list, which dragonfly
+// sends sorted by name.
 func TestFinalizeOrdersCustomBlockStatesAsClient(t *testing.T) {
 	const count = 4 * 2 * 2 * 3
 	registry := NewBlockRegistry()

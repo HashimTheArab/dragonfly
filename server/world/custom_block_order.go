@@ -43,9 +43,8 @@ func (br *BasicBlockRegistry) sortForNetworkLocked() {
 }
 
 // customBlockStateAxes returns the states of a custom block in the order the client adds them to
-// the block (BlockDefinitionGroup::registerBlockFromDefinition): the states of its traits in the
-// order of the traits list, then its properties in the order of the properties list, which
-// dragonfly sends sorted by name.
+// the block: the states of its traits in the order of the traits list, then its properties in
+// the order of the properties list, which dragonfly sends sorted by name.
 func customBlockStateAxes(b CustomBlock) []customblock.TraitState {
 	var axes []customblock.TraitState
 	if traited, ok := b.(interface{ Traits() []customblock.Trait }); ok {

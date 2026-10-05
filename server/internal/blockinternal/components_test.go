@@ -198,8 +198,8 @@ func (orientedBlock) Traits() []customblock.Trait {
 
 // Traits are a list beside properties, each naming the trait and flagging its enabled
 // states as bytes keyed by their name without the namespace, with the direction's offset a
-// float: the tags BlockTrait::PlacementDirection and PlacementPosition read in
-// initializeFromNetwork (26.30 reference).
+// float: the tags the client reads for its placement_direction and placement_position
+// traits.
 func TestComponents_Traits(t *testing.T) {
 	components := Components("test:oriented", orientedBlock{}, 10000)
 	want := []map[string]any{
@@ -259,9 +259,8 @@ func TestComponents_TraitStatesReachClientRegistry(t *testing.T) {
 }
 
 // Bone visibility is a compound in the geometry component from bone name to a Molang string.
-// The client binds it as a map of bone name to Expression Node (BlockGeometryDescription's
-// bindType in the 26.30 reference), the type of a permutation's condition, which the vanilla
-// definitions (data_driven_blocks.nbt) carry as a plain string.
+// The client reads it as a map of bone name to Molang expression, the type of a permutation's
+// condition, which the vanilla definitions (data_driven_blocks.nbt) carry as a plain string.
 func TestComponents_BoneVisibility(t *testing.T) {
 	t.Parallel()
 
@@ -304,8 +303,7 @@ func TestComponents_NoBoneVisibilityByDefault(t *testing.T) {
 }
 
 // Definitions are sent at the latest Molang version, 13 (1.21.100), as vanilla's are
-// (data_driven_blocks.nbt); 1.26.50 clients reject anything newer
-// (BlockDefinitionGroup::digestServerBlockProperties).
+// (data_driven_blocks.nbt); 1.26.50 clients reject a definition with anything newer.
 func TestComponents_MolangVersion(t *testing.T) {
 	components := Components("test:untagged", untaggedBlock{}, 10000)
 	if got := components["molangVersion"]; got != int32(13) {

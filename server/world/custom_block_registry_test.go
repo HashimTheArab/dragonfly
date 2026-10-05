@@ -170,9 +170,9 @@ func TestAddCustomBlocks_UnknownBitmaskTraitErrors(t *testing.T) {
 	}
 }
 
-// Trait states take the client's values in the client's order: Direction::TO_STRING_MAP for
-// minecraft:cardinal_direction, Facing for minecraft:facing_direction and minecraft:block_face,
-// all serialized as strings (StateSerializationUtils::toNBT, 26.30 reference), the same order
+// Trait states take the client's values in the client's order: south, west, north, east for
+// minecraft:cardinal_direction, down, up, north, south, west, east for
+// minecraft:facing_direction and minecraft:block_face, all serialized as strings, the same order
 // vanilla's own block states list them in (block_states.nbt).
 func TestAddCustomBlocksTraitStateOrder(t *testing.T) {
 	facing := []any{"down", "up", "north", "south", "west", "east"}
