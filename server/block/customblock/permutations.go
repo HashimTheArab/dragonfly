@@ -23,8 +23,8 @@ type Properties struct {
 	// same_culling_layer condition.
 	GeometryCullingLayer string
 	// BoneVisibility maps the names of bones in the geometry to a Molang expression that tells if the bone is shown.
-	// The expression may only query block states, using query.block_state. Bones left out are always shown. If a
-	// permutation sets it, the block's own Properties must set it too.
+	// The expression may only query block states, using query.block_state. Bones left out are always shown. It may
+	// not be used with minecraft:geometry.full_block or minecraft:geometry.cross.
 	BoneVisibility map[string]string
 	// MapColour represents the hex colour that should be used for the block on a map.
 	MapColour string

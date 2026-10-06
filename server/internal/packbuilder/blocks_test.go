@@ -78,13 +78,14 @@ func TestBuildBlocks_GeometryNamedByIdentifier(t *testing.T) {
 }
 
 // Flipbook entries follow the vanilla resource pack's textures/flipbook_textures.json: the
-// texture path, its terrain atlas key and the animation fields the flipbook sets.
+// texture path, its terrain atlas key and only the fields that differ from the client's defaults,
+// so a zero Flipbook blends frames as vanilla does.
 func TestBuildBlocks_FlipbookTextures(t *testing.T) {
 	dir := buildTestBlocks(t,
 		animatedBlock{
 			testBlock: testBlock{identifier: "test:controller", textures: []string{"test.lights", "test.side"}},
 			flipbooks: map[string]customblock.Flipbook{
-				"test.lights": {TicksPerFrame: 2, Frames: []int{0, 1, 1}, BlendFrames: true},
+				"test.lights": {TicksPerFrame: 2, Frames: []int{0, 1, 1}, NoBlend: true},
 			},
 		},
 		animatedBlock{
@@ -104,14 +105,13 @@ func TestBuildBlocks_FlipbookTextures(t *testing.T) {
 		{
 			"flipbook_texture": "textures/blocks/test.anim",
 			"atlas_tile":       "test.anim",
-			"blend_frames":     false,
 		},
 		{
 			"flipbook_texture": "textures/blocks/test.lights",
 			"atlas_tile":       "test.lights",
 			"ticks_per_frame":  float64(2),
 			"frames":           []any{float64(0), float64(1), float64(1)},
-			"blend_frames":     true,
+			"blend_frames":     false,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {

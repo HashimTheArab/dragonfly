@@ -9,8 +9,9 @@ type Flipbook struct {
 	// Frames is the order the frames of the strip are shown in, by their index from the top. If
 	// empty, every frame is shown once from top to bottom.
 	Frames []int
-	// BlendFrames is if the client blends each frame into the next while showing it.
-	BlendFrames bool
+	// NoBlend stops the client blending each frame into the next while showing it, which it
+	// does by default.
+	NoBlend bool
 }
 
 // Encode returns the flipbook as an entry of textures/flipbook_textures.json for the terrain
@@ -19,8 +20,9 @@ func (f Flipbook) Encode(atlasTile, texturePath string) map[string]any {
 	entry := map[string]any{
 		"flipbook_texture": texturePath,
 		"atlas_tile":       atlasTile,
-		// The client blends frames unless told otherwise, so false is always written.
-		"blend_frames": f.BlendFrames,
+	}
+	if f.NoBlend {
+		entry["blend_frames"] = false
 	}
 	if f.TicksPerFrame > 0 {
 		entry["ticks_per_frame"] = f.TicksPerFrame

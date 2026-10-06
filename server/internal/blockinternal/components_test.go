@@ -163,7 +163,7 @@ func TestComponents_GeometryCulling(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			test.properties.GeometryCulling = "test:shared_faces"
 			test.properties.GeometryCullingLayer = "test_xray"
-			components := componentsFromProperties(test.properties)
+			components := componentsFromProperties("test:block", test.properties)
 			geometry := components["minecraft:geometry"].(map[string]any)
 			if got := geometry["identifier"]; got != test.identifier {
 				t.Errorf("identifier = %v, want %s", got, test.identifier)
@@ -196,21 +196,11 @@ func (orientedBlock) Traits() []customblock.Trait {
 	}
 }
 
-// Traits are a list beside properties, each naming the trait and flagging its enabled
-// states as bytes keyed by their name without the namespace, with the direction's offset a
-// float: the tags the client reads for its placement_direction and placement_position
-// traits.
+// Traits are listed placement_position first whatever their declared order, each with the fields
+// vanilla sends for it.
 func TestComponents_Traits(t *testing.T) {
 	components := Components("test:oriented", orientedBlock{}, 10000)
 	want := []map[string]any{
-		{
-			"name": "minecraft:placement_direction",
-			"enabled_states": map[string]any{
-				"cardinal_direction": uint8(0),
-				"facing_direction":   uint8(1),
-			},
-			"y_rotation_offset": float32(180),
-		},
 		{
 			"name": "minecraft:placement_position",
 			"enabled_states": map[string]any{
@@ -218,10 +208,37 @@ func TestComponents_Traits(t *testing.T) {
 				"vertical_half": uint8(0),
 			},
 		},
+		{
+			"name": "minecraft:placement_direction",
+			"enabled_states": map[string]any{
+				"cardinal_direction":            uint8(0),
+				"facing_direction":              uint8(1),
+				"corner_and_cardinal_direction": uint8(0),
+				"sixteen_way_rotation":          uint8(0),
+			},
+			"y_rotation_offset":     float32(180),
+			"blocks_to_corner_with": []any{},
+		},
 	}
 	if got := components["traits"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("traits = %#v, want %#v", got, want)
 	}
+}
+
+// invalidTraitBlock is a custom block whose traits vanilla rejects.
+type invalidTraitBlock struct{ orientedBlock }
+
+func (invalidTraitBlock) Traits() []customblock.Trait {
+	return []customblock.Trait{customblock.PlacementPosition{}}
+}
+
+func TestComponents_InvalidTraitsPanic(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("Components did not panic")
+		}
+	}()
+	Components("test:invalid", invalidTraitBlock{}, 10000)
 }
 
 func TestComponents_NoTraitsWithoutTraited(t *testing.T) {
@@ -258,23 +275,26 @@ func TestComponents_TraitStatesReachClientRegistry(t *testing.T) {
 	}
 }
 
-// Bone visibility is a compound in the geometry component from bone name to a Molang string.
-// The client reads it as a map of bone name to Molang expression, the type of a permutation's
-// condition, which the vanilla definitions (data_driven_blocks.nbt) carry as a plain string.
+// Bone visibility is a compound from bone name to a plain Molang string, constants written with six
+// decimals, as vanilla sends it.
 func TestComponents_BoneVisibility(t *testing.T) {
 	t.Parallel()
 
-	components := componentsFromProperties(customblock.Properties{
+	components := componentsFromProperties("test:cable", customblock.Properties{
 		Geometry: "geometry.test.cable",
 		BoneVisibility: map[string]string{
 			"north": "q.block_state('test:north')",
 			"core":  "!q.block_state('test:straight')",
+			"on":    "1",
+			"off":   " 0.0",
 		},
 	})
 	geometry := components["minecraft:geometry"].(map[string]any)
 	want := map[string]any{
 		"north": "q.block_state('test:north')",
 		"core":  "!q.block_state('test:straight')",
+		"on":    "1.000000",
+		"off":   "0.000000",
 	}
 	if got := geometry["bone_visibility"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("bone_visibility = %#v, want %#v", got, want)
@@ -293,10 +313,31 @@ func TestComponents_BoneVisibility(t *testing.T) {
 	}
 }
 
+// Vanilla rejects bone visibility on the built-in full block and cross geometries.
+func TestComponents_BoneVisibilityOnBuiltInGeometryPanics(t *testing.T) {
+	t.Parallel()
+
+	for _, props := range []customblock.Properties{
+		{Cube: true},
+		{Geometry: "minecraft:geometry.full_block"},
+		{Geometry: "minecraft:geometry.cross"},
+	} {
+		props.BoneVisibility = map[string]string{"a": "1"}
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("componentsFromProperties(%+v) did not panic", props)
+				}
+			}()
+			componentsFromProperties("test:block", props)
+		}()
+	}
+}
+
 func TestComponents_NoBoneVisibilityByDefault(t *testing.T) {
 	t.Parallel()
 
-	components := componentsFromProperties(customblock.Properties{Geometry: "geometry.test.block"})
+	components := componentsFromProperties("test:block", customblock.Properties{Geometry: "geometry.test.block"})
 	if _, ok := components["minecraft:geometry"].(map[string]any)["bone_visibility"]; ok {
 		t.Fatal("geometry without bone visibility must not carry the field")
 	}

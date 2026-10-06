@@ -42,13 +42,24 @@ func (br *BasicBlockRegistry) sortForNetworkLocked() {
 	}
 }
 
+// validateCustomBlock returns an error if the traits of a custom block are invalid.
+func validateCustomBlock(b CustomBlock) error {
+	if traited, ok := b.(interface{ Traits() []customblock.Trait }); ok {
+		_, err := customblock.SortTraits(traited.Traits())
+		return err
+	}
+	return nil
+}
+
 // customBlockStateAxes returns the states of a custom block in the order the client adds them to
-// the block: the states of its traits in the order of the traits list, then its properties in
-// the order of the properties list, which dragonfly sends sorted by name.
+// the block: the states of its traits in vanilla's trait order, then its properties in the order
+// of the properties list, which dragonfly sends sorted by name.
 func customBlockStateAxes(b CustomBlock) []customblock.TraitState {
 	var axes []customblock.TraitState
 	if traited, ok := b.(interface{ Traits() []customblock.Trait }); ok {
-		for _, trait := range traited.Traits() {
+		// RegisterBlock has already rejected invalid traits.
+		traits, _ := customblock.SortTraits(traited.Traits())
+		for _, trait := range traits {
 			axes = append(axes, trait.States()...)
 		}
 	}
@@ -66,7 +77,8 @@ func customBlockStateAxes(b CustomBlock) []customblock.TraitState {
 func customBlockStateIndex(axes []customblock.TraitState, properties map[string]any) int {
 	index, radix := 0, 1
 	for _, axis := range axes {
-		i := slices.Index(axis.Values, properties[axis.Name])
+		value := stateValueKey(properties[axis.Name])
+		i := slices.IndexFunc(axis.Values, func(v any) bool { return stateValueKey(v) == value })
 		if i < 0 {
 			return -1
 		}
@@ -74,4 +86,33 @@ func customBlockStateIndex(axes []customblock.TraitState, properties map[string]
 		radix *= len(axis.Values)
 	}
 	return index
+}
+
+// stateValueKey returns v in a form equal for every type a state value may be declared or encoded
+// as: a bool or integer of any width becomes an int64.
+func stateValueKey(v any) any {
+	switch v := v.(type) {
+	case bool:
+		if v {
+			return int64(1)
+		}
+		return int64(0)
+	case uint8:
+		return int64(v)
+	case int8:
+		return int64(v)
+	case uint16:
+		return int64(v)
+	case int16:
+		return int64(v)
+	case uint32:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case int:
+		return int64(v)
+	case int64:
+		return v
+	}
+	return v
 }
