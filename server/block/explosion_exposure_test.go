@@ -44,6 +44,34 @@ func TestExposure(t *testing.T) {
 	}
 }
 
+func TestExplosionImpact(t *testing.T) {
+	origin := mgl64.Vec3{0, .5, .5}
+	entityPos := mgl64.Vec3{2, .5, .5}
+	box := cube.Box(1.7, 0, .2, 2.3, 1.8, .8)
+	cfg := ExplosionConfig{}
+	if got := ExplosionImpactUpperBound(origin, 5, entityPos); got != .8 {
+		t.Fatalf("upper bound = %v, want .8", got)
+	}
+	if got := cfg.Impact(blockSource{}, origin, 5, entityPos, box); got != .8 {
+		t.Fatalf("open impact = %v, want .8", got)
+	}
+	walled := blockSource{}
+	for y := -1; y <= 2; y++ {
+		for z := -1; z <= 2; z++ {
+			walled[cube.Pos{1, y, z}] = Stone{}
+		}
+	}
+	if got := cfg.Impact(walled, origin, 5, entityPos, box); got != 0 {
+		t.Fatalf("walled impact = %v, want 0", got)
+	}
+	if got := cfg.Impact(blockSource{}, origin, 5, mgl64.Vec3{11, .5, .5}, box); got != 0 {
+		t.Fatalf("out-of-range impact = %v, want 0", got)
+	}
+	if got := ExplosionDamage(5, .8); got != 51 {
+		t.Fatalf("raw damage = %v, want 51", got)
+	}
+}
+
 // liquidSource adds liquids to blockSource.
 type liquidSource struct {
 	blockSource
