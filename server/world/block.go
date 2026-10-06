@@ -45,6 +45,23 @@ type CustomBlockBuildable interface {
 	Textures() map[string]image.Image
 }
 
+// CustomBlockAnimated is a CustomBlockBuildable with animated textures.
+type CustomBlockAnimated interface {
+	CustomBlockBuildable
+	// Flipbooks returns the animation of each animated texture, indexed by the texture's name in Textures. An
+	// animated texture is a vertical strip of square frames.
+	Flipbooks() map[string]customblock.Flipbook
+}
+
+// CustomBlockGeometries is a CustomBlockBuildable whose permutations draw geometries of their own besides the
+// one Geometry returns.
+type CustomBlockGeometries interface {
+	CustomBlockBuildable
+	// Geometries returns each further geometry file of the block, indexed by a file name unique among them. A name
+	// may not be empty, "." or "..", or hold a path separator.
+	Geometries() map[string][]byte
+}
+
 // Liquid represents a block that can be moved through and which can flow in the world after placement. There
 // are two liquids in vanilla, which are lava and water.
 type Liquid interface {

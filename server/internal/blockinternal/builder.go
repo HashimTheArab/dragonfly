@@ -1,17 +1,25 @@
 package blockinternal
 
 import (
+	"github.com/df-mc/dragonfly/server/block/customblock"
 	"github.com/df-mc/dragonfly/server/item/category"
 	"maps"
 	"slices"
 )
 
+// molangVersion is the Molang version the client parses the definition's expressions at: the
+// latest, which vanilla's own definitions use.
+const molangVersion = int32(13)
+
 // ComponentBuilder represents a builder that can be used to construct a block components map to be sent to a client.
 type ComponentBuilder struct {
 	permutations map[string]map[string]any
 	properties   []map[string]any
+	traits       []map[string]any
 	components   map[string]any
 	blockID      int32
+	// conditions holds the conditions of permutations in the order they were first added.
+	conditions []string
 
 	identifier   string
 	menuCategory category.Category
@@ -47,6 +55,11 @@ func (builder *ComponentBuilder) AddProperty(name string, values []any) {
 	})
 }
 
+// AddTrait adds the provided block trait to the builder.
+func (builder *ComponentBuilder) AddTrait(trait customblock.Trait) {
+	builder.traits = append(builder.traits, trait.Encode())
+}
+
 // AddComponent adds the provided component to the builder. If the component already exists, it will be overwritten.
 func (builder *ComponentBuilder) AddComponent(name string, value any) {
 	builder.components[name] = value
@@ -64,6 +77,7 @@ func (builder *ComponentBuilder) AddPermutation(condition string, components map
 	}
 	if builder.permutations[condition] == nil {
 		builder.permutations[condition] = map[string]any{}
+		builder.conditions = append(builder.conditions, condition)
 	}
 	for key, value := range components {
 		builder.permutations[condition][key] = value
@@ -82,7 +96,7 @@ func (builder *ComponentBuilder) Construct() map[string]any {
 
 	result := map[string]any{
 		"components":    components,
-		"molangVersion": int32(10),
+		"molangVersion": molangVersion,
 		"menu_category": map[string]any{
 			"category": builder.menuCategory.String(),
 			"group":    builder.menuCategory.Group(),
@@ -94,6 +108,9 @@ func (builder *ComponentBuilder) Construct() map[string]any {
 	if len(properties) > 0 {
 		result["properties"] = properties
 	}
+	if len(builder.traits) > 0 {
+		result["traits"] = slices.Clone(builder.traits)
+	}
 	if len(builder.tags) > 0 {
 		tags := make([]any, 0, len(builder.tags))
 		for _, tag := range builder.tags {
@@ -102,15 +119,17 @@ func (builder *ComponentBuilder) Construct() map[string]any {
 		result["blockTags"] = tags
 	}
 
-	permutations := maps.Clone(builder.permutations)
-	if len(permutations) > 0 {
-		result["permutations"] = []map[string]any{}
-		for condition, values := range permutations {
-			result["permutations"] = append(result["permutations"].([]map[string]any), map[string]any{
+	if len(builder.conditions) > 0 {
+		// The client applies permutations in list order, a later one's components winning where two hold, so they
+		// keep the order they were added in.
+		permutations := make([]map[string]any, 0, len(builder.conditions))
+		for _, condition := range builder.conditions {
+			permutations = append(permutations, map[string]any{
 				"condition":  condition,
-				"components": values,
+				"components": maps.Clone(builder.permutations[condition]),
 			})
 		}
+		result["permutations"] = permutations
 	}
 	return result
 }

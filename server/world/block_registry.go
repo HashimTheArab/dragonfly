@@ -7,7 +7,6 @@ import (
 	"math/bits"
 	"reflect"
 	"slices"
-	"sort"
 	"sync"
 
 	"github.com/brentp/intintmap"
@@ -362,7 +361,8 @@ func NewBlockRegistry() BlockRegistry {
 }
 
 // RegisterBlock registers the Block passed. The EncodeBlock method will be used to encode and decode the
-// block passed. RegisterBlock panics if the block properties returned were not valid, existing properties.
+// block passed. RegisterBlock panics if the block properties returned were not valid, existing properties, or if a
+// custom block's traits are invalid.
 func (br *BasicBlockRegistry) RegisterBlock(b Block) {
 	br.mu.Lock()
 	defer br.mu.Unlock()
@@ -371,7 +371,14 @@ func (br *BasicBlockRegistry) RegisterBlock(b Block) {
 		panic("BlockRegistry.RegisterBlock called on finalized BlockRegistry")
 	}
 	name, properties := b.EncodeBlock()
-	if _, ok := b.(CustomBlock); ok {
+	c, custom := b.(CustomBlock)
+	_, known := br.customBlocks[name]
+	if custom && !known {
+		if err := validateCustomBlock(c); err != nil {
+			panic(fmt.Sprintf("custom block %s: %v", name, err))
+		}
+	}
+	if custom {
 		br.registerBlockStateLocked(BlockState{Name: name, Properties: properties})
 	}
 	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]
@@ -384,10 +391,8 @@ func (br *BasicBlockRegistry) RegisterBlock(b Block) {
 		panic(fmt.Sprintf("block with name and properties %v {%#v} already registered", name, properties))
 	}
 	br.blocks[rid] = b
-	if c, ok := b.(CustomBlock); ok {
-		if _, ok := br.customBlocks[name]; !ok {
-			br.customBlocks[name] = c
-		}
+	if custom && !known {
+		br.customBlocks[name] = c
 	}
 }
 
@@ -426,21 +431,7 @@ func (br *BasicBlockRegistry) Finalize() {
 		return
 	}
 
-	sort.SliceStable(br.blocks, func(i, j int) bool {
-		var nameOne string
-		if b1, ok := br.blocks[i].(unknownBlock); ok {
-			nameOne = b1.Name
-		} else {
-			nameOne, _ = br.blocks[i].EncodeBlock()
-		}
-		var nameTwo string
-		if b2, ok := br.blocks[j].(unknownBlock); ok {
-			nameTwo = b2.Name
-		} else {
-			nameTwo, _ = br.blocks[j].EncodeBlock()
-		}
-		return NetworkBlockHash(nameOne) < NetworkBlockHash(nameTwo)
-	})
+	br.sortForNetworkLocked()
 
 	br.finalizeLocked()
 }

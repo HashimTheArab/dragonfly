@@ -1,6 +1,12 @@
 package blockinternal
 
 import (
+	"fmt"
+	"maps"
+	"slices"
+	"strconv"
+	"strings"
+
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/block/customblock"
@@ -11,7 +17,7 @@ import (
 
 // Components returns all the components for the custom block, including permutations and properties.
 func Components(identifier string, b world.CustomBlock, blockID int32) map[string]any {
-	components := componentsFromProperties(b.Properties())
+	components := componentsFromProperties(identifier, b.Properties())
 	builder := NewComponentBuilder(identifier, components, blockID)
 	if emitter, ok := b.(block.LightEmitter); ok {
 		builder.AddComponent("minecraft:light_emission", map[string]any{
@@ -49,11 +55,23 @@ func Components(identifier string, b world.CustomBlock, blockID int32) map[strin
 		})
 	}
 	if permutable, ok := b.(block.Permutable); ok {
-		for name, values := range permutable.States() {
-			builder.AddProperty(name, values)
+		// The client adds properties in the order of the list, which orders the block's runtime IDs, so
+		// they are sent sorted by name, the order the registry gives the states runtime IDs in.
+		states := permutable.States()
+		for _, name := range slices.Sorted(maps.Keys(states)) {
+			builder.AddProperty(name, states[name])
 		}
 		for _, permutation := range permutable.Permutations() {
-			builder.AddPermutation(permutation.Condition, componentsFromProperties(permutation.Properties))
+			builder.AddPermutation(permutation.Condition, componentsFromProperties(identifier, permutation.Properties))
+		}
+	}
+	if traited, ok := b.(block.Traited); ok {
+		traits, err := customblock.SortTraits(traited.Traits())
+		if err != nil {
+			panic(fmt.Sprintf("custom block %s: %v", identifier, err))
+		}
+		for _, trait := range traits {
+			builder.AddTrait(trait)
 		}
 	}
 	if item, ok := b.(world.CustomItem); ok {
@@ -67,7 +85,7 @@ func Components(identifier string, b world.CustomBlock, blockID int32) map[strin
 
 // componentsFromProperties builds a base components map that includes all the common data between a regular block and
 // a custom permutation.
-func componentsFromProperties(props customblock.Properties) map[string]any {
+func componentsFromProperties(identifier string, props customblock.Properties) map[string]any {
 	components := make(map[string]any)
 	if props.CollisionBox != (cube.BBox{}) {
 		components["minecraft:collision_box"] = collisionBoxComponent(props.CollisionBox)
@@ -86,6 +104,16 @@ func componentsFromProperties(props customblock.Properties) map[string]any {
 		}
 		if props.GeometryCullingLayer != "" {
 			component["culling_layer"] = props.GeometryCullingLayer
+		}
+		if len(props.BoneVisibility) > 0 {
+			if geometry == "minecraft:geometry.full_block" || geometry == "minecraft:geometry.cross" {
+				panic(fmt.Sprintf("custom block %s: bone visibility cannot be used with %s", identifier, geometry))
+			}
+			visibility := make(map[string]any, len(props.BoneVisibility))
+			for bone, expression := range props.BoneVisibility {
+				visibility[bone] = boneVisibilityExpression(expression)
+			}
+			component["bone_visibility"] = visibility
 		}
 		components["minecraft:geometry"] = component
 	}
@@ -119,6 +147,14 @@ func componentsFromProperties(props customblock.Properties) map[string]any {
 		components["minecraft:transformation"] = transformation
 	}
 	return components
+}
+
+// boneVisibilityExpression returns the expression as vanilla sends it: a constant is written with six decimals.
+func boneVisibilityExpression(expression string) string {
+	if v, err := strconv.ParseFloat(strings.TrimSpace(expression), 32); err == nil {
+		return strconv.FormatFloat(v, 'f', 6, 32)
+	}
+	return expression
 }
 
 // collisionBoxComponent returns the component data for a collision box, using absolute min/max coordinates in pixels.
