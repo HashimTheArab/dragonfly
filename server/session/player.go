@@ -29,7 +29,6 @@ import (
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/google/uuid"
-	"github.com/sandertv/gophertunnel/minecraft"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 )
@@ -366,7 +365,7 @@ func (s *Session) invByID(id int32, tx *world.Tx) (*inventory.Inventory, bool) {
 // it will be shown to the client.
 func (s *Session) Disconnect(message string) {
 	if s != Nop {
-		_ = s.conn.WritePacket(minecraft.FlushBuffered, &packet.Disconnect{
+		_ = s.conn.WritePacketImmediate(&packet.Disconnect{
 			HideDisconnectionScreen: message == "",
 			Message:                 message,
 		})

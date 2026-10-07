@@ -137,8 +137,10 @@ type Conn interface {
 	// ReadPacket reads a packet.Packet from the Conn. An error is returned if a deadline was set that was
 	// exceeded or if the Conn was closed while awaiting a packet.
 	ReadPacket() (pk packet.Packet, err error)
-	// WritePacket queues or submits packets according to mode. Buffered and delayed writes may return before sending.
-	WritePacket(mode minecraft.SendMode, pks ...packet.Packet) error
+	// WritePacket queues a packet for the next flush.
+	WritePacket(pk packet.Packet) error
+	// WritePacketImmediate queues packets and submits them with the pending batch. Any configured send delay still applies.
+	WritePacketImmediate(pks ...packet.Packet) error
 	// StartGameContext starts the game for the Conn with a context to cancel it.
 	StartGameContext(ctx context.Context, data minecraft.GameData) error
 }
@@ -174,7 +176,7 @@ func (conf Config) New(conn Conn) *Session {
 	r := conn.ChunkRadius()
 	if r > conf.MaxChunkRadius {
 		r = conf.MaxChunkRadius
-		_ = conn.WritePacket(minecraft.Buffered, &packet.ChunkRadiusUpdated{ChunkRadius: int32(r)})
+		_ = conn.WritePacket(&packet.ChunkRadiusUpdated{ChunkRadius: int32(r)})
 	}
 	if conf.Log == nil {
 		conf.Log = slog.Default()
@@ -232,7 +234,7 @@ func (conf Config) New(conn Conn) *Session {
 			case <-s.closeBackground:
 				return
 			case pk := <-s.packets:
-				_ = conn.WritePacket(minecraft.Buffered, pk)
+				_ = conn.WritePacket(pk)
 			}
 		}
 	}()
