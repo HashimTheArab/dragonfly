@@ -132,16 +132,13 @@ type Conn interface {
 	ChunkRadius() int
 	// Latency returns the current latency measured over the Conn.
 	Latency() time.Duration
-	// Flush flushes the packets buffered by the Conn, sending all of them out immediately.
-	Flush() error
 	// RemoteAddr returns the remote network address.
 	RemoteAddr() net.Addr
 	// ReadPacket reads a packet.Packet from the Conn. An error is returned if a deadline was set that was
 	// exceeded or if the Conn was closed while awaiting a packet.
 	ReadPacket() (pk packet.Packet, err error)
-	// WritePacket writes a packet.Packet to the Conn. An error is returned if the Conn was closed before sending the
-	// packet.
-	WritePacket(pk packet.Packet) error
+	// WritePacket queues or submits packets according to mode. Buffered and delayed writes may return before sending.
+	WritePacket(mode minecraft.SendMode, pks ...packet.Packet) error
 	// StartGameContext starts the game for the Conn with a context to cancel it.
 	StartGameContext(ctx context.Context, data minecraft.GameData) error
 }
@@ -177,7 +174,7 @@ func (conf Config) New(conn Conn) *Session {
 	r := conn.ChunkRadius()
 	if r > conf.MaxChunkRadius {
 		r = conf.MaxChunkRadius
-		_ = conn.WritePacket(&packet.ChunkRadiusUpdated{ChunkRadius: int32(r)})
+		_ = conn.WritePacket(minecraft.Buffered, &packet.ChunkRadiusUpdated{ChunkRadius: int32(r)})
 	}
 	if conf.Log == nil {
 		conf.Log = slog.Default()
@@ -235,7 +232,7 @@ func (conf Config) New(conn Conn) *Session {
 			case <-s.closeBackground:
 				return
 			case pk := <-s.packets:
-				_ = conn.WritePacket(pk)
+				_ = conn.WritePacket(minecraft.Buffered, pk)
 			}
 		}
 	}()

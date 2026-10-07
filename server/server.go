@@ -506,7 +506,7 @@ func (srv *Server) finaliseConn(ctx context.Context, conn session.Conn, l Listen
 		srv.conf.Log.Debug("spawn failed: already logged in", "raddr", conn.RemoteAddr())
 		return
 	}
-	_ = conn.WritePacket(&packet.ItemRegistry{Items: srv.customItems})
+	_ = conn.WritePacket(minecraft.Buffered, &packet.ItemRegistry{Items: srv.customItems})
 	srv.incoming <- srv.createPlayer(id, conn, d, w)
 }
 
