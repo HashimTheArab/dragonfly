@@ -1170,7 +1170,7 @@ func (s *Session) OpenBlockContainer(pos cube.Pos, tx *world.Tx) {
 	if s.containerOpened.Load() && *s.openedPos.Load() == pos {
 		return
 	}
-	s.closeCurrentContainer(tx, false)
+	s.CloseCurrentContainer(tx, false)
 
 	b := tx.Block(pos)
 	if container, ok := b.(block.Container); ok {
