@@ -132,16 +132,15 @@ type Conn interface {
 	ChunkRadius() int
 	// Latency returns the current latency measured over the Conn.
 	Latency() time.Duration
-	// Flush flushes the packets buffered by the Conn, sending all of them out immediately.
-	Flush() error
 	// RemoteAddr returns the remote network address.
 	RemoteAddr() net.Addr
 	// ReadPacket reads a packet.Packet from the Conn. An error is returned if a deadline was set that was
 	// exceeded or if the Conn was closed while awaiting a packet.
 	ReadPacket() (pk packet.Packet, err error)
-	// WritePacket writes a packet.Packet to the Conn. An error is returned if the Conn was closed before sending the
-	// packet.
+	// WritePacket queues a packet for the next flush.
 	WritePacket(pk packet.Packet) error
+	// WritePacketImmediate queues packets and submits them with the pending batch. Any configured send delay still applies.
+	WritePacketImmediate(pks ...packet.Packet) error
 	// StartGameContext starts the game for the Conn with a context to cancel it.
 	StartGameContext(ctx context.Context, data minecraft.GameData) error
 }
