@@ -70,6 +70,13 @@ type unknownBlock struct {
 	data map[string]any
 }
 
+// IsUnknownBlock reports whether b is a palette state without an implemented
+// block type. Its native interaction behavior is not known to Dragonfly.
+func IsUnknownBlock(b Block) bool {
+	_, unknown := b.(unknownBlock)
+	return unknown
+}
+
 // EncodeBlock ...
 func (b unknownBlock) EncodeBlock() (string, map[string]any) {
 	return b.Name, b.Properties

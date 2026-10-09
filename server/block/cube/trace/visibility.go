@@ -53,15 +53,20 @@ func BlockVisibility(src world.BlockSource, bounds cube.Range, start, end mgl64.
 // coordinates and occupy cells inside bounds. Zero-length segments are valid;
 // callers of TraverseBlocks must reject them before traversing.
 func ValidBlockSegment(bounds cube.Range, start, end mgl64.Vec3) bool {
+	return ValidBlockRay(bounds, start, end) && !cube.PosFromVec3(end).OutOfBounds(bounds)
+}
+
+// ValidBlockRay reports whether a ray segment has finite coordinates and starts
+// inside bounds. Its end may leave bounds; traversers must stop before reading
+// any out-of-bounds cell. Zero-length segments are valid and must be rejected
+// before calling TraverseBlocks.
+func ValidBlockRay(bounds cube.Range, start, end mgl64.Vec3) bool {
 	for _, v := range []mgl64.Vec3{start, end} {
 		for _, n := range v {
 			if math.IsNaN(n) || math.IsInf(n, 0) {
 				return false
 			}
 		}
-		if y := cube.PosFromVec3(v).Y(); y < bounds.Min() || y > bounds.Max() {
-			return false
-		}
 	}
-	return true
+	return !cube.PosFromVec3(start).OutOfBounds(bounds)
 }
