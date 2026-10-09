@@ -1,10 +1,11 @@
 package world
 
 import (
-	_ "embed"
 	"fmt"
 	"maps"
 
+	vanilla "github.com/bedrock-mc/protocolgen/generated/data/item"
+	"github.com/bedrock-mc/protocolgen/generated/data/registry"
 	"github.com/df-mc/dragonfly/server/item/category"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"image"
@@ -79,8 +80,6 @@ type itemHash struct {
 }
 
 var (
-	//go:embed vanilla_items.nbt
-	itemRuntimeIDData []byte
 	// items holds a list of all registered items, indexed using the itemHash created when calling
 	// Item.EncodeItem.
 	items = map[itemHash]Item{}
@@ -94,19 +93,21 @@ var (
 	vanillaItemEntries = map[string]VanillaItemEntry{}
 )
 
-// init reads all item entries from the resource JSON, and sets the according values in the runtime ID maps.
+// init reads shared item identities and components, then adds their stack limits.
 func init() {
-	err := nbt.Unmarshal(itemRuntimeIDData, &vanillaItemEntries)
+	err := nbt.Unmarshal(registry.ItemsNBT(), &vanillaItemEntries)
 	if err != nil {
 		panic(err)
 	}
 	for name, e := range vanillaItemEntries {
 		itemNamesToRuntimeIDs[name] = e.RuntimeID
 		itemRuntimeIDsToNames[e.RuntimeID] = name
-		if size, ok := vanillaStackSizes[name]; ok {
-			e.MaxStackSize = size
-			vanillaItemEntries[name] = e
+		definition, ok := vanilla.LookupRuntime(name)
+		if !ok || definition.MaxCount <= 0 {
+			panic(fmt.Sprintf("vanilla item %s has no shared stack limit", name))
 		}
+		e.MaxStackSize = definition.MaxCount
+		vanillaItemEntries[name] = e
 	}
 }
 
