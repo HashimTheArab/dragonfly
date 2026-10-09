@@ -1,7 +1,7 @@
 package entity
 
 import (
-	vanilla "github.com/bedrock-mc/protocolgen/data/entity"
+	vanilla "github.com/bedrock-mc/protocolgen/generated/data/entity"
 	"github.com/df-mc/dragonfly/server/world"
 )
 

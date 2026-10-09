@@ -24,7 +24,7 @@ require (
 )
 
 require (
-	github.com/bedrock-mc/protocolgen/data v0.0.0-20261009153000-126081c6fe9b
+	github.com/bedrock-mc/protocolgen/generated/data v0.0.0-20261009160703-334c568ce7ae
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
 	github.com/df-mc/go-playfab/v2 v2.0.3 // indirect
