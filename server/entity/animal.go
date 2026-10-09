@@ -11,18 +11,6 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 )
 
-// CowType is the persistent type of a cow.
-var CowType = animalType{name: "minecraft:cow", width: .9, height: 1.3, health: 10}
-
-// PigType is the persistent type of a pig.
-var PigType = animalType{name: "minecraft:pig", width: .9, height: .9, health: 10}
-
-// SheepType is the persistent type of a sheep.
-var SheepType = animalType{name: "minecraft:sheep", width: .9, height: 1.3, health: 8}
-
-// ChickenType is the persistent type of a chicken.
-var ChickenType = animalType{name: "minecraft:chicken", width: .6, height: .8, health: 4}
-
 // NewCow creates an adult cow that may be added to a world.
 func NewCow(opts world.EntitySpawnOpts) *world.EntityHandle { return opts.New(CowType, CowType) }
 
@@ -37,13 +25,8 @@ func NewChicken(opts world.EntitySpawnOpts) *world.EntityHandle {
 	return opts.New(ChickenType, ChickenType)
 }
 
-type animalType struct {
-	name                  string
-	width, height, health float64
-}
-
 // EncodeEntity returns the species identifier used in saves and actor packets.
-func (t animalType) EncodeEntity() string { return t.name }
+func (t animalType) EncodeEntity() string { return t.definition.data.Name }
 
 // BBox returns the adult species collision bounds in feet space.
 func (t animalType) BBox(e world.Entity) cube.BBox {
@@ -56,8 +39,9 @@ func (t animalType) BBox(e world.Entity) cube.BBox {
 			scale = .5
 		}
 	}
-	half := t.width * scale / 2
-	return cube.Box(-half, 0, -half, half, t.height*scale, half)
+	box := t.definition.data.CollisionBox
+	half := float64(box.Width) * scale / 2
+	return cube.Box(-half, 0, -half, half, float64(box.Height)*scale, half)
 }
 
 // Open exposes persistent state through a transaction-scoped living entity.
@@ -67,12 +51,13 @@ func (t animalType) Open(tx *world.Tx, h *world.EntityHandle, data *world.Entity
 
 // Apply initialises a healthy adult animal with environmental movement.
 func (t animalType) Apply(data *world.EntityData) {
+	defaults := t.definition.data
 	data.Data = &animalState{
 		BaseBehaviour: NewBaseBehaviour(),
-		health:        NewHealthManager(t.health, t.health),
+		health:        NewHealthManager(float64(defaults.Health.Initial.Value), float64(defaults.Health.Maximum.Value)),
 		effects:       NewEffectManager(),
 		movement:      MovementComputer{Gravity: .08, Drag: .02},
-		speed:         .25,
+		speed:         float64(defaults.Movement.Value),
 	}
 }
 
@@ -89,7 +74,7 @@ func (t animalType) DecodeNBT(m map[string]any, data *world.EntityData) {
 		health := float64(nbtconv.Float32(m, "Health"))
 		maximum := float64(nbtconv.Float32(m, "MaxHealth"))
 		if maximum <= 0 || math.IsNaN(maximum) || math.IsInf(maximum, 0) {
-			maximum = t.health
+			maximum = b.health.MaxHealth()
 		}
 		if math.IsNaN(health) || math.IsInf(health, 0) {
 			health = maximum

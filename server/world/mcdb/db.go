@@ -451,10 +451,10 @@ func (db *DB) storeEntities(batch *leveldb.Batch, k dbKey, entities []chunk.Enti
 	for _, uniqueID := range previousIDs {
 		if !slices.Contains(newIDs, uniqueID) {
 			// Another column may already have saved this actor after movement.
-			// Legacy actors have no owner key until their next save; retain their
-			// payload rather than deleting data whose remaining references are unknown.
+			// Without an owner key, the previous chunk index still owns the actor.
+			// Saving a destination always writes its owner key before this check.
 			owner, err := db.ldb.Get(entityOwnerIndex(uniqueID), nil)
-			if err == nil && bytes.Equal(owner, idsKey) {
+			if errors.Is(err, leveldb.ErrNotFound) || (err == nil && bytes.Equal(owner, idsKey)) {
 				batch.Delete(entityIndex(uniqueID))
 				batch.Delete(entityOwnerIndex(uniqueID))
 			}

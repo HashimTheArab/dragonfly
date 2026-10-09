@@ -9,9 +9,8 @@ import (
 
 // DefaultRegistry is a world.EntityRegistry that registers all default entities
 // implemented by Dragonfly.
-var DefaultRegistry = conf.New([]world.EntityType{
+var DefaultRegistry = conf.New(append([]world.EntityType{
 	AreaEffectCloudType,
-	CowType, PigType, SheepType, ChickenType,
 	ArrowType,
 	BottleOfEnchantingType,
 	EggType,
@@ -28,7 +27,7 @@ var DefaultRegistry = conf.New([]world.EntityType{
 	TNTType,
 	TextType,
 	WindChargeType,
-})
+}, animalEntityTypes()...))
 
 var conf = world.EntityRegistryConfig{
 	TNT:                NewTNT,

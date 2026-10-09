@@ -200,22 +200,13 @@ func (c naturalAnimalConfig) Apply(data *world.EntityData) {
 }
 
 type animalRule struct {
-	species                  animalType
-	weight, minimum, maximum int
-	tags                     []string
-}
-
-var animalRules = []animalRule{
-	{species: CowType, weight: 8, minimum: 2, maximum: 3, tags: []string{"animal"}},
-	{species: PigType, weight: 10, minimum: 1, maximum: 3, tags: []string{"animal", "cherry_grove"}},
-	{species: SheepType, weight: 12, minimum: 2, maximum: 3, tags: []string{"animal"}},
-	{species: SheepType, weight: 2, minimum: 2, maximum: 4, tags: []string{"meadow", "cherry_grove"}},
-	{species: ChickenType, weight: 10, minimum: 2, maximum: 4, tags: []string{"animal"}},
+	species animalType
+	animalSpawnRule
 }
 
 // eligibleAnimalRules evaluates biome and inclusive brightness before selection.
 func eligibleAnimalRules(tx *world.Tx, feet cube.Pos) []animalRule {
-	result := make([]animalRule, 0, len(animalRules))
+	var result []animalRule
 	if animalBrightness(tx, feet) < 7 {
 		return result
 	}
@@ -224,11 +215,13 @@ func eligibleAnimalRules(tx *world.Tx, feet cube.Pos) []animalRule {
 		return result
 	}
 	tags := biome.Tags()
-	for _, rule := range animalRules {
-		for _, tag := range rule.tags {
-			if slices.Contains(tags, tag) {
-				result = append(result, rule)
-				break
+	for _, species := range animalTypes {
+		for _, rule := range species.definition.spawning {
+			for _, tag := range rule.tags {
+				if slices.Contains(tags, tag) {
+					result = append(result, animalRule{species: species, animalSpawnRule: rule})
+					break
+				}
 			}
 		}
 	}

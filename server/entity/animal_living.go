@@ -148,6 +148,9 @@ func (a *Animal) SetOnFire(d time.Duration) {
 // Extinguish ends burning and discards its pending damage interval.
 func (a *Animal) Extinguish() { a.SetOnFire(0) }
 
+// Splash extinguishes the animal when a water bottle splashes nearby.
+func (a *Animal) Splash(*world.Tx, mgl64.Vec3) { a.Extinguish() }
+
 // Baby reports whether the animal is still growing.
 func (a *Animal) Baby() bool { return a.Age() < a.state().babyUntil }
 
@@ -198,14 +201,19 @@ func (a *Animal) Explode(src world.ExplosionSource, impact float64) {
 		return
 	}
 	a.Hurt(block.ExplosionDamage(src.Size(), impact), ExplosionDamageSource{Source: src})
-	a.KnockBack(src.Position(), impact, impact)
+	delta := a.Position().Sub(src.Position())
+	height := 0.0
+	if distance := delta.Len(); distance > 0 {
+		height = delta[1] / distance * impact
+	}
+	a.KnockBack(src.Position(), impact, height)
 }
 
 // Tick moves the persistent actor using the world's block collision system.
 func (b *animalState) Tick(e *Ent, tx *world.Tx) *Movement {
-	m := b.movement.TickMovement(&Animal{Ent: e}, e.data.Pos, e.data.Vel, e.data.Rot, tx)
-	e.data.Pos, e.data.Vel = m.Position(), m.Velocity()
 	a := &Animal{Ent: e}
+	m := b.movement.tickMovement(a, e.data.Pos, e.data.Vel, e.data.Rot, tx, b.verticalVelocity(a))
+	e.data.Pos, e.data.Vel = m.Position(), m.Velocity()
 	if !a.Dead() {
 		a.checkInsiders(tx)
 		if b.movement.OnGround() {
@@ -213,6 +221,21 @@ func (b *animalState) Tick(e *Ent, tx *world.Tx) *Movement {
 		}
 	}
 	return m
+}
+
+// verticalVelocity applies living movement effects without changing the base gravity.
+func (b *animalState) verticalVelocity(a *Animal) float64 {
+	velocity := a.Velocity()
+	movement := b.movement
+	if !a.Dead() {
+		if levitation, ok := b.effects.Effect(effect.Levitation); ok {
+			return velocity[1] + (.05*float64(levitation.Level())-velocity[1])*.2
+		}
+		if _, ok := b.effects.Effect(effect.SlowFalling); ok && velocity[1] < 0 {
+			movement.Gravity = .01
+		}
+	}
+	return movement.applyVerticalForces(velocity)[1]
 }
 
 // checkInsiders dispatches environmental contacts through the living wrapper.

@@ -5,6 +5,7 @@ go 1.26.1
 replace github.com/sandertv/gophertunnel => github.com/hashimthearab/gophertunnel v1.25.3-0.20261007123404-36c6931b92ac
 
 require (
+	github.com/bedrock-mc/bedrock-data v0.0.0-20260723232654-a852f4241a72
 	github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/df-mc/go-nethernet v1.0.25-0.20260928201420-215e46422b58

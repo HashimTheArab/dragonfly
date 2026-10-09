@@ -63,10 +63,16 @@ func (m *Movement) Rotation() cube.Rotation {
 // The new position of the entity after movement is returned.
 // The resulting Movement can be sent to viewers by calling Movement.Send.
 func (c *MovementComputer) TickMovement(e world.Entity, pos, vel mgl64.Vec3, rot cube.Rotation, tx *world.Tx) *Movement {
+	return c.tickMovement(e, pos, vel, rot, tx, c.applyVerticalForces(vel)[1])
+}
+
+// tickMovement applies horizontal forces and collision using the supplied vertical speed.
+func (c *MovementComputer) tickMovement(e world.Entity, pos, vel mgl64.Vec3, rot cube.Rotation, tx *world.Tx, vertical float64) *Movement {
 	viewers := tx.Viewers(pos)
 
 	velBefore := vel
-	vel = c.applyHorizontalForces(tx, pos, c.applyVerticalForces(vel))
+	vel[1] = vertical
+	vel = c.applyHorizontalForces(tx, pos, vel)
 	dPos, vel := c.CheckCollision(tx, e, pos, vel)
 
 	return &Movement{v: viewers, e: e,
