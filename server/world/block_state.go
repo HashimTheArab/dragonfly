@@ -2,6 +2,7 @@ package world
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"maps"
 	"math"
@@ -9,14 +10,20 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/bedrock-mc/protocolgen/generated/data/registry"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
 )
 
-var dataDrivenBlocks []DataDrivenBlock
+var (
+	//go:embed block_states.nbt
+	blockStateData []byte
+
+	//go:embed data_driven_blocks.nbt
+	dataDrivenBlockData []byte
+	dataDrivenBlocks    []DataDrivenBlock
+)
 
 func init() {
-	states, err := decodeBlockStates(registry.BlockStatesNBT())
+	states, err := decodeBlockStates(blockStateData)
 	if err != nil {
 		panic(err)
 	}
@@ -27,13 +34,13 @@ func init() {
 	var m struct {
 		Blocks []DataDrivenBlock `nbt:"blocks"`
 	}
-	if err := nbt.UnmarshalEncoding(registry.DataDrivenBlocksNBT(), &m, nbt.LittleEndian); err != nil {
+	if err := nbt.UnmarshalEncoding(dataDrivenBlockData, &m, nbt.LittleEndian); err != nil {
 		panic(err)
 	}
 	dataDrivenBlocks = m.Blocks
 }
 
-// decodeBlockStates reads the full shared palette and rejects a damaged record.
+// decodeBlockStates reads the full embedded palette and rejects a damaged record.
 func decodeBlockStates(data []byte) ([]BlockState, error) {
 	reader := bytes.NewReader(data)
 	decoder := nbt.NewDecoder(reader)

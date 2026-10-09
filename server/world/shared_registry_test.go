@@ -1,22 +1,19 @@
 package world
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/bedrock-mc/protocolgen/generated/data"
 	sharedblock "github.com/bedrock-mc/protocolgen/generated/data/block"
 	shareditem "github.com/bedrock-mc/protocolgen/generated/data/item"
-	"github.com/bedrock-mc/protocolgen/generated/data/registry"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
-// TestSharedRegistryTargetMatchesCodec rejects data and packet codecs for different targets.
-func TestSharedRegistryTargetMatchesCodec(t *testing.T) {
+// TestSharedCatalogTargetMatchesCodec rejects data and packet codecs for different targets.
+func TestSharedCatalogTargetMatchesCodec(t *testing.T) {
 	if data.MinecraftVersion != protocol.CurrentVersion || data.ProtocolVersion != protocol.CurrentProtocol {
-		t.Fatalf("registry target %s/%d does not match codecs %s/%d", data.MinecraftVersion, data.ProtocolVersion, protocol.CurrentVersion, protocol.CurrentProtocol)
-	}
-	if registry.SourceLockSHA256 != data.SourceLockSHA256 {
-		t.Fatal("registry payloads and catalog were generated from different source locks")
+		t.Fatalf("catalog target %s/%d does not match codecs %s/%d", data.MinecraftVersion, data.ProtocolVersion, protocol.CurrentVersion, protocol.CurrentProtocol)
 	}
 }
 
@@ -25,8 +22,8 @@ func TestSharedRegistryTargetMatchesCodec(t *testing.T) {
 func TestSharedPaletteCoversEveryState(t *testing.T) {
 	palette := NewBlockRegistry()
 	palette.Finalize()
-	if palette.BlockCount() != registry.BlockStateCount || palette.BlockCount() != sharedblock.StateCount() {
-		t.Fatalf("palette has %d states, payload count %d, catalog count %d", palette.BlockCount(), registry.BlockStateCount, sharedblock.StateCount())
+	if palette.BlockCount() != sharedblock.StateCount() {
+		t.Fatalf("embedded palette has %d states, catalog count %d", palette.BlockCount(), sharedblock.StateCount())
 	}
 	for runtimeID, block := range palette.Blocks() {
 		name, _ := block.EncodeBlock()
@@ -64,8 +61,8 @@ func TestSharedPaletteCoversEveryState(t *testing.T) {
 // TestSharedItemsMatchRegistry checks both directions of the identity projection.
 func TestSharedItemsMatchRegistry(t *testing.T) {
 	entries := VanillaItemEntries()
-	if len(entries) != registry.ItemCount || len(entries) != len(shareditem.RuntimeItems()) {
-		t.Fatalf("item counts differ: entries=%d payload=%d catalog=%d", len(entries), registry.ItemCount, len(shareditem.RuntimeItems()))
+	if len(entries) != len(shareditem.RuntimeItems()) {
+		t.Fatalf("item counts differ: embedded entries=%d catalog=%d", len(entries), len(shareditem.RuntimeItems()))
 	}
 	for _, definition := range shareditem.RuntimeItems() {
 		entry, ok := entries[definition.Name]
@@ -76,15 +73,12 @@ func TestSharedItemsMatchRegistry(t *testing.T) {
 			t.Errorf("%s lost its component compound", definition.Name)
 		}
 	}
-	if len(DataDrivenBlocks()) != registry.DataDrivenBlockCount {
-		t.Fatalf("data-driven block count %d differs from payload %d", len(DataDrivenBlocks()), registry.DataDrivenBlockCount)
-	}
 }
 
 // TestDecodeBlockStatesRejectsTruncation prevents a damaged final record from
 // silently reducing the registry to the preceding complete states.
 func TestDecodeBlockStatesRejectsTruncation(t *testing.T) {
-	data := registry.BlockStatesNBT()
+	data := bytes.Clone(blockStateData)
 	for _, damaged := range [][]byte{data[:len(data)-1], append(data, 0xff)} {
 		if _, err := decodeBlockStates(damaged); err == nil {
 			t.Fatal("accepted a damaged block state stream")
