@@ -425,3 +425,54 @@ func predictPlacement(t *testing.T, src PlacementSource, user PlacementUser, cli
 	}
 	return changes
 }
+
+func TestBlock_PredictPlacementWithPriorChainsWithoutPublishing(t *testing.T) {
+	base := cube.Pos{4, 64, 7}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{base: Stone{}})
+	user := placementTestUser{pos: base.Vec3Centre()}
+	first, known := PredictPlacement(src, user, base, cube.FaceUp, mgl64.Vec3{.5, 1, .5}, Stone{})
+	if !known || len(first) != 1 {
+		t.Fatalf("first=%v known=%v", first, known)
+	}
+	second, known := PredictPlacementWithPrior(src, user, first[0].Pos, cube.FaceUp, mgl64.Vec3{.5, 1, .5}, Stone{}, first)
+	if !known || len(second) != 1 || second[0].Pos != base.Add(cube.Pos{0, 2, 0}) {
+		t.Fatalf("second=%v known=%v", second, known)
+	}
+	if _, exists := src.blocks[first[0].Pos]; exists {
+		t.Fatal("published prior prediction")
+	}
+	if len(first) != 1 || first[0].Pos != base.Side(cube.FaceUp) {
+		t.Fatal("modified caller's prior writes")
+	}
+}
+
+func TestBlock_PredictPlacementWithPriorRetainsLiquidLayers(t *testing.T) {
+	for _, layer := range []uint8{0, 1} {
+		t.Run(map[uint8]string{0: "primary", 1: "secondary"}[layer], func(t *testing.T) {
+			base := cube.Pos{4, 64, 7}
+			pos := base.Side(cube.FaceUp)
+			src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{base: Sand{}})
+			prior := []PredictedBlockChange{{Pos: pos, Layer: layer, Block: Water{Still: true, Depth: 8}}}
+			changes, known := PredictPlacementWithPrior(src, placementTestUser{pos: base.Vec3Centre()}, base, cube.FaceUp, mgl64.Vec3{.5, 1, .5}, Kelp{}, prior)
+			wantChanges := 1
+			if layer == 0 {
+				wantChanges = 2
+			}
+			if !known || len(changes) != wantChanges {
+				t.Fatalf("changes=%v known=%v", changes, known)
+			}
+			last := changes[len(changes)-1]
+			if _, ok := last.Block.(Kelp); !ok || last.Pos != pos || last.Layer != 0 {
+				t.Fatalf("wrong water-dependent placement: %+v", changes)
+			}
+			if layer == 0 {
+				if _, ok := changes[0].Block.(Water); !ok || changes[0].Layer != 1 {
+					t.Fatalf("lost displaced primary liquid: %+v", changes)
+				}
+			}
+			if len(src.liquids) != 0 {
+				t.Fatal("published staged liquid")
+			}
+		})
+	}
+}
