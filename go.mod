@@ -5,7 +5,6 @@ go 1.26.1
 replace github.com/sandertv/gophertunnel => github.com/hashimthearab/gophertunnel v1.25.3-0.20261007123404-36c6931b92ac
 
 require (
-	github.com/bedrock-mc/protocolgen/data v0.0.0-20261009153000-126081c6fe9b
 	github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/df-mc/go-nethernet v1.0.25-0.20260928201420-215e46422b58
@@ -25,6 +24,7 @@ require (
 )
 
 require (
+	github.com/bedrock-mc/protocolgen/generated/data v0.0.0-20261009160703-334c568ce7ae
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
 	github.com/df-mc/go-playfab/v2 v2.0.3 // indirect

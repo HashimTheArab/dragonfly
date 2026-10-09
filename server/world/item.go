@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"maps"
 
-	vanilla "github.com/bedrock-mc/protocolgen/data/item"
+	vanilla "github.com/bedrock-mc/protocolgen/generated/data/item"
 	"github.com/df-mc/dragonfly/server/item/category"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"image"

@@ -3,7 +3,7 @@ package world
 import (
 	"testing"
 
-	vanilla "github.com/bedrock-mc/protocolgen/data/item"
+	vanilla "github.com/bedrock-mc/protocolgen/generated/data/item"
 )
 
 func TestVanillaItemEntriesHaveSharedStackSizes(t *testing.T) {
