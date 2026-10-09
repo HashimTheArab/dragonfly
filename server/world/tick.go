@@ -97,6 +97,7 @@ func (t ticker) tick(tx *Tx) {
 	}
 
 	w.set.Unlock()
+	w.scheduledUpdates.currentTick = tick
 
 	if tryAdvanceDay {
 		t.tryAdvanceDay(tx, cycle)
@@ -116,6 +117,12 @@ func (t ticker) tick(tx *Tx) {
 		w.tickLightning(tx)
 	}
 
+	if h, ok := w.Handler().(TickHandler); ok {
+		for _, pos := range tx.TickingChunks() {
+			w.chunks[pos].lastTick = tick
+		}
+		h.HandleTick(tx, tick)
+	}
 	t.tickEntities(tx, tick)
 	w.scheduledUpdates.tick(tx, tick)
 	t.tickBlocksRandomly(tx, loaders, tick)
@@ -243,6 +250,7 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 			// for loaders to view it.
 			tx.World().entities[handle] = chunkPos
 			c.Entities = append(c.Entities, handle)
+			c.modified = true
 
 			var viewers []Viewer
 
@@ -251,6 +259,7 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 			// the loaders from the old chunk. We can assume they never saw the entity in the first place.
 			if old, ok := tx.World().chunks[lastPos]; ok {
 				old.Entities = sliceutil.DeleteVal(old.Entities, handle)
+				old.modified = true
 				viewers = old.viewers
 			}
 
@@ -272,6 +281,7 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 
 		if tx.World().conf.Synchronous || len(c.viewers) > 0 {
 			if te, ok := e.(TickerEntity); ok {
+				c.modified = true
 				te.Tick(tx, tick)
 			}
 		}

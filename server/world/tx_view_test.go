@@ -95,6 +95,7 @@ func TestBlockTransactionView_TxMethodCoverage(t *testing.T) {
 			"Defer", "DeferErr", "World", "SetBlockEntity", "BlocksWithin", "BuildStructure", "HighestLightBlocker", "HighestBlock", "Light", "SkyLight", "BlockLight",
 			"SetBiome", "Biome", "Temperature", "RainingAt", "SnowingAt", "ThunderingAt", "Raining", "Thundering",
 			"AddEntity", "AddEntityAt", "RemoveEntity", "EntitiesWithin", "Entities", "Players", "Viewers", "Sleepers",
+			"MarkEntityModified", "TickingChunks", "ChunkLastTick",
 			"BroadcastSleepingIndicator", "BroadcastSleepingReminder", "CurrentTick", "RedstonePower", "RedstoneDirectPower",
 			"RedstoneStrongPower", "RedstoneConductivePower", "RedstonePowerFrom", "RedstoneDirectPowerFrom", "RedstoneStrongPowerFrom",
 		},

@@ -102,3 +102,10 @@ func (NopHandler) HandleExplosion(*Context, ExplosionSource, *[]Entity, *[]cube.
 }
 func (NopHandler) HandleRedstoneUpdate(*Context, RedstoneUpdate) {}
 func (NopHandler) HandleClose(*Tx)                               {}
+
+// TickHandler receives each simulation tick on the world owner, before entities
+// and blocks tick. Implementations must not retain tx or start a blocking
+// transaction on the same world.
+type TickHandler interface {
+	HandleTick(tx *Tx, tick int64)
+}

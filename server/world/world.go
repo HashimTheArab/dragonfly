@@ -1532,6 +1532,7 @@ func (w *World) closeUnusedChunks(tx *Tx) {
 // viewers and loaders.
 type Column struct {
 	modified bool
+	lastTick int64
 
 	*chunk.Chunk
 	Entities      []*EntityHandle
