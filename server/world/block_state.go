@@ -2,7 +2,6 @@ package world
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
 	"maps"
 	"math"
@@ -10,38 +9,43 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/bedrock-mc/protocolgen/generated/data/registry"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
 )
 
-var (
-	//go:embed block_states.nbt
-	blockStateData []byte
-
-	//go:embed data_driven_blocks.nbt
-	dataDrivenBlockData []byte
-	dataDrivenBlocks    []DataDrivenBlock
-)
+var dataDrivenBlocks []DataDrivenBlock
 
 func init() {
-	dec := nbt.NewDecoder(bytes.NewBuffer(blockStateData))
-
-	// Register all block states present in the block_states.nbt file. These are all possible options registered
-	// blocks may encode to.
-	for {
-		var s BlockState
-		if err := dec.Decode(&s); err != nil {
-			break
-		}
+	states, err := decodeBlockStates(registry.BlockStatesNBT())
+	if err != nil {
+		panic(err)
+	}
+	for _, s := range states {
 		DefaultBlockRegistry.RegisterBlockState(s)
 	}
 
 	var m struct {
 		Blocks []DataDrivenBlock `nbt:"blocks"`
 	}
-	if err := nbt.NewDecoderWithEncoding(bytes.NewBuffer(dataDrivenBlockData), nbt.LittleEndian).Decode(&m); err != nil {
+	if err := nbt.UnmarshalEncoding(registry.DataDrivenBlocksNBT(), &m, nbt.LittleEndian); err != nil {
 		panic(err)
 	}
 	dataDrivenBlocks = m.Blocks
+}
+
+// decodeBlockStates reads the full shared palette and rejects a damaged record.
+func decodeBlockStates(data []byte) ([]BlockState, error) {
+	reader := bytes.NewReader(data)
+	decoder := nbt.NewDecoder(reader)
+	var states []BlockState
+	for reader.Len() > 0 {
+		var state BlockState
+		if err := decoder.Decode(&state); err != nil {
+			return nil, fmt.Errorf("decode vanilla block state %d: %w", len(states), err)
+		}
+		states = append(states, state)
+	}
+	return states, nil
 }
 
 // DataDrivenBlock holds the name of a block and the components that define it.
