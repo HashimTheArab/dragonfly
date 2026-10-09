@@ -1,5 +1,5 @@
-github.com/bedrock-mc/bedrock-data v0.0.0-20260723232654-a852f4241a72 h1:wq6mpveihC+2SwNbzU2vIGbeFwx0rJY79tnbGXhUvfQ=
-github.com/bedrock-mc/bedrock-data v0.0.0-20260723232654-a852f4241a72/go.mod h1:UWwNAJdVTcNbd2vzzUFXjap3PcH55BleFarO/meznjI=
+github.com/bedrock-mc/protocolgen/data v0.0.0-20261009153000-126081c6fe9b h1:9X94Kkv5eTxysye+ZUffWUblZPrC6BERV6YcZ3x4gx4=
+github.com/bedrock-mc/protocolgen/data v0.0.0-20261009153000-126081c6fe9b/go.mod h1:gSrfOmVJmVkyebnaUZWGdFAjj6WKhlkUcceiFmmKUjk=
 github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479 h1:UZbbt19ACBOFO+CiDQFjaEoPJkBhj7GNGtIq59WR6Os=
 github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479/go.mod h1:TOk10ahXejq9wkEaym3KPRNeuR/h5Jx+s8QRWIa2oTM=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
