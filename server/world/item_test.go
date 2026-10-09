@@ -1,6 +1,39 @@
 package world
 
-import "testing"
+import (
+	"testing"
+
+	vanilla "github.com/bedrock-mc/protocolgen/data/item"
+)
+
+func TestVanillaItemEntriesHaveSharedStackSizes(t *testing.T) {
+	for name, entry := range VanillaItemEntries() {
+		definition, ok := vanilla.LookupRuntime(name)
+		if !ok {
+			t.Errorf("vanilla item %s has no shared runtime definition", name)
+			continue
+		}
+		if definition.MaxCount <= 0 || entry.MaxStackSize != definition.MaxCount {
+			t.Errorf("%s stack size = %d, want shared positive size %d", name, entry.MaxStackSize, definition.MaxCount)
+		}
+	}
+}
+
+func TestVanillaItemStackSizes(t *testing.T) {
+	for name, want := range map[string]int{
+		"minecraft:apple":         64,
+		"minecraft:bucket":        16,
+		"minecraft:ender_pearl":   16,
+		"minecraft:diamond_sword": 1,
+		"minecraft:acacia_boat":   1,
+		"minecraft:copper_spear":  1,
+	} {
+		entry, ok := VanillaItemEntryByName(name)
+		if !ok || entry.MaxStackSize != want {
+			t.Errorf("%s stack size = %d (present %t), want %d", name, entry.MaxStackSize, ok, want)
+		}
+	}
+}
 
 func TestVanillaItemEntries(t *testing.T) {
 	entries := VanillaItemEntries()
