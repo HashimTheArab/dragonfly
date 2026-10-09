@@ -1,11 +1,11 @@
 package world
 
 import (
+	_ "embed"
 	"fmt"
 	"maps"
 
 	vanilla "github.com/bedrock-mc/protocolgen/generated/data/item"
-	"github.com/bedrock-mc/protocolgen/generated/data/registry"
 	"github.com/df-mc/dragonfly/server/item/category"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"image"
@@ -80,6 +80,9 @@ type itemHash struct {
 }
 
 var (
+	//go:embed vanilla_items.nbt
+	itemRuntimeIDData []byte
+
 	// items holds a list of all registered items, indexed using the itemHash created when calling
 	// Item.EncodeItem.
 	items = map[itemHash]Item{}
@@ -93,9 +96,9 @@ var (
 	vanillaItemEntries = map[string]VanillaItemEntry{}
 )
 
-// init reads shared item identities and components, then adds their stack limits.
+// init reads embedded item identities and components, then adds shared stack limits.
 func init() {
-	err := nbt.Unmarshal(registry.ItemsNBT(), &vanillaItemEntries)
+	err := nbt.Unmarshal(itemRuntimeIDData, &vanillaItemEntries)
 	if err != nil {
 		panic(err)
 	}
