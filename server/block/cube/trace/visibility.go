@@ -61,12 +61,16 @@ func ValidBlockSegment(bounds cube.Range, start, end mgl64.Vec3) bool {
 // any out-of-bounds cell. Zero-length segments are valid and must be rejected
 // before calling TraverseBlocks.
 func ValidBlockRay(bounds cube.Range, start, end mgl64.Vec3) bool {
-	for _, v := range []mgl64.Vec3{start, end} {
+	return finiteVectors(start, end) && !cube.PosFromVec3(start).OutOfBounds(bounds)
+}
+
+func finiteVectors(vectors ...mgl64.Vec3) bool {
+	for _, v := range vectors {
 		for _, n := range v {
 			if math.IsNaN(n) || math.IsInf(n, 0) {
 				return false
 			}
 		}
 	}
-	return !cube.PosFromVec3(start).OutOfBounds(bounds)
+	return true
 }
