@@ -2,6 +2,16 @@ package world
 
 import "testing"
 
+func TestIsUnknownBlock(t *testing.T) {
+	unknown := unknownBlock{BlockState: BlockState{Name: "minecraft:trapped_chest"}}
+	if !IsUnknownBlock(unknown) || !IsUnknownBlock(unknown.DecodeNBT(map[string]any{"pairx": int32(2), "pairz": int32(3)}).(Block)) {
+		t.Fatal("unknown state lost its identity after block entity decoding")
+	}
+	if IsUnknownBlock(&testTickerBlock{}) {
+		t.Fatal("implemented test block classified as unknown")
+	}
+}
+
 func TestUnknownBlockContainerSize(t *testing.T) {
 	tests := map[string]struct {
 		name string

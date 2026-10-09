@@ -80,3 +80,35 @@ func TestValidBlockSegment(t *testing.T) {
 		}
 	}
 }
+
+func TestValidBlockRay(t *testing.T) {
+	bounds := cube.Range{-64, 319}
+	inside := mgl64.Vec3{0.5, 0.5, 0.5}
+	for _, test := range []struct {
+		name       string
+		start, end mgl64.Vec3
+		want       bool
+	}{
+		{name: "inside", start: inside, end: inside.Add(mgl64.Vec3{3, 0, 0}), want: true},
+		{name: "zero length", start: inside, end: inside, want: true},
+		{name: "end below floor", start: mgl64.Vec3{0, -61, 0}, end: mgl64.Vec3{0, -66, 0}, want: true},
+		{name: "end above ceiling", start: mgl64.Vec3{0, 318, 0}, end: mgl64.Vec3{0, 323, 0}, want: true},
+		{name: "start below floor", start: mgl64.Vec3{0, -64.1, 0}, end: inside},
+		{name: "start above ceiling", start: mgl64.Vec3{0, 320, 0}, end: inside},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := trace.ValidBlockRay(bounds, test.start, test.end); got != test.want {
+				t.Fatalf("got %v, want %v", got, test.want)
+			}
+		})
+	}
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		for axis := range 3 {
+			invalid := inside
+			invalid[axis] = value
+			if trace.ValidBlockRay(bounds, invalid, inside) || trace.ValidBlockRay(bounds, inside, invalid) {
+				t.Fatalf("accepted nonfinite coordinate %v on axis %d", value, axis)
+			}
+		}
+	}
+}
