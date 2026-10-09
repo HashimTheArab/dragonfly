@@ -1453,6 +1453,18 @@ func (p *Player) Inventory() *inventory.Inventory {
 	return p.inv
 }
 
+// ClearCursorItem clears the cursor only if it still contains exactly expected.
+// It is intended for menu buttons after their accepted take request has finished.
+// Like other inventory changes, it must run in the player's world transaction.
+func (p *Player) ClearCursorItem(expected item.Stack) bool {
+	cursor, _ := p.ui.Item(0)
+	if expected.Empty() || !cursor.Equal(expected) {
+		return false
+	}
+	_ = p.ui.SetItem(0, item.Stack{})
+	return true
+}
+
 // Armour returns the armour inventory of the player. This inventory yields 4 slots, for the helmet,
 // chestplate, leggings and boots respectively.
 func (p *Player) Armour() *inventory.Armour {
@@ -2596,6 +2608,14 @@ func (p *Player) Drop(s item.Stack) int {
 func (p *Player) OpenBlockContainer(pos cube.Pos, tx *world.Tx) {
 	if p.session() != session.Nop {
 		p.session().OpenBlockContainer(pos, tx)
+	}
+}
+
+// CloseBlockContainer closes the player's current block container, notifying
+// its viewers and the client. It does nothing if no container or session is open.
+func (p *Player) CloseBlockContainer() {
+	if p.session() != session.Nop {
+		p.session().CloseCurrentContainer(p.tx, false)
 	}
 }
 

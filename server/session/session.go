@@ -305,7 +305,7 @@ func (s *Session) Close(tx *world.Tx, c Controllable) {
 func (s *Session) close(tx *world.Tx, c Controllable) {
 	if tx != nil {
 		c.MoveItemsToInventory()
-		s.closeCurrentContainer(tx, false)
+		s.CloseCurrentContainer(tx, false)
 	}
 	if s.viewLayer != nil {
 		_ = s.viewLayer.Close()
