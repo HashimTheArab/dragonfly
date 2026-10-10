@@ -82,6 +82,7 @@ type itemHash struct {
 var (
 	//go:embed vanilla_items.nbt
 	itemRuntimeIDData []byte
+
 	// items holds a list of all registered items, indexed using the itemHash created when calling
 	// Item.EncodeItem.
 	items = map[itemHash]Item{}
@@ -95,7 +96,7 @@ var (
 	vanillaItemEntries = map[string]VanillaItemEntry{}
 )
 
-// init reads all item entries from the resource JSON, and sets the according values in the runtime ID maps.
+// init reads embedded item identities and components, then adds shared stack limits.
 func init() {
 	err := nbt.Unmarshal(itemRuntimeIDData, &vanillaItemEntries)
 	if err != nil {
@@ -104,10 +105,12 @@ func init() {
 	for name, e := range vanillaItemEntries {
 		itemNamesToRuntimeIDs[name] = e.RuntimeID
 		itemRuntimeIDsToNames[e.RuntimeID] = name
-		if definition, ok := vanilla.LookupRuntime(name); ok {
-			e.MaxStackSize = definition.MaxCount
-			vanillaItemEntries[name] = e
+		definition, ok := vanilla.LookupRuntime(name)
+		if !ok || definition.MaxCount <= 0 {
+			panic(fmt.Sprintf("vanilla item %s has no shared stack limit", name))
 		}
+		e.MaxStackSize = definition.MaxCount
+		vanillaItemEntries[name] = e
 	}
 }
 
