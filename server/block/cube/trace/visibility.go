@@ -25,15 +25,8 @@ const (
 // blocks allow a ray to end on or start inside the block being interacted with.
 // Zero-length segments inside bounds are clear. Non-finite coordinates are invalid.
 func BlockVisibility(src world.BlockSource, bounds cube.Range, start, end mgl64.Vec3, ignored ...cube.Pos) Visibility {
-	for _, v := range []mgl64.Vec3{start, end} {
-		for _, n := range v {
-			if math.IsNaN(n) || math.IsInf(n, 0) {
-				return VisibilityInvalid
-			}
-		}
-		if y := cube.PosFromVec3(v).Y(); y < bounds.Min() || y > bounds.Max() {
-			return VisibilityInvalid
-		}
+	if !ValidBlockSegment(bounds, start, end) {
+		return VisibilityInvalid
 	}
 	if mgl64.FloatEqual(end.Sub(start).LenSqr(), 0) {
 		return VisibilityClear
@@ -54,4 +47,21 @@ func BlockVisibility(src world.BlockSource, bounds cube.Range, start, end mgl64.
 		return true
 	})
 	return result
+}
+
+// ValidBlockSegment reports whether both segment endpoints have finite
+// coordinates and occupy cells inside bounds. Zero-length segments are valid;
+// callers of TraverseBlocks must reject them before traversing.
+func ValidBlockSegment(bounds cube.Range, start, end mgl64.Vec3) bool {
+	for _, v := range []mgl64.Vec3{start, end} {
+		for _, n := range v {
+			if math.IsNaN(n) || math.IsInf(n, 0) {
+				return false
+			}
+		}
+		if y := cube.PosFromVec3(v).Y(); y < bounds.Min() || y > bounds.Max() {
+			return false
+		}
+	}
+	return true
 }

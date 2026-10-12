@@ -64,14 +64,13 @@ func (c Carrot) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world
 
 // BreakInfo ...
 func (c Carrot) BreakInfo() BreakInfo {
-	return newBreakInfo(0, alwaysHarvestable, nothingEffective, func(t item.Tool, enchantments []item.Enchantment) []item.Stack {
+	return cropBreakInfo(0, nothingEffective, cropDrop{item: c, count: func(enchantments []item.Enchantment) int {
 		if c.Growth < 7 {
-			return []item.Stack{item.NewStack(c, 1)}
+			return 1
 		}
 		fortune := fortuneLevel(enchantments)
-		count := rand.IntN(fortune+1) + 1 + fortuneBinomial(3+fortune)
-		return []item.Stack{item.NewStack(c, count)}
-	})
+		return rand.IntN(fortune+1) + 1 + fortuneBinomial(3+fortune)
+	}})
 }
 
 // CompostChance ...

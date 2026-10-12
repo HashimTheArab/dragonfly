@@ -49,3 +49,34 @@ func TestBlockVisibility(t *testing.T) {
 		})
 	}
 }
+
+func TestValidBlockSegment(t *testing.T) {
+	bounds := cube.Range{-64, 319}
+	inside := mgl64.Vec3{0.5, 0.5, 0.5}
+	for _, test := range []struct {
+		name       string
+		start, end mgl64.Vec3
+		want       bool
+	}{
+		{name: "finite segment", start: inside, end: mgl64.Vec3{3.5, 0.5, 0.5}, want: true},
+		{name: "zero length", start: inside, end: inside, want: true},
+		{name: "boundary cells", start: mgl64.Vec3{0, -64, 0}, end: mgl64.Vec3{0, 319.99, 0}, want: true},
+		{name: "start below bounds", start: mgl64.Vec3{0, -64.01, 0}, end: inside},
+		{name: "end above bounds", start: inside, end: mgl64.Vec3{0, 320, 0}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := trace.ValidBlockSegment(bounds, test.start, test.end); got != test.want {
+				t.Fatalf("got %v, want %v", got, test.want)
+			}
+		})
+	}
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		for axis := range 3 {
+			invalid := inside
+			invalid[axis] = value
+			if trace.ValidBlockSegment(bounds, invalid, inside) || trace.ValidBlockSegment(bounds, inside, invalid) {
+				t.Fatalf("accepted nonfinite coordinate %v on axis %d", value, axis)
+			}
+		}
+	}
+}

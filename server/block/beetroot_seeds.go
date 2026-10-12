@@ -50,7 +50,7 @@ func (b BeetrootSeeds) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx
 
 // BreakInfo ...
 func (b BeetrootSeeds) BreakInfo() BreakInfo {
-	return newBreakInfo(0, alwaysHarvestable, nothingEffective, cropSeedDrops(b, item.Beetroot{}, b.Growth))
+	return cropBreakInfo(0, nothingEffective, cropSeedDrops(b, item.Beetroot{}, b.Growth)...)
 }
 
 // CompostChance ...

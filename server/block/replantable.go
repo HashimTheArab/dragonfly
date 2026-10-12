@@ -11,6 +11,9 @@ import (
 // they grow, not the stem.
 type Replantable interface {
 	world.Block
+	// BreakInfo provides the plant's random drops and deterministic possible
+	// item identities for its current growth state.
+	Breakable
 	// FullyGrown reports whether breaking the plant now yields its full harvest.
 	FullyGrown() bool
 	// Support returns the position of the block holding a plant at pos, and the

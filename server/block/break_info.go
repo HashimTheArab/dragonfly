@@ -211,6 +211,11 @@ type BreakInfo struct {
 	Effective func(t item.Tool) bool
 	// Drops is a function called to get the drops of the block if it is broken using the item passed.
 	Drops func(t item.Tool, enchantments []item.Enchantment) []item.Stack
+	// PossibleDrops lists the item identities Drops can produce for this block
+	// state, without drawing random counts. A nil slice means this metadata is
+	// unavailable; a non-nil empty slice means the block produces no items.
+	// This metadata is currently available for Replantable plants.
+	PossibleDrops []world.Item
 	// BreakHandler is called after the block has broken.
 	BreakHandler func(pos cube.Pos, w *world.Tx, u item.User)
 	// XPDrops is the range of XP a block can drop when broken.
@@ -471,21 +476,6 @@ func grassDrops(grass world.Item) func(item.Tool, []item.Enchantment) []item.Sta
 			return []item.Stack{item.NewStack(WheatSeeds{}, count)}
 		}
 		return nil
-	}
-}
-
-// cropSeedDrops returns a drop function for wheat/beetroot seeds.
-// Uses binomial distribution B(3+fortune, 8/15), seeds may not drop.
-func cropSeedDrops(seed, crop world.Item, growth int) func(item.Tool, []item.Enchantment) []item.Stack {
-	return func(t item.Tool, enchantments []item.Enchantment) []item.Stack {
-		if growth < 7 {
-			return []item.Stack{item.NewStack(seed, 1)}
-		}
-		seedCount := fortuneBinomial(3 + fortuneLevel(enchantments))
-		if seedCount == 0 {
-			return []item.Stack{item.NewStack(crop, 1)}
-		}
-		return []item.Stack{item.NewStack(crop, 1), item.NewStack(seed, seedCount)}
 	}
 }
 
