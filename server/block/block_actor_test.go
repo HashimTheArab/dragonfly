@@ -73,7 +73,10 @@ func TestBlockRegistry_ActorMetadataSurvivesCloneAndSnapshot(t *testing.T) {
 	registry := world.NewBlockRegistry()
 	registry.RegisterBlockState(world.BlockState{Name: "server:actor"})
 	registry.RegisterBlockActor("server:actor", "ServerActor")
+	registry.RegisterBlockActor("server:alias", "AliasActor")
 	registry.Finalize()
+	actors := registry.BlockActorIDs()
+	actors["server:alias"] = "Wrong"
 	clone := registry.(*world.BasicBlockRegistry).Clone()
 	data, err := world.MarshalBlockRegistry(clone)
 	if err != nil {
@@ -84,7 +87,7 @@ func TestBlockRegistry_ActorMetadataSurvivesCloneAndSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range []world.BlockRegistry{registry, clone, restored} {
-		for name, want := range map[string]string{"server:actor": "ServerActor", "minecraft:chest": "Chest", "minecraft:bell": "Bell"} {
+		for name, want := range map[string]string{"server:actor": "ServerActor", "server:alias": "AliasActor", "minecraft:chest": "Chest", "minecraft:bell": "Bell"} {
 			if got, ok := r.BlockActorID(name); !ok || got != want {
 				t.Fatalf("BlockActorID(%q) = %q, %v, want %q", name, got, ok, want)
 			}

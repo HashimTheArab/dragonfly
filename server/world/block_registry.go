@@ -56,6 +56,9 @@ type BlockRegistry interface {
 	// BlockActorID returns the NBT block-actor ID for a block identifier. Metadata
 	// alone does not make an unimplemented block an NBTBlock.
 	BlockActorID(name string) (string, bool)
+	// BlockActorIDs returns an independent copy of all block-actor metadata,
+	// including aliases that do not have registered block states.
+	BlockActorIDs() map[string]string
 	// RegisterBlockActor registers metadata for an unimplemented block or alias.
 	// It must be called before Finalize and must agree with implemented blocks.
 	RegisterBlockActor(name, id string)
@@ -252,6 +255,14 @@ func (br *BasicBlockRegistry) BlockActorID(name string) (string, bool) {
 	}
 	id, ok := br.blockActorIDs[name]
 	return id, ok
+}
+
+// BlockActorIDs returns an independent copy of the registered actor IDs.
+func (br *BasicBlockRegistry) BlockActorIDs() map[string]string {
+	if !br.finalized {
+		panic("BlockRegistry.BlockActorIDs called on non finalized BlockRegistry")
+	}
+	return maps.Clone(br.blockActorIDs)
 }
 
 // RegisterBlockActor registers an NBT block-actor ID without adding block behaviour.

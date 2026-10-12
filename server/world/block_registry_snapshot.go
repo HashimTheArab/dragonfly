@@ -27,16 +27,10 @@ func MarshalBlockRegistry(registry BlockRegistry) ([]byte, error) {
 	var out bytes.Buffer
 	enc := nbt.NewEncoder(&out)
 	enc.SortMaps = true
-	actors := make(map[string]string)
-	for _, state := range states {
-		if id, ok := registry.BlockActorID(state.Name); ok {
-			actors[state.Name] = id
-		}
-	}
 	if err := enc.Encode(struct {
 		States []BlockState      `nbt:"states"`
 		Actors map[string]string `nbt:"block_actors"`
-	}{states, actors}); err != nil {
+	}{states, registry.BlockActorIDs()}); err != nil {
 		return nil, err
 	}
 	return out.Bytes(), nil
@@ -86,9 +80,6 @@ func UnmarshalBlockRegistry(data []byte) (registry BlockRegistry, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for name, id := range snapshot.Actors {
-		if _, present := r.blockProperties[name]; !present {
-			return nil, fmt.Errorf("block actor metadata without a block state: %s", name)
-		}
 		r.registerBlockActorLocked(name, id)
 	}
 	r.finalizeLocked()
