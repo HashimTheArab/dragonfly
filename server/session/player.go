@@ -65,8 +65,8 @@ func (s *Session) StartShowingEntity(e world.Entity) {
 	}
 }
 
-// closeCurrentContainer closes the container the player might currently have open.
-func (s *Session) closeCurrentContainer(tx *world.Tx, clientRequested bool) {
+// CloseCurrentContainer closes the container the player might currently have open.
+func (s *Session) CloseCurrentContainer(tx *world.Tx, clientRequested bool) {
 	if !s.closeWindow(clientRequested) {
 		return
 	}

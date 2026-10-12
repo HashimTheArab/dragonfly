@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	_ "embed"
 	"encoding/base64"
 	"fmt"
 	"iter"
@@ -30,7 +29,6 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft"
-	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
@@ -689,6 +687,7 @@ func vec64To32(vec3 mgl64.Vec3) mgl32.Vec3 {
 // itemEntries loads a list of all custom item entries of the server, ready to
 // be sent in the StartGame packet.
 func (srv *Server) itemEntries() []protocol.ItemEntry {
+	vanillaItems := world.VanillaItemEntries()
 	entries := make([]protocol.ItemEntry, 0, len(vanillaItems))
 
 	for name, e := range vanillaItems {
@@ -702,21 +701,4 @@ func (srv *Server) itemEntries() []protocol.ItemEntry {
 	}
 	entries = append(entries, srv.customItems...)
 	return entries
-}
-
-var (
-	//go:embed world/vanilla_items.nbt
-	vanillaItemsData []byte
-	vanillaItems     = map[string]struct {
-		RuntimeID      int32          `nbt:"runtime_id"`
-		ComponentBased bool           `nbt:"component_based"`
-		Version        int32          `nbt:"version"`
-		Data           map[string]any `nbt:"data,omitempty"`
-	}{}
-)
-
-// init reads all item entries from the resource JSON, and sets the according
-// values in the runtime ID maps.
-func init() {
-	_ = nbt.Unmarshal(vanillaItemsData, &vanillaItems)
 }

@@ -69,17 +69,22 @@ func (p Potato) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world
 
 // BreakInfo ...
 func (p Potato) BreakInfo() BreakInfo {
-	return newBreakInfo(0, alwaysHarvestable, nothingEffective, func(t item.Tool, enchantments []item.Enchantment) []item.Stack {
+	drops := []cropDrop{{item: p, count: func(enchantments []item.Enchantment) int {
 		if p.Growth < 7 {
-			return []item.Stack{item.NewStack(p, 1)}
+			return 1
 		}
 		fortune := fortuneLevel(enchantments)
-		count := rand.IntN(fortune+1) + 1 + fortuneBinomial(3+fortune)
-		if rand.Float64() < 0.02 {
-			return []item.Stack{item.NewStack(p, count), item.NewStack(item.PoisonousPotato{}, 1)}
-		}
-		return []item.Stack{item.NewStack(p, count)}
-	})
+		return rand.IntN(fortune+1) + 1 + fortuneBinomial(3+fortune)
+	}}}
+	if p.Growth >= 7 {
+		drops = append(drops, cropDrop{item: item.PoisonousPotato{}, count: func([]item.Enchantment) int {
+			if rand.Float64() < 0.02 {
+				return 1
+			}
+			return 0
+		}})
+	}
+	return cropBreakInfo(0, nothingEffective, drops...)
 }
 
 // CompostChance ...

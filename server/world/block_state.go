@@ -23,25 +23,36 @@ var (
 )
 
 func init() {
-	dec := nbt.NewDecoder(bytes.NewBuffer(blockStateData))
-
-	// Register all block states present in the block_states.nbt file. These are all possible options registered
-	// blocks may encode to.
-	for {
-		var s BlockState
-		if err := dec.Decode(&s); err != nil {
-			break
-		}
+	states, err := decodeBlockStates(blockStateData)
+	if err != nil {
+		panic(err)
+	}
+	for _, s := range states {
 		DefaultBlockRegistry.RegisterBlockState(s)
 	}
 
 	var m struct {
 		Blocks []DataDrivenBlock `nbt:"blocks"`
 	}
-	if err := nbt.NewDecoderWithEncoding(bytes.NewBuffer(dataDrivenBlockData), nbt.LittleEndian).Decode(&m); err != nil {
+	if err := nbt.UnmarshalEncoding(dataDrivenBlockData, &m, nbt.LittleEndian); err != nil {
 		panic(err)
 	}
 	dataDrivenBlocks = m.Blocks
+}
+
+// decodeBlockStates reads the full embedded palette and rejects a damaged record.
+func decodeBlockStates(data []byte) ([]BlockState, error) {
+	reader := bytes.NewReader(data)
+	decoder := nbt.NewDecoder(reader)
+	var states []BlockState
+	for reader.Len() > 0 {
+		var state BlockState
+		if err := decoder.Decode(&state); err != nil {
+			return nil, fmt.Errorf("decode vanilla block state %d: %w", len(states), err)
+		}
+		states = append(states, state)
+	}
+	return states, nil
 }
 
 // DataDrivenBlock holds the name of a block and the components that define it.
