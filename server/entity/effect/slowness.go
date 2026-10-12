@@ -39,3 +39,8 @@ func (slowness) End(e world.Entity, lvl int) {
 func (slowness) RGBA() color.RGBA {
 	return color.RGBA{R: 0x8b, G: 0xaf, B: 0xe0, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (slowness) Metadata() Metadata {
+	return Metadata{Name: "slowness", Icon: "slowness_effect"}
+}

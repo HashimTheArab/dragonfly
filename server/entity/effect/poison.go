@@ -40,3 +40,8 @@ func (PoisonDamageSource) ReducedByResistance() bool { return true }
 func (PoisonDamageSource) ReducedByArmour() bool     { return false }
 func (PoisonDamageSource) Fire() bool                { return false }
 func (PoisonDamageSource) IgnoreTotem() bool         { return false }
+
+// Metadata returns the effect's name and icon.
+func (poison) Metadata() Metadata {
+	return Metadata{Name: "poison", Icon: "poison_effect"}
+}

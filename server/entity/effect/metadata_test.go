@@ -12,6 +12,19 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// Metadata belongs to the concrete effect type, independently of registration.
+func TestMetadata_EffectTypesOwnMetadata(t *testing.T) {
+	if got, want := Speed.Metadata(), (Metadata{"speed", "speed_effect"}); got != want {
+		t.Fatalf("speed metadata = %+v, want %+v", got, want)
+	}
+	if got, want := BadOmen.Metadata(), (Metadata{"bad_omen", "bad_omen_effect"}); got != want {
+		t.Fatalf("bad omen metadata = %+v, want %+v", got, want)
+	}
+	if _, implemented := any(BadOmen).(Type); implemented {
+		t.Fatal("bad omen metadata falsely provides server behaviour")
+	}
+}
+
 // New protocol effects must have metadata before the catalog can be published.
 func TestMetadata_CoversProtocolEffects(t *testing.T) {
 	pkgs, err := packages.Load(&packages.Config{
@@ -129,9 +142,9 @@ func TestMetadata_EnumerationIsIndependent(t *testing.T) {
 func TestMetadata_ReplacementClearsImplementation(t *testing.T) {
 	id := packet.EffectSpeed
 	previous := effects[id]
-	t.Cleanup(func() { Register(id, previous.implementation, previous.metadata) })
+	t.Cleanup(func() { Register(id, previous) })
 	metadata := Metadata{"custom_speed", "speed_effect"}
-	Register(id, nil, metadata)
+	Register(id, metadataOnly(metadata))
 	if impl, ok := ByID(id); ok || impl != nil {
 		t.Fatal("replaced implementation is still available")
 	}
@@ -149,11 +162,17 @@ func TestMetadata_ReplacementPreservesOtherReverseLookup(t *testing.T) {
 	previous := effects[id]
 	t.Cleanup(func() {
 		delete(effects, alias)
-		Register(id, previous.implementation, previous.metadata)
+		Register(id, previous)
 	})
-	Register(alias, Speed, Metadata{"custom_speed", "speed_effect"})
-	Register(id, nil, previous.metadata)
+	Register(alias, Speed)
+	Register(id, metadataOnly(previous.Metadata()))
 	if got, ok := ID(Speed); !ok || got != alias {
 		t.Fatalf("other reverse lookup = %d, found = %v", got, ok)
 	}
 }
+
+// metadataOnly supplies presentation without implementing server behaviour.
+type metadataOnly Metadata
+
+// Metadata returns the test type's presentation data.
+func (m metadataOnly) Metadata() Metadata { return Metadata(m) }

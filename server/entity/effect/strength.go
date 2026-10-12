@@ -21,3 +21,8 @@ func (strength) Multiplier(lvl int) float64 {
 func (strength) RGBA() color.RGBA {
 	return color.RGBA{R: 0xff, G: 0xc7, B: 0x00, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (strength) Metadata() Metadata {
+	return Metadata{Name: "strength", Icon: "strength_effect"}
+}

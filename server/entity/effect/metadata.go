@@ -10,18 +10,27 @@ type Metadata struct {
 	Icon string
 }
 
+// MetadataType describes an effect, even if it has no server-side implementation.
+type MetadataType interface {
+	// Metadata returns the effect's stable name and icon.
+	Metadata() Metadata
+}
+
 // MetadataByID returns the metadata registered with id, including effects that
 // have no server-side implementation. The bool is false for unknown effects.
 func MetadataByID(id int) (Metadata, bool) {
 	effect, ok := effects[id]
-	return effect.metadata, ok
+	if !ok {
+		return Metadata{}, false
+	}
+	return effect.Metadata(), true
 }
 
 // AllMetadata returns a copy of the registered effect metadata keyed by ID.
 func AllMetadata() map[int]Metadata {
 	metadata := make(map[int]Metadata, len(effects))
 	for id, effect := range effects {
-		metadata[id] = effect.metadata
+		metadata[id] = effect.Metadata()
 	}
 	return metadata
 }

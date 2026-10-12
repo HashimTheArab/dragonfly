@@ -15,3 +15,8 @@ type fireResistance struct {
 func (fireResistance) RGBA() color.RGBA {
 	return color.RGBA{R: 0xff, G: 0x99, B: 0x00, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (fireResistance) Metadata() Metadata {
+	return Metadata{Name: "fire_resistance", Icon: "fire_resistance_effect"}
+}
