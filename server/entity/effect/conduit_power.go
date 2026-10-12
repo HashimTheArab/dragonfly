@@ -26,3 +26,8 @@ func (conduitPower) Multiplier(lvl int) float64 {
 func (conduitPower) RGBA() color.RGBA {
 	return color.RGBA{R: 0x1d, G: 0xc2, B: 0xd1, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (conduitPower) Metadata() Metadata {
+	return Metadata{Name: "conduit_power", Icon: "conduit_power_effect"}
+}

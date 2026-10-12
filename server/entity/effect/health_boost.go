@@ -31,3 +31,8 @@ func (healthBoost) End(e world.Entity, lvl int) {
 func (healthBoost) RGBA() color.RGBA {
 	return color.RGBA{R: 0xf8, G: 0x7d, B: 0x23, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (healthBoost) Metadata() Metadata {
+	return Metadata{Name: "health_boost", Icon: "health_boost_effect"}
+}

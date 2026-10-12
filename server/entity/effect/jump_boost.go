@@ -16,3 +16,8 @@ type jumpBoost struct {
 func (jumpBoost) RGBA() color.RGBA {
 	return color.RGBA{R: 0xfd, G: 0xff, B: 0x84, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (jumpBoost) Metadata() Metadata {
+	return Metadata{Name: "jump_boost", Icon: "jump_boost_effect"}
+}

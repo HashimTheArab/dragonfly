@@ -34,3 +34,8 @@ func (regeneration) RGBA() color.RGBA {
 type RegenerationHealingSource struct{}
 
 func (RegenerationHealingSource) HealingSource() {}
+
+// Metadata returns the effect's name and icon.
+func (regeneration) Metadata() Metadata {
+	return Metadata{Name: "regeneration", Icon: "regeneration_effect"}
+}
