@@ -158,17 +158,27 @@ func (c Chest) RemoveViewer(v ContainerViewer, tx *world.Tx, pos cube.Pos) {
 // Activate ...
 func (c Chest) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.User, _ *item.UseContext) bool {
 	if opener, ok := u.(ContainerOpener); ok {
-		if c.paired {
-			if d, ok := tx.Block(c.pairPos(pos).Side(cube.FaceUp)).(LightDiffuser); !ok || d.LightDiffusionLevel() > 2 {
-				return false
-			}
+		if !c.CanOpenAt(pos, tx) {
+			// Preserve activation's existing consumption semantics: an
+			// obstructed paired half declines the use; this lid consumes it.
+			return !c.paired || chestLidClear(tx, c.pairPos(pos))
 		}
-		if d, ok := tx.Block(pos.Side(cube.FaceUp)).(LightDiffuser); ok && d.LightDiffusionLevel() <= 2 {
-			opener.OpenBlockContainer(pos, tx)
-		}
+		opener.OpenBlockContainer(pos, tx)
 		return true
 	}
 	return false
+}
+
+// CanOpenAt reports whether the lid above this chest and its paired half can
+// open. The source must provide loaded blocks at every requested position.
+func (c Chest) CanOpenAt(pos cube.Pos, source world.BlockSource) bool {
+	return (!c.paired || chestLidClear(source, c.pairPos(pos))) && chestLidClear(source, pos)
+}
+
+// chestLidClear reports the existing chest activation rule for one lid.
+func chestLidClear(source world.BlockSource, pos cube.Pos) bool {
+	d, ok := source.Block(pos.Side(cube.FaceUp)).(LightDiffuser)
+	return ok && d.LightDiffusionLevel() <= 2
 }
 
 // UseOnBlock ...
