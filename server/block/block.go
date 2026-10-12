@@ -263,6 +263,15 @@ func (transparent) LightDiffusionLevel() uint8 {
 // gravityAffected is a struct that may be embedded for blocks affected by gravity.
 type gravityAffected struct{}
 
+// IsGravityAffected reports whether b uses Dragonfly's falling-block behaviour.
+// Embedded blocks inherit the classification along with the behaviour.
+func IsGravityAffected(b world.Block) bool {
+	_, ok := b.(interface {
+		fall(world.Block, cube.Pos, *world.Tx)
+	})
+	return ok
+}
+
 // Solidifies ...
 func (g gravityAffected) Solidifies(cube.Pos, *world.Tx) bool {
 	return false

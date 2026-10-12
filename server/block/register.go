@@ -11,6 +11,16 @@ import (
 
 // init registers all blocks implemented by Dragonfly.
 func init() {
+	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:trapped_chest", Chest{}.BlockActorID())
+	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:skull", Skull{}.BlockActorID())
+	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:bell", "Bell")
+	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:conduit", "Conduit")
+	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:flower_pot", "FlowerPot")
+	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:chiseled_bookshelf", "ChiseledBookshelf")
+	for _, name := range CopperChestNames() {
+		world.DefaultBlockRegistry.RegisterBlockActor(name, Chest{}.BlockActorID())
+	}
+
 	world.RegisterBlock(Air{})
 	world.RegisterBlock(Amethyst{})
 	world.RegisterBlock(BuddingAmethyst{})

@@ -97,9 +97,12 @@ func (s Skull) DecodeNBT(data map[string]interface{}) interface{} {
 	return s
 }
 
+// BlockActorID returns the Bedrock NBT identifier shared by skull variants.
+func (Skull) BlockActorID() string { return "Skull" }
+
 // EncodeNBT ...
 func (s Skull) EncodeNBT() map[string]interface{} {
-	return map[string]interface{}{"id": "Skull", "SkullType": uint8(255), "Rotation": float32(s.Attach.o.Yaw())}
+	return map[string]interface{}{"id": s.BlockActorID(), "SkullType": uint8(255), "Rotation": float32(s.Attach.o.Yaw())}
 }
 
 // EncodeBlock ...

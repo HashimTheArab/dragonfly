@@ -53,6 +53,12 @@ type BlockRegistry interface {
 	BlockByName(name string, properties map[string]any) (Block, bool)
 	// Blocks returns all blocks registered in the registry, indexed by runtime ID.
 	Blocks() []Block
+	// BlockActorID returns the NBT block-actor ID for a block identifier. Metadata
+	// alone does not make an unimplemented block an NBTBlock.
+	BlockActorID(name string) (string, bool)
+	// RegisterBlockActor registers metadata for an unimplemented block or alias.
+	// It must be called before Finalize and must agree with implemented blocks.
+	RegisterBlockActor(name, id string)
 	// Air returns the air block registered in the registry.
 	Air() Block
 	// Finalize finalizes the registry, building derived lookup tables required for runtime usage. Finalize is
@@ -158,6 +164,8 @@ type BasicBlockRegistry struct {
 	blocks []Block
 	// customBlocks maps a custom block's identifier to the custom block.
 	customBlocks map[string]CustomBlock
+	// blockActorIDs includes explicit metadata and IDs derived from registered NBTer blocks.
+	blockActorIDs map[string]string
 
 	blockInfos []blockInfo
 
@@ -237,6 +245,39 @@ func (br *BasicBlockRegistry) Blocks() []Block {
 	return slices.Clone(br.blocks)
 }
 
+// BlockActorID returns the NBT block-actor ID registered for name.
+func (br *BasicBlockRegistry) BlockActorID(name string) (string, bool) {
+	if !br.finalized {
+		panic("BlockRegistry.BlockActorID called on non finalized BlockRegistry")
+	}
+	id, ok := br.blockActorIDs[name]
+	return id, ok
+}
+
+// RegisterBlockActor registers an NBT block-actor ID without adding block behaviour.
+func (br *BasicBlockRegistry) RegisterBlockActor(name, id string) {
+	br.mu.Lock()
+	defer br.mu.Unlock()
+	if br.finalized {
+		panic("BlockRegistry.RegisterBlockActor called on finalized BlockRegistry")
+	}
+	br.registerBlockActorLocked(name, id)
+}
+
+// registerBlockActorLocked adds consistent metadata while br.mu is held.
+func (br *BasicBlockRegistry) registerBlockActorLocked(name, id string) {
+	if name == "" || id == "" {
+		panic("block actor name and ID must not be empty")
+	}
+	if existing, ok := br.blockActorIDs[name]; ok && existing != id {
+		panic(fmt.Sprintf("conflicting block actor IDs for %s: %s and %s", name, existing, id))
+	}
+	if br.blockActorIDs == nil {
+		br.blockActorIDs = make(map[string]string)
+	}
+	br.blockActorIDs[name] = id
+}
+
 func (br *BasicBlockRegistry) HashToRuntimeID(hash uint32) (rid uint32, ok bool) {
 	if !br.finalized {
 		panic("BlockRegistry.HashToRuntimeID called on non finalized BlockRegistry")
@@ -265,6 +306,7 @@ func (br *BasicBlockRegistry) Clone() *BasicBlockRegistry {
 		blockProperties: make(map[string]map[string]any, len(br.blockProperties)),
 		stateRuntimeIDs: make(map[stateHash]uint32, len(br.stateRuntimeIDs)),
 		customBlocks:    make(map[string]CustomBlock, len(br.customBlocks)),
+		blockActorIDs:   maps.Clone(br.blockActorIDs),
 		finalized:       br.finalized,
 		bitSize:         br.bitSize,
 		airRID:          br.airRID,
@@ -469,8 +511,11 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 		if emitter, ok := b.(lightEmitter); ok {
 			info.setLight(emitter.LightEmissionLevel())
 		}
-		if _, ok := b.(NBTer); ok {
+		if nbter, ok := b.(NBTer); ok {
 			info.set(blockFlagNBT)
+			if id, ok := nbter.EncodeNBT()["id"].(string); ok && id != "" {
+				br.registerBlockActorLocked(name, id)
+			}
 		}
 		if _, ok := b.(RandomTicker); ok {
 			info.set(blockFlagRandomTick)

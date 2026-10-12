@@ -10,8 +10,8 @@ import (
 )
 
 // MarshalBlockRegistry records a finalized registry's state palette in runtime-ID
-// order. NBT preserves the property types used for block-state identity. Block
-// implementations are resolved by the decoder's installed Dragonfly version.
+// order along with block-actor metadata. NBT preserves block-state property types.
+// Block implementations are resolved by the decoder's installed Dragonfly version.
 func MarshalBlockRegistry(registry BlockRegistry) ([]byte, error) {
 	if basic, ok := registry.(*BasicBlockRegistry); ok {
 		registry = basic.Clone()
@@ -27,9 +27,16 @@ func MarshalBlockRegistry(registry BlockRegistry) ([]byte, error) {
 	var out bytes.Buffer
 	enc := nbt.NewEncoder(&out)
 	enc.SortMaps = true
+	actors := make(map[string]string)
+	for _, state := range states {
+		if id, ok := registry.BlockActorID(state.Name); ok {
+			actors[state.Name] = id
+		}
+	}
 	if err := enc.Encode(struct {
-		States []BlockState `nbt:"states"`
-	}{states}); err != nil {
+		States []BlockState      `nbt:"states"`
+		Actors map[string]string `nbt:"block_actors"`
+	}{states, actors}); err != nil {
 		return nil, err
 	}
 	return out.Bytes(), nil
@@ -45,7 +52,8 @@ func UnmarshalBlockRegistry(data []byte) (registry BlockRegistry, err error) {
 		}
 	}()
 	var snapshot struct {
-		States []BlockState `nbt:"states"`
+		States []BlockState      `nbt:"states"`
+		Actors map[string]string `nbt:"block_actors"`
 	}
 	if err := nbt.NewDecoder(bytes.NewReader(data)).Decode(&snapshot); err != nil {
 		return nil, err
@@ -58,6 +66,7 @@ func UnmarshalBlockRegistry(data []byte) (registry BlockRegistry, err error) {
 		blocks:          make([]Block, len(snapshot.States)),
 		blockProperties: make(map[string]map[string]any),
 		customBlocks:    make(map[string]CustomBlock),
+		blockActorIDs:   maps.Clone(DefaultBlockRegistry.blockActorIDs),
 	}
 	for i, state := range snapshot.States {
 		if !ValidBlockPropertyValues(state.Properties) {
@@ -76,6 +85,12 @@ func UnmarshalBlockRegistry(data []byte) (registry BlockRegistry, err error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for name, id := range snapshot.Actors {
+		if _, present := r.blockProperties[name]; !present {
+			return nil, fmt.Errorf("block actor metadata without a block state: %s", name)
+		}
+		r.registerBlockActorLocked(name, id)
+	}
 	r.finalizeLocked()
 	return r, nil
 }

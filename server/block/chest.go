@@ -337,6 +337,9 @@ func (c Chest) DecodeNBT(data map[string]any) any {
 	return c
 }
 
+// BlockActorID returns the Bedrock NBT identifier shared by chest variants.
+func (Chest) BlockActorID() string { return "Chest" }
+
 // EncodeNBT ...
 func (c Chest) EncodeNBT() map[string]any {
 	if c.inventory == nil {
@@ -347,7 +350,7 @@ func (c Chest) EncodeNBT() map[string]any {
 	}
 	m := map[string]any{
 		"Items": nbtconv.InvToNBT(c.inventory),
-		"id":    "Chest",
+		"id":    c.BlockActorID(),
 	}
 	if c.CustomName != "" {
 		m["CustomName"] = c.CustomName

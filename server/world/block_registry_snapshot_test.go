@@ -38,7 +38,8 @@ func TestBlockRegistrySnapshotRejectsDuplicates(t *testing.T) {
 		t.Fatal(err)
 	}
 	var snapshot struct {
-		States []BlockState `nbt:"states"`
+		States []BlockState      `nbt:"states"`
+		Actors map[string]string `nbt:"block_actors"`
 	}
 	if err := nbt.NewDecoder(bytes.NewReader(data)).Decode(&snapshot); err != nil {
 		t.Fatal(err)
@@ -92,7 +93,8 @@ func TestBlockRegistrySnapshotRejectsChangedPropertyName(t *testing.T) {
 		t.Fatal(err)
 	}
 	var snapshot struct {
-		States []BlockState `nbt:"states"`
+		States []BlockState      `nbt:"states"`
+		Actors map[string]string `nbt:"block_actors"`
 	}
 	if err := nbt.NewDecoder(bytes.NewReader(data)).Decode(&snapshot); err != nil {
 		t.Fatal(err)
