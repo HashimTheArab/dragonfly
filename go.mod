@@ -2,7 +2,7 @@ module github.com/df-mc/dragonfly
 
 go 1.26.1
 
-replace github.com/sandertv/gophertunnel => github.com/hashimthearab/gophertunnel v1.25.3-0.20261007123404-36c6931b92ac
+replace github.com/sandertv/gophertunnel => github.com/HashimTheArab/gophertunnel v1.25.3-0.20261012132602-c9bbcee36e14
 
 require (
 	github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479
@@ -28,7 +28,7 @@ require (
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
 	github.com/df-mc/go-playfab/v2 v2.0.3 // indirect
-	github.com/df-mc/go-xsapi/v2 v2.0.4-0.20260916091843-af826516381a // indirect
+	github.com/df-mc/go-xsapi/v2 v2.0.4-0.20261012072832-90ce120e31cd // indirect
 	github.com/df-mc/jsonc v1.0.5 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
