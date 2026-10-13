@@ -58,9 +58,12 @@ func (f EndPortalFrame) EndPortalFrameState() (eye bool, facing cube.Direction) 
 	return f.Eye, f.Facing
 }
 
+// BlockActorID returns the identifier shared with the End portal block actor.
+func (EndPortalFrame) BlockActorID() string { return (EndPortal{}).BlockActorID() }
+
 // EncodeNBT encodes the End portal block actor stored with the frame.
-func (EndPortalFrame) EncodeNBT() map[string]any {
-	return map[string]any{"id": "EndPortal"}
+func (f EndPortalFrame) EncodeNBT() map[string]any {
+	return map[string]any{"id": f.BlockActorID()}
 }
 
 // DecodeNBT decodes the End portal block actor. Eye and facing are stored in the block state.

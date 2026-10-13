@@ -111,9 +111,12 @@ func (c EnderChest) close(tx *world.Tx, pos cube.Pos) {
 	tx.PlaySound(pos.Vec3Centre(), sound.EnderChestClose{})
 }
 
+// BlockActorID returns the Bedrock NBT identifier for EnderChest.
+func (EnderChest) BlockActorID() string { return "EnderChest" }
+
 // EncodeNBT ...
 func (c EnderChest) EncodeNBT() map[string]interface{} {
-	return map[string]interface{}{"id": "EnderChest"}
+	return map[string]interface{}{"id": c.BlockActorID()}
 }
 
 // DecodeNBT ...

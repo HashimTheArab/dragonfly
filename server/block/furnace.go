@@ -104,6 +104,9 @@ func (f Furnace) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.User, 
 	return false
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Furnace.
+func (Furnace) BlockActorID() string { return "Furnace" }
+
 // EncodeNBT ...
 func (f Furnace) EncodeNBT() map[string]interface{} {
 	if f.smelter == nil {
@@ -117,7 +120,7 @@ func (f Furnace) EncodeNBT() map[string]interface{} {
 		"BurnDuration": int16(maximum.Milliseconds() / 50),
 		"StoredXPInt":  int16(f.Experience()),
 		"Items":        nbtconv.InvToNBT(f.inventory),
-		"id":           "Furnace",
+		"id":           f.BlockActorID(),
 	}
 }
 

@@ -255,6 +255,9 @@ func (h Hopper) EncodeBlock() (string, map[string]any) {
 	}
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Hopper.
+func (Hopper) BlockActorID() string { return "Hopper" }
+
 // EncodeNBT ...
 func (h Hopper) EncodeNBT() map[string]any {
 	if h.inventory == nil {
@@ -266,7 +269,7 @@ func (h Hopper) EncodeNBT() map[string]any {
 	m := map[string]any{
 		"Items":            nbtconv.InvToNBT(h.inventory),
 		"TransferCooldown": int32(h.TransferCooldown),
-		"id":               "Hopper",
+		"id":               h.BlockActorID(),
 	}
 	if h.CustomName != "" {
 		m["CustomName"] = h.CustomName

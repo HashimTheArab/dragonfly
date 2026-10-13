@@ -157,6 +157,9 @@ func (b Barrel) DecodeNBT(data map[string]any) any {
 	return b
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Barrel.
+func (Barrel) BlockActorID() string { return "Barrel" }
+
 // EncodeNBT ...
 func (b Barrel) EncodeNBT() map[string]any {
 	if b.inventory == nil {
@@ -167,7 +170,7 @@ func (b Barrel) EncodeNBT() map[string]any {
 	}
 	m := map[string]any{
 		"Items": nbtconv.InvToNBT(b.inventory),
-		"id":    "Barrel",
+		"id":    b.BlockActorID(),
 	}
 	if b.CustomName != "" {
 		m["CustomName"] = b.CustomName

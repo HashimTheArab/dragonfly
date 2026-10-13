@@ -85,6 +85,9 @@ func (b BrewingStand) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx 
 	return placed(ctx)
 }
 
+// BlockActorID returns the Bedrock NBT identifier for BrewingStand.
+func (BrewingStand) BlockActorID() string { return "BrewingStand" }
+
 // EncodeNBT ...
 func (b BrewingStand) EncodeNBT() map[string]any {
 	if b.brewer == nil {
@@ -94,7 +97,7 @@ func (b BrewingStand) EncodeNBT() map[string]any {
 	duration := b.Duration()
 	fuel, totalFuel := b.Fuel()
 	return map[string]any{
-		"id":         "BrewingStand",
+		"id":         b.BlockActorID(),
 		"Items":      nbtconv.InvToNBT(b.inventory),
 		"CookTime":   int16(duration.Milliseconds() / 50),
 		"FuelTotal":  int16(totalFuel),

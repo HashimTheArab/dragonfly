@@ -23,9 +23,12 @@ func (MobSpawner) EncodeBlock() (string, map[string]any) {
 	return "minecraft:mob_spawner", nil
 }
 
+// BlockActorID returns the Bedrock NBT identifier for MobSpawner.
+func (MobSpawner) BlockActorID() string { return "MobSpawner" }
+
 // EncodeNBT encodes the mob spawner block entity.
-func (MobSpawner) EncodeNBT() map[string]any {
-	return map[string]any{"id": "MobSpawner"}
+func (m MobSpawner) EncodeNBT() map[string]any {
+	return map[string]any{"id": m.BlockActorID()}
 }
 
 // DecodeNBT decodes the mob spawner block entity. Spawning behaviour is not yet simulated.
