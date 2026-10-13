@@ -251,7 +251,9 @@ func readDisplay(m map[string]any, s *Stack) {
 		} else if lore, ok := display["Lore"].([]any); ok {
 			loreLines := make([]string, 0, len(lore))
 			for _, l := range lore {
-				loreLines = append(loreLines, l.(string))
+				if line, ok := l.(string); ok {
+					loreLines = append(loreLines, line)
+				}
 			}
 			*s = s.WithLore(loreLines...)
 		}

@@ -1,10 +1,43 @@
 package item
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/world"
 )
+
+func TestReadNBT_DisplayLore(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		lore any
+		want []string
+	}{
+		{name: "typed strings", lore: []string{"first", "second"}, want: []string{"first", "second"}},
+		{name: "decoded strings", lore: []any{"first", "second"}, want: []string{"first", "second"}},
+		{name: "compound list", lore: []any{map[string]any{"bad": int32(1)}}},
+		{name: "mixed list", lore: []any{"first", nil, int32(1), map[string]any{}, "second"}, want: []string{"first", "second"}},
+		{name: "wrong list type", lore: []int32{1}},
+	} {
+		for _, mode := range []struct {
+			name string
+			disk bool
+		}{{name: "network"}, {name: "disk", disk: true}} {
+			t.Run(test.name+"/"+mode.name, func(t *testing.T) {
+				tag := map[string]any{"display": map[string]any{"Name": "Named bread", "Lore": test.lore}}
+				stack := NewStack(Bread{}, 2)
+				if mode.disk {
+					stack = ReadNBT(map[string]any{"Name": "minecraft:bread", "Count": byte(2), "tag": tag}, nil)
+				} else {
+					stack = ReadNBT(tag, &stack)
+				}
+				if stack.Count() != 2 || stack.CustomName() != "Named bread" || !slices.Equal(stack.Lore(), test.want) {
+					t.Fatalf("decoded display = count %d, name %q, lore %v; want 2, Named bread, %v", stack.Count(), stack.CustomName(), stack.Lore(), test.want)
+				}
+			})
+		}
+	}
+}
 
 // testEnchantment is registered locally because server/item/enchantment imports this
 // package, so a test inside it cannot pull the real types in.
