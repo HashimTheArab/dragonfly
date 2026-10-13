@@ -48,13 +48,20 @@ type PredictedBlockChange struct {
 // or rotation. Non-block side effects such as sounds, particles and scheduled
 // updates are intentionally discarded.
 func PredictPlacement(src PlacementSource, user PlacementUser, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) (changes []PredictedBlockChange, known bool) {
+	return predictPlacementWithActors(src, user, clickedPos, face, clickPos, placed, nil)
+}
+
+// predictPlacementWithActors optionally applies canonical actor obstruction when planning
+// an executable placement, while ordinary prediction remains actor-independent.
+func predictPlacementWithActors(src PlacementSource, user PlacementUser, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block, actors []world.PlacementActor) (changes []PredictedBlockChange, known bool) {
 	if src == nil || placed == nil {
 		return nil, false
 	}
 
 	view := &placementView{
-		src:   src,
-		known: true,
+		src:    src,
+		known:  true,
+		actors: actors,
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -76,13 +83,20 @@ func PredictPlacement(src PlacementSource, user PlacementUser, clickedPos cube.P
 		}
 		place(tx, pos, placed, u, ctx)
 	})
+	if view.obstructed {
+		// A plan must not publish only part of a multi-block placement when a
+		// later canonical PlaceBlock call encounters an actor.
+		return nil, complete && view.known
+	}
 	return view.changes, complete && view.known
 }
 
 type placementView struct {
-	src     PlacementSource
-	changes []PredictedBlockChange
-	known   bool
+	src        PlacementSource
+	changes    []PredictedBlockChange
+	known      bool
+	actors     []world.PlacementActor
+	obstructed bool
 }
 
 func (v *placementView) Range() cube.Range          { return v.src.Range() }
@@ -222,14 +236,12 @@ func (v *placementView) secondaryLiquid(pos cube.Pos, primary world.Block) (worl
 }
 
 func (v *placementView) setPrimaryBlock(pos cube.Pos, b world.Block) {
+	b, _ = NormaliseLayerBlock(b, 0)
 	v.changes = append(v.changes, PredictedBlockChange{Pos: pos, Block: b})
 }
 
 func (v *placementView) setSecondaryLiquid(pos cube.Pos, liquid world.Liquid) {
-	b := world.Block(Air{})
-	if liquid != nil {
-		b = liquid
-	}
+	b, _ := NormaliseLayerBlock(liquid, 1)
 	v.changes = append(v.changes, PredictedBlockChange{Pos: pos, Block: b, Layer: 1})
 }
 
@@ -299,6 +311,14 @@ func (u *placementUser) ReleaseItem() { u.unsupported() }
 func (u *placementUser) UseItem()     { u.unsupported() }
 
 func (u *placementUser) PlaceBlock(pos cube.Pos, b world.Block, ctx *item.UseContext) {
+	if ctx == nil || !ctx.IgnoreBBox {
+		for _, actor := range u.view.actors {
+			if world.PlacementObstructed(u.tx, pos, b, actor) {
+				u.view.obstructed = true
+				return
+			}
+		}
+	}
 	u.tx.SetBlock(pos, b, nil)
 	if ctx != nil {
 		ctx.CountSub++
