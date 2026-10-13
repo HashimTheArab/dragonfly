@@ -62,6 +62,13 @@ type ContainerSizer interface {
 	ContainerSize() int
 }
 
+// ContainerSource exposes the inventory request source of ordinary block-backed
+// storage. Workstations with distinct input, fuel or output sources do not
+// implement this interface.
+type ContainerSource interface {
+	ContainerSourceID() byte
+}
+
 // PairedContainerSource exposes the loaded block and block-entity state needed
 // to validate a paired container.
 type PairedContainerSource interface {
