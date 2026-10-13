@@ -7,6 +7,7 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 )
 
+// TestReadNBT_DisplayLore ignores invalid lore without losing the remaining display data.
 func TestReadNBT_DisplayLore(t *testing.T) {
 	for _, test := range []struct {
 		name string
