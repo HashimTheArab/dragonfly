@@ -31,3 +31,8 @@ func (instantHealth) RGBA() color.RGBA {
 type InstantHealingSource struct{}
 
 func (InstantHealingSource) HealingSource() {}
+
+// Metadata returns the effect's name and icon.
+func (instantHealth) Metadata() Metadata {
+	return Metadata{Name: "instant_health", Icon: "health_boost_effect"}
+}

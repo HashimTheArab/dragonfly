@@ -1,14 +1,21 @@
 package effect
 
-// Register registers an Effect with a specific ID to translate from and to on disk and network. An Effect
-// instance may be created by creating a struct instance in this package like
-// effect.regeneration{}.
-func Register(id int, e Type) {
+import "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+
+// Register registers an effect type with its disk and network ID. Types that
+// provide metadata without server-side behaviour are available through
+// MetadataByID, but ByID returns only implemented effects.
+func Register(id int, e MetadataType) {
+	if previous, ok := effects[id].(Type); ok && effectIds[previous] == id {
+		delete(effectIds, previous)
+	}
 	effects[id] = e
-	effectIds[e] = id
+	if implementation, ok := e.(Type); ok {
+		effectIds[implementation] = id
+	}
 }
 
-// init registers all implemented effects.
+// init registers all known effect types.
 func init() {
 	Register(1, Speed)
 	Register(2, Slowness)
@@ -37,20 +44,28 @@ func init() {
 	Register(25, FatalPoison)
 	Register(26, ConduitPower)
 	Register(27, SlowFalling)
-	// TODO: (28) Bad omen. (Requires villages ...)
-	// TODO: (29) Hero of the village. (Requires villages ...)
 	Register(30, Darkness)
+
+	// These types describe client effects without server-side implementations.
+	Register(packet.EffectBadOmen, BadOmen)
+	Register(packet.EffectVillageHero, VillageHero)
+	Register(packet.EffectTrialOmen, TrialOmen)
+	Register(packet.EffectWindCharged, WindCharged)
+	Register(packet.EffectWeaving, Weaving)
+	Register(packet.EffectOozing, Oozing)
+	Register(packet.EffectInfested, Infested)
+	Register(packet.EffectRaidOmen, RaidOmen)
 }
 
 var (
-	effects   = map[int]Type{}
+	effects   = map[int]MetadataType{}
 	effectIds = map[Type]int{}
 )
 
-// ByID attempts to return an effect by the ID it was registered with. If found, the effect found
-// is returned and the bool true.
+// ByID returns the implementation registered with id. The bool is false for
+// unknown effects and known effects without server-side behaviour.
 func ByID(id int) (Type, bool) {
-	effect, ok := effects[id]
+	effect, ok := effects[id].(Type)
 	return effect, ok
 }
 

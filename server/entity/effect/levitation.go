@@ -16,3 +16,8 @@ type levitation struct {
 func (levitation) RGBA() color.RGBA {
 	return color.RGBA{R: 0xce, G: 0xff, B: 0xff, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (levitation) Metadata() Metadata {
+	return Metadata{Name: "levitation", Icon: "levitation_effect"}
+}

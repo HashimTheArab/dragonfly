@@ -16,3 +16,8 @@ type blindness struct {
 func (blindness) RGBA() color.RGBA {
 	return color.RGBA{R: 0x1f, G: 0x1f, B: 0x23, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (blindness) Metadata() Metadata {
+	return Metadata{Name: "blindness", Icon: "blindness_effect"}
+}

@@ -156,6 +156,9 @@ func (p DecoratedPot) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx 
 	return placed(ctx)
 }
 
+// BlockActorID returns the Bedrock NBT identifier for DecoratedPot.
+func (DecoratedPot) BlockActorID() string { return "DecoratedPot" }
+
 // EncodeNBT ...
 func (p DecoratedPot) EncodeNBT() map[string]any {
 	var sherds []any
@@ -169,7 +172,7 @@ func (p DecoratedPot) EncodeNBT() map[string]any {
 	}
 
 	m := map[string]any{
-		"id":     "DecoratedPot",
+		"id":     p.BlockActorID(),
 		"sherds": sherds,
 	}
 	if !p.Item.Empty() {

@@ -33,9 +33,12 @@ func (EndPortal) Portal() world.Dimension {
 	return world.End
 }
 
+// BlockActorID returns the Bedrock NBT identifier for EndPortal.
+func (EndPortal) BlockActorID() string { return "EndPortal" }
+
 // EncodeNBT encodes the End portal block actor.
-func (EndPortal) EncodeNBT() map[string]any {
-	return map[string]any{"id": "EndPortal"}
+func (e EndPortal) EncodeNBT() map[string]any {
+	return map[string]any{"id": e.BlockActorID()}
 }
 
 // DecodeNBT decodes the End portal block actor.

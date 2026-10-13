@@ -19,6 +19,7 @@ type LastingType interface {
 
 // Type is an effect implementation that can be applied to an entity.
 type Type interface {
+	MetadataType
 	// RGBA returns the colour of the effect. If multiple effects are present,
 	// the colours will be mixed together to form a new colour.
 	RGBA() color.RGBA

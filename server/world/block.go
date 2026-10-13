@@ -8,13 +8,27 @@ import (
 	"github.com/df-mc/dragonfly/server/block/customblock"
 )
 
+// BlockType supplies a block's identity for registration. Metadata-only types
+// need not implement Block's model or gameplay behaviour.
+type BlockType interface {
+	// EncodeBlock encodes the identifier and properties of the block type.
+	EncodeBlock() (string, map[string]any)
+}
+
+// BlockActor is a block type with a Bedrock block-actor identifier. Implementing
+// it alone does not provide an NBT codec or gameplay behaviour.
+// Types may also implement BlockActorAliases() []string to supply alternate block identifiers.
+type BlockActor interface {
+	BlockType
+	// BlockActorID returns the NBT actor identifier for the encoded block type.
+	BlockActorID() string
+}
+
 // Block is a block that may be placed or found in a world. In addition, the block may also be added to an
 // inventory: It is also an item.
 // Every Block implementation must be able to be hashed as key in a map.
 type Block interface {
-	// EncodeBlock encodes the block to a string ID such as 'minecraft:grass' and properties associated
-	// with the block.
-	EncodeBlock() (string, map[string]any)
+	BlockType
 	// Hash returns two different identifiers for the block. The first is the base hash which is unique for
 	// each type of block at runtime. For vanilla blocks, this is an auto-incrementing constant and for custom
 	// blocks, you can call block.NextHash() to get a unique identifier. The second is the hash of the block's
@@ -88,14 +102,15 @@ type Liquid interface {
 	LiquidRemoveBlock(pos cube.Pos, tx *Tx, removed Block)
 }
 
-// RegisterBlock registers the Block passed in the DefaultBlockRegistry.
+// RegisterBlock registers a block type in the DefaultBlockRegistry. Types that
+// only implement BlockActor contribute metadata without replacing block behaviour.
 //
 // This function exists for backwards compatibility and works well for the common "single server per process" setup,
 // where all worlds share the global default registry.
 //
 // If you run multiple servers/registries in a single process, prefer creating a registry using NewBlockRegistry() and
 // registering blocks on that instance (e.g. conf.Blocks.RegisterBlock(...)) before calling Finalize().
-func RegisterBlock(b Block) {
+func RegisterBlock(b BlockType) {
 	DefaultBlockRegistry.RegisterBlock(b)
 }
 

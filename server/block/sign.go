@@ -218,10 +218,13 @@ func (s Sign) DecodeNBT(data map[string]any) any {
 	return s
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Sign.
+func (Sign) BlockActorID() string { return "Sign" }
+
 // EncodeNBT ...
 func (s Sign) EncodeNBT() map[string]any {
 	m := map[string]any{
-		"id":      "Sign",
+		"id":      s.BlockActorID(),
 		"IsWaxed": boolByte(s.Waxed),
 		"FrontText": map[string]any{
 			"SignTextColor":  nbtconv.Int32FromRGBA(s.Front.BaseColour),

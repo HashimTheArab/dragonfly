@@ -111,11 +111,14 @@ func (c CopperGolemStatue) DecodeNBT(data map[string]any) any {
 	return c
 }
 
+// BlockActorID returns the Bedrock NBT identifier for CopperGolemStatue.
+func (CopperGolemStatue) BlockActorID() string { return "CopperGolemStatue" }
+
 // EncodeNBT ...
 func (c CopperGolemStatue) EncodeNBT() map[string]any {
 	return map[string]any{
 		"Pose": int32(c.Pose.Uint8()),
-		"id":   "CopperGolemStatue",
+		"id":   c.BlockActorID(),
 	}
 }
 

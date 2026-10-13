@@ -86,6 +86,9 @@ func (b Banner) EncodeBlock() (name string, properties map[string]any) {
 	return "minecraft:standing_banner", map[string]any{"ground_sign_direction": int32(b.Attach.o)}
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Banner.
+func (Banner) BlockActorID() string { return "Banner" }
+
 // EncodeNBT ...
 func (b Banner) EncodeNBT() map[string]any {
 	patterns := make([]any, 0, len(b.Patterns))
@@ -93,7 +96,7 @@ func (b Banner) EncodeNBT() map[string]any {
 		patterns = append(patterns, p.EncodeNBT())
 	}
 	return map[string]any{
-		"id":       "Banner",
+		"id":       b.BlockActorID(),
 		"Patterns": patterns,
 		"Type":     int32(boolByte(b.Illager)),
 		"Base":     int32(invertColour(b.Colour)),

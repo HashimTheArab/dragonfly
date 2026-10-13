@@ -22,3 +22,8 @@ func (miningFatigue) Multiplier(lvl int) float64 {
 func (miningFatigue) RGBA() color.RGBA {
 	return color.RGBA{R: 0x4a, G: 0x42, B: 0x17, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (miningFatigue) Metadata() Metadata {
+	return Metadata{Name: "mining_fatigue", Icon: "mining_fatigue_effect"}
+}

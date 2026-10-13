@@ -9,7 +9,7 @@ import (
 //go:generate go run ../../cmd/blockhash -o hash.go .
 //go:generate go run ../../cmd/blockaccessor -o accessor.go .
 
-// init registers all blocks implemented by Dragonfly.
+// init registers Dragonfly's block implementations and metadata-only block types.
 func init() {
 	world.RegisterBlock(Air{})
 	world.RegisterBlock(Amethyst{})
@@ -20,6 +20,7 @@ func init() {
 	world.RegisterBlock(BambooMosaic{})
 	world.RegisterBlock(Barrier{})
 	world.RegisterBlock(Beacon{})
+	world.RegisterBlock(Bell{})
 	world.RegisterBlock(Bedrock{InfiniteBurning: true})
 	world.RegisterBlock(Bedrock{})
 	world.RegisterBlock(BlueIce{})
@@ -30,11 +31,13 @@ func init() {
 	world.RegisterBlock(Cinnabar{Chiseled: true})
 	world.RegisterBlock(CinnabarBricks{})
 	world.RegisterBlock(PolishedCinnabar{})
+	world.RegisterBlock(ChiseledBookshelf{})
 	world.RegisterBlock(Clay{})
 	world.RegisterBlock(Coal{})
 	world.RegisterBlock(Cobblestone{Mossy: true})
 	world.RegisterBlock(Cobblestone{})
 	world.RegisterBlock(Cobweb{})
+	world.RegisterBlock(Conduit{})
 	world.RegisterBlock(CraftingTable{})
 	world.RegisterBlock(DeadBush{})
 	world.RegisterBlock(DeepslateBricks{Cracked: true})
@@ -59,6 +62,7 @@ func init() {
 	}
 	world.RegisterBlock(EndStone{})
 	world.RegisterBlock(FletchingTable{})
+	world.RegisterBlock(FlowerPot{})
 	registerAll(allGlassPane())
 	world.RegisterBlock(Glass{})
 	world.RegisterBlock(Glowstone{})

@@ -9,6 +9,7 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/sound"
 	"github.com/go-gl/mathgl/mgl64"
+	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +55,9 @@ func NewBarrel() Barrel {
 
 // ContainerSize returns the number of slots in a barrel.
 func (Barrel) ContainerSize() int { return 27 }
+
+// ContainerSourceID returns the inventory request source of a barrel.
+func (Barrel) ContainerSourceID() byte { return protocol.ContainerBarrel }
 
 // Inventory returns the inventory of the barrel. The size of the inventory will be 27.
 func (b Barrel) Inventory(*world.Tx, cube.Pos) *inventory.Inventory {
@@ -157,6 +161,9 @@ func (b Barrel) DecodeNBT(data map[string]any) any {
 	return b
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Barrel.
+func (Barrel) BlockActorID() string { return "Barrel" }
+
 // EncodeNBT ...
 func (b Barrel) EncodeNBT() map[string]any {
 	if b.inventory == nil {
@@ -167,7 +174,7 @@ func (b Barrel) EncodeNBT() map[string]any {
 	}
 	m := map[string]any{
 		"Items": nbtconv.InvToNBT(b.inventory),
-		"id":    "Barrel",
+		"id":    b.BlockActorID(),
 	}
 	if b.CustomName != "" {
 		m["CustomName"] = b.CustomName

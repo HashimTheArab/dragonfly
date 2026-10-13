@@ -36,3 +36,8 @@ func (WitherDamageSource) ReducedByResistance() bool { return true }
 func (WitherDamageSource) ReducedByArmour() bool     { return false }
 func (WitherDamageSource) Fire() bool                { return false }
 func (WitherDamageSource) IgnoreTotem() bool         { return false }
+
+// Metadata returns the effect's name and icon.
+func (wither) Metadata() Metadata {
+	return Metadata{Name: "wither", Icon: "wither_effect"}
+}

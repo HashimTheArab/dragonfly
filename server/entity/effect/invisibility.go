@@ -38,3 +38,8 @@ func (invisibility) End(e world.Entity, _ int) {
 func (invisibility) RGBA() color.RGBA {
 	return color.RGBA{R: 0xf6, G: 0xf6, B: 0xf6, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (invisibility) Metadata() Metadata {
+	return Metadata{Name: "invisibility", Icon: "invisibility_effect"}
+}
