@@ -340,6 +340,11 @@ func (c Chest) DecodeNBT(data map[string]any) any {
 // BlockActorID returns the Bedrock NBT identifier shared by chest variants.
 func (Chest) BlockActorID() string { return "Chest" }
 
+// BlockActorAliases returns chest identifiers whose gameplay is not implemented.
+func (Chest) BlockActorAliases() []string {
+	return append(CopperChestNames(), "minecraft:trapped_chest")
+}
+
 // EncodeNBT ...
 func (c Chest) EncodeNBT() map[string]any {
 	if c.inventory == nil {

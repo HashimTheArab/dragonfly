@@ -238,10 +238,13 @@ func (b Bed) EncodeBlock() (name string, properties map[string]interface{}) {
 	}
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Bed.
+func (Bed) BlockActorID() string { return "Bed" }
+
 // EncodeNBT ...
 func (b Bed) EncodeNBT() map[string]interface{} {
 	return map[string]interface{}{
-		"id":    "Bed",
+		"id":    b.BlockActorID(),
 		"color": b.Colour.Uint8(),
 	}
 }

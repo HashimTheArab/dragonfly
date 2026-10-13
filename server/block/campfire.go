@@ -237,9 +237,12 @@ func (c Campfire) EntityInside(pos cube.Pos, tx *world.Tx, e world.Entity) {
 	}
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Campfire.
+func (Campfire) BlockActorID() string { return "Campfire" }
+
 // EncodeNBT ...
 func (c Campfire) EncodeNBT() map[string]any {
-	m := map[string]any{"id": "Campfire"}
+	m := map[string]any{"id": c.BlockActorID()}
 	for i, v := range c.Items {
 		id := strconv.Itoa(i + 1)
 		if !v.Item.Empty() {

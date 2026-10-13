@@ -104,9 +104,12 @@ func (j Jukebox) Disc() (sound.DiscType, bool) {
 	return sound.DiscType{}, false
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Jukebox.
+func (Jukebox) BlockActorID() string { return "Jukebox" }
+
 // EncodeNBT ...
 func (j Jukebox) EncodeNBT() map[string]any {
-	m := map[string]any{"id": "Jukebox"}
+	m := map[string]any{"id": j.BlockActorID()}
 	if _, hasDisc := j.Disc(); hasDisc {
 		m["RecordItem"] = item.WriteNBT(j.Item, true)
 	}

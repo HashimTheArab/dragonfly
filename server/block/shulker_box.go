@@ -283,11 +283,15 @@ func (s ShulkerBox) DecodeNBT(data map[string]any) any {
 	return s
 }
 
+// BlockActorID returns the Bedrock NBT identifier for ShulkerBox.
+func (ShulkerBox) BlockActorID() string { return "ShulkerBox" }
+
+// EncodeNBT encodes the shulker box's contents and actor metadata.
 func (s ShulkerBox) EncodeNBT() map[string]any {
 	s = s.initialised()
 	m := map[string]any{
 		"Items":  nbtconv.InvToNBT(s.inventory),
-		"id":     "ShulkerBox",
+		"id":     s.BlockActorID(),
 		"facing": uint8(s.Facing),
 	}
 	if s.CustomName != "" {

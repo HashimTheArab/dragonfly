@@ -9,18 +9,8 @@ import (
 //go:generate go run ../../cmd/blockhash -o hash.go .
 //go:generate go run ../../cmd/blockaccessor -o accessor.go .
 
-// init registers all blocks implemented by Dragonfly.
+// init registers Dragonfly's block implementations and metadata-only block types.
 func init() {
-	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:trapped_chest", Chest{}.BlockActorID())
-	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:skull", Skull{}.BlockActorID())
-	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:bell", "Bell")
-	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:conduit", "Conduit")
-	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:flower_pot", "FlowerPot")
-	world.DefaultBlockRegistry.RegisterBlockActor("minecraft:chiseled_bookshelf", "ChiseledBookshelf")
-	for _, name := range CopperChestNames() {
-		world.DefaultBlockRegistry.RegisterBlockActor(name, Chest{}.BlockActorID())
-	}
-
 	world.RegisterBlock(Air{})
 	world.RegisterBlock(Amethyst{})
 	world.RegisterBlock(BuddingAmethyst{})
@@ -30,6 +20,7 @@ func init() {
 	world.RegisterBlock(BambooMosaic{})
 	world.RegisterBlock(Barrier{})
 	world.RegisterBlock(Beacon{})
+	world.RegisterBlock(Bell{})
 	world.RegisterBlock(Bedrock{InfiniteBurning: true})
 	world.RegisterBlock(Bedrock{})
 	world.RegisterBlock(BlueIce{})
@@ -40,11 +31,13 @@ func init() {
 	world.RegisterBlock(Cinnabar{Chiseled: true})
 	world.RegisterBlock(CinnabarBricks{})
 	world.RegisterBlock(PolishedCinnabar{})
+	world.RegisterBlock(ChiseledBookshelf{})
 	world.RegisterBlock(Clay{})
 	world.RegisterBlock(Coal{})
 	world.RegisterBlock(Cobblestone{Mossy: true})
 	world.RegisterBlock(Cobblestone{})
 	world.RegisterBlock(Cobweb{})
+	world.RegisterBlock(Conduit{})
 	world.RegisterBlock(CraftingTable{})
 	world.RegisterBlock(DeadBush{})
 	world.RegisterBlock(DeepslateBricks{Cracked: true})
@@ -69,6 +62,7 @@ func init() {
 	}
 	world.RegisterBlock(EndStone{})
 	world.RegisterBlock(FletchingTable{})
+	world.RegisterBlock(FlowerPot{})
 	registerAll(allGlassPane())
 	world.RegisterBlock(Glass{})
 	world.RegisterBlock(Glowstone{})

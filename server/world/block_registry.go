@@ -43,8 +43,9 @@ type BlockRegistry interface {
 	BlockByRuntimeIDOrAir(rid uint32) Block
 	// BlockRuntimeID looks up the runtime ID of a previously registered Block.
 	BlockRuntimeID(block Block) (rid uint32)
-	// RegisterBlock registers a Block implementation for a previously registered block state.
-	RegisterBlock(block Block)
+	// RegisterBlock registers a Block implementation for a previously registered
+	// state, or collects metadata from a BlockActor without installing behaviour.
+	RegisterBlock(block BlockType)
 	// RegisterBlockState registers a block state that blocks may encode to.
 	RegisterBlockState(blockState BlockState)
 	// CustomBlocks returns custom blocks registered in this registry, keyed by identifier.
@@ -59,9 +60,6 @@ type BlockRegistry interface {
 	// BlockActorIDs returns an independent copy of all block-actor metadata,
 	// including aliases that do not have registered block states.
 	BlockActorIDs() map[string]string
-	// RegisterBlockActor registers metadata for an unimplemented block or alias.
-	// It must be called before Finalize and must agree with implemented blocks.
-	RegisterBlockActor(name, id string)
 	// Air returns the air block registered in the registry.
 	Air() Block
 	// Finalize finalizes the registry, building derived lookup tables required for runtime usage. Finalize is
@@ -167,7 +165,7 @@ type BasicBlockRegistry struct {
 	blocks []Block
 	// customBlocks maps a custom block's identifier to the custom block.
 	customBlocks map[string]CustomBlock
-	// blockActorIDs includes explicit metadata and IDs derived from registered NBTer blocks.
+	// blockActorIDs is derived from registered types' BlockActorID methods and aliases.
 	blockActorIDs map[string]string
 
 	blockInfos []blockInfo
@@ -265,24 +263,19 @@ func (br *BasicBlockRegistry) BlockActorIDs() map[string]string {
 	return maps.Clone(br.blockActorIDs)
 }
 
-// RegisterBlockActor registers an NBT block-actor ID without adding block behaviour.
-func (br *BasicBlockRegistry) RegisterBlockActor(name, id string) {
-	br.mu.Lock()
-	defer br.mu.Unlock()
-	if br.finalized {
-		panic("BlockRegistry.RegisterBlockActor called on finalized BlockRegistry")
-	}
-	br.registerBlockActorLocked(name, id)
-}
-
-// registerBlockActorLocked adds consistent metadata while br.mu is held.
-func (br *BasicBlockRegistry) registerBlockActorLocked(name, id string) {
+// validateBlockActorLocked checks metadata against existing registrations while br.mu is held.
+func (br *BasicBlockRegistry) validateBlockActorLocked(name, id string) {
 	if name == "" || id == "" {
 		panic("block actor name and ID must not be empty")
 	}
 	if existing, ok := br.blockActorIDs[name]; ok && existing != id {
 		panic(fmt.Sprintf("conflicting block actor IDs for %s: %s and %s", name, existing, id))
 	}
+}
+
+// registerBlockActorLocked adds consistent metadata while br.mu is held.
+func (br *BasicBlockRegistry) registerBlockActorLocked(name, id string) {
+	br.validateBlockActorLocked(name, id)
 	if br.blockActorIDs == nil {
 		br.blockActorIDs = make(map[string]string)
 	}
@@ -413,10 +406,10 @@ func NewBlockRegistry() BlockRegistry {
 	return br
 }
 
-// RegisterBlock registers the Block passed. The EncodeBlock method will be used to encode and decode the
-// block passed. RegisterBlock panics if the block properties returned were not valid, existing properties, or if a
-// custom block's traits are invalid.
-func (br *BasicBlockRegistry) RegisterBlock(b Block) {
+// RegisterBlock registers a block's behaviour and actor metadata. A type that
+// implements only BlockActor contributes metadata without a gameplay implementation.
+// RegisterBlock panics on invalid states, traits or conflicting actor metadata.
+func (br *BasicBlockRegistry) RegisterBlock(b BlockType) {
 	br.mu.Lock()
 	defer br.mu.Unlock()
 
@@ -424,28 +417,49 @@ func (br *BasicBlockRegistry) RegisterBlock(b Block) {
 		panic("BlockRegistry.RegisterBlock called on finalized BlockRegistry")
 	}
 	name, properties := b.EncodeBlock()
-	c, custom := b.(CustomBlock)
-	_, known := br.customBlocks[name]
-	if custom && !known {
-		if err := validateCustomBlock(c); err != nil {
-			panic(fmt.Sprintf("custom block %s: %v", name, err))
+	implementation, implemented := b.(Block)
+	actor, hasActor := b.(BlockActor)
+	if !implemented && !hasActor {
+		panic(fmt.Sprintf("block type %s has neither behaviour nor actor metadata", name))
+	}
+	var actorNames []string
+	var actorID string
+	if hasActor {
+		actorNames, actorID = []string{name}, actor.BlockActorID()
+		if aliases, ok := b.(interface{ BlockActorAliases() []string }); ok {
+			actorNames = append(actorNames, aliases.BlockActorAliases()...)
+		}
+		for _, actorName := range actorNames {
+			br.validateBlockActorLocked(actorName, actorID)
 		}
 	}
-	if custom {
-		br.registerBlockStateLocked(BlockState{Name: name, Properties: properties})
+	if implemented {
+		c, custom := b.(CustomBlock)
+		_, known := br.customBlocks[name]
+		if custom && !known {
+			if err := validateCustomBlock(c); err != nil {
+				panic(fmt.Sprintf("custom block %s: %v", name, err))
+			}
+		}
+		if custom {
+			br.registerBlockStateLocked(BlockState{Name: name, Properties: properties})
+		}
+		rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]
+		if !ok {
+			// We assume all blocks must have all their states registered beforehand. Vanilla blocks will have
+			// this done through registering of all states present in the block_states.nbt file.
+			panic(fmt.Sprintf("block state returned is not registered (%v {%#v})", name, properties))
+		}
+		if _, ok := br.blocks[rid].(unknownBlock); !ok {
+			panic(fmt.Sprintf("block with name and properties %v {%#v} already registered", name, properties))
+		}
+		br.blocks[rid] = implementation
+		if custom && !known {
+			br.customBlocks[name] = c
+		}
 	}
-	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]
-	if !ok {
-		// We assume all blocks must have all their states registered beforehand. Vanilla blocks will have
-		// this done through registering of all states present in the block_states.nbt file.
-		panic(fmt.Sprintf("block state returned is not registered (%v {%#v})", name, properties))
-	}
-	if _, ok := br.blocks[rid].(unknownBlock); !ok {
-		panic(fmt.Sprintf("block with name and properties %v {%#v} already registered", name, properties))
-	}
-	br.blocks[rid] = b
-	if custom && !known {
-		br.customBlocks[name] = c
+	for _, actorName := range actorNames {
+		br.registerBlockActorLocked(actorName, actorID)
 	}
 }
 
@@ -522,11 +536,8 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 		if emitter, ok := b.(lightEmitter); ok {
 			info.setLight(emitter.LightEmissionLevel())
 		}
-		if nbter, ok := b.(NBTer); ok {
+		if _, ok := b.(NBTer); ok {
 			info.set(blockFlagNBT)
-			if id, ok := nbter.EncodeNBT()["id"].(string); ok && id != "" {
-				br.registerBlockActorLocked(name, id)
-			}
 		}
 		if _, ok := b.(RandomTicker); ok {
 			info.set(blockFlagRandomTick)
