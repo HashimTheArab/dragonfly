@@ -15,6 +15,7 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/sound"
 	"github.com/go-gl/mathgl/mgl64"
+	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
 const (
@@ -75,6 +76,9 @@ func NewShulkerBox() ShulkerBox {
 
 // ContainerSize returns the number of slots in a shulker box.
 func (ShulkerBox) ContainerSize() int { return 27 }
+
+// ContainerSourceID returns the inventory request source of a shulker box.
+func (ShulkerBox) ContainerSourceID() byte { return protocol.ContainerShulkerBox }
 
 // canStoreInShulkerBox rejects nested shulker boxes.
 func canStoreInShulkerBox(s item.Stack, _ int) bool {
@@ -306,4 +310,35 @@ func allShulkerBoxes() (boxes []world.Block) {
 		boxes = append(boxes, ShulkerBox{Colour: c})
 	}
 	return boxes
+}
+
+// ShulkerBoxNames returns the canonical block names of the registered shulker
+// variants, including the undyed variant.
+func ShulkerBoxNames() []string {
+	boxes := allShulkerBoxes()
+	names := make([]string, 0, len(boxes))
+	for _, box := range boxes {
+		name, _ := box.EncodeBlock()
+		names = append(names, name)
+	}
+	return names
+}
+
+// IsShulkerBoxName reports whether name resolves to a registered ShulkerBox.
+// Unqualified names use the minecraft namespace. The legacy shulker_box name
+// refers to the undyed variant; custom identifiers need a registered native
+// shulker type rather than a matching suffix.
+func IsShulkerBoxName(name string) bool {
+	if !strings.Contains(name, ":") {
+		name = "minecraft:" + name
+	}
+	if name == "minecraft:shulker_box" {
+		name, _ = (ShulkerBox{}).EncodeItem()
+	}
+	it, ok := world.ItemByName(name, 0)
+	if !ok {
+		return false
+	}
+	_, ok = it.(ShulkerBox)
+	return ok
 }

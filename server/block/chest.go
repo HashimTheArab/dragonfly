@@ -9,6 +9,7 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/sound"
 	"github.com/go-gl/mathgl/mgl64"
+	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"strings"
 	"sync"
 	"time"
@@ -64,6 +65,9 @@ func (c Chest) ContainerSize() int {
 	}
 	return 27
 }
+
+// ContainerSourceID returns the inventory request source of a chest.
+func (Chest) ContainerSourceID() byte { return protocol.ContainerLevelEntity }
 
 // Inventory returns the inventory of the chest. The size of the inventory will be 27 or 54, depending on
 // whether the chest is single or double.
