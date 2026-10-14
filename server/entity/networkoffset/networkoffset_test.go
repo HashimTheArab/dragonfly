@@ -10,7 +10,7 @@ func TestPlayerUsesPoseSpecificOffset(t *testing.T) {
 		want float64
 	}{
 		{name: "standing", want: 1.62001},
-		{name: "sneaking", pose: PlayerPose{Sneaking: true}, want: 1.27001},
+		{name: "sneaking keeps the movement offset", pose: PlayerPose{Sneaking: true}, want: 1.62001},
 		{name: "swimming", pose: PlayerPose{Swimming: true}, want: 0.4},
 		{name: "crawling", pose: PlayerPose{Crawling: true}, want: 0.4},
 		{name: "gliding", pose: PlayerPose{Gliding: true}, want: 0.4},
