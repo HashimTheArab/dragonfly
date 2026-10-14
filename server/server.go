@@ -16,8 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/df-mc/dragonfly/server/internal/blockinternal"
-	"github.com/df-mc/dragonfly/server/internal/iteminternal"
+	"github.com/df-mc/dragonfly/server/customentry"
 	"github.com/df-mc/dragonfly/server/internal/sliceutil"
 	_ "github.com/df-mc/dragonfly/server/item" // Imported for maintaining correct initialisation order.
 	"github.com/df-mc/dragonfly/server/player"
@@ -401,38 +400,7 @@ func (srv *Server) makeBlockEntries() {
 	}
 
 	for i, b := range custom {
-		srv.customBlocks = append(srv.customBlocks, CustomBlockEntry(b, 10000+int32(i)))
-	}
-}
-
-// CustomItemEntry creates the protocol entry sent to a client for it. The runtimeID must
-// be unique among the item entries in the same registry.
-//
-// Items that are also custom blocks are placed by the block they encode, so they carry no
-// item components of their own and use ItemEntryVersionNone.
-func CustomItemEntry(it world.CustomItem, runtimeID int16) protocol.ItemEntry {
-	name, _ := it.EncodeItem()
-	_, isCustomBlock := it.(world.CustomBlock)
-	version := int32(protocol.ItemEntryVersionDataDriven)
-	if isCustomBlock {
-		version = protocol.ItemEntryVersionNone
-	}
-	return protocol.ItemEntry{
-		Name:           name,
-		ComponentBased: !isCustomBlock,
-		RuntimeID:      runtimeID,
-		Version:        version,
-		Data:           iteminternal.Components(it),
-	}
-}
-
-// CustomBlockEntry creates the protocol entry sent to a client for b. The
-// blockID must be unique among the custom block entries in the same palette.
-func CustomBlockEntry(b world.CustomBlock, blockID int32) protocol.BlockEntry {
-	name, _ := b.EncodeBlock()
-	return protocol.BlockEntry{
-		Name:       name,
-		Properties: blockinternal.Components(name, b, blockID),
+		srv.customBlocks = append(srv.customBlocks, customentry.Block(b, 10000+int32(i)))
 	}
 }
 
@@ -445,7 +413,7 @@ func (srv *Server) makeItemComponents() {
 
 	for _, it := range custom {
 		rid, _, _ := world.ItemRuntimeID(it)
-		srv.customItems = append(srv.customItems, CustomItemEntry(it, int16(rid)))
+		srv.customItems = append(srv.customItems, customentry.Item(it, int16(rid)))
 	}
 }
 
