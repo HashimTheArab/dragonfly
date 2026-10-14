@@ -72,18 +72,9 @@ func (s *Session) subChunkEntry(
 	offset protocol.SubChunkOffset, ind int16, col *world.Column, heightMaps chunk.SubChunkHeightMaps,
 	transaction map[uint64]struct{},
 ) protocol.SubChunkEntry {
-	subMapType, subMapData := heightMaps.At(ind)
-
 	sub := col.Sub()[ind]
 	if sub.Empty() {
-		return protocol.SubChunkEntry{
-			Result:              protocol.SubChunkResultSuccessAllAir,
-			HeightMapType:       subMapType,
-			HeightMapData:       subMapData,
-			RenderHeightMapType: subMapType,
-			RenderHeightMapData: subMapData,
-			Offset:              offset,
-		}
+		return heightMaps.Entry(ind, offset, nil, nil)
 	}
 
 	serialisedSubChunk := chunk.EncodeSubChunk(col.Chunk, chunk.NetworkEncoding, int(ind))
@@ -99,15 +90,7 @@ func (s *Session) subChunkEntry(
 		s.conf.Log.Error("encode sub-chunk block entities", "ind", ind, "err", err)
 	}
 
-	entry := protocol.SubChunkEntry{
-		Result:              protocol.SubChunkResultSuccess,
-		RawPayload:          protocol.Option(append(serialisedSubChunk, blockEntityData...)),
-		HeightMapType:       subMapType,
-		HeightMapData:       subMapData,
-		RenderHeightMapType: subMapType,
-		RenderHeightMapData: subMapData,
-		Offset:              offset,
-	}
+	entry := heightMaps.Entry(ind, offset, serialisedSubChunk, blockEntityData)
 	if s.conn.ClientCacheEnabled() {
 		if hash := xxhash.Sum64(serialisedSubChunk); s.trackBlob(hash, serialisedSubChunk) {
 			transaction[hash] = struct{}{}
