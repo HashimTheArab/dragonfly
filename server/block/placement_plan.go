@@ -92,6 +92,9 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, user Place
 			offsets = []mgl64.Vec3{hit.Position().Sub(clicked.Vec3())}
 		}
 		for _, offset := range offsets {
+			// Bedrock click offsets travel as float32. Predict from the value
+			// the server receives, including slab half-height boundaries.
+			offset = mgl64.Vec3{float64(float32(offset[0])), float64(float32(offset[1])), float64(float32(offset[2]))}
 			hit := clicked.Vec3().Add(offset)
 			if opts.EyePosition.Sub(hit).LenSqr() > opts.Reach*opts.Reach || !placementVisible(src, opts.EyePosition, hit, clicked) {
 				continue

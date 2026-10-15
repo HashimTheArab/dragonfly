@@ -273,3 +273,17 @@ func TestBlock_PlanPlacementFollowsPublishedFacingAfterMovement(t *testing.T) {
 		t.Fatal("published facing crossed obstructed terrain")
 	}
 }
+
+func TestBlock_PlanPlacementFacingUsesWireClickPrecision(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceWest): Stone{}})
+	user := placementTestUser{pos: mgl64.Vec3{2.5, 64, .5}, rot: cube.Rotation{90, math.Atan2(1.62-.50000001, 2.5) * 180 / math.Pi}}
+	opts := PlacementPlanOptions{EyePosition: user.pos.Add(mgl64.Vec3{0, 1.62, 0}), Reach: 5, RequireFacing: true, Faces: []cube.Face{cube.FaceEast}}
+	slab := Slab{Block: Stone{}}
+	plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, slab, slab, opts)
+	if !ok || plan.Offset[1] != .5 {
+		t.Fatalf("wire-rounded slab click not planned: %v %v", ok, plan.Offset)
+	}
+	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: slab})
+}
