@@ -27,6 +27,10 @@ type PlacementPlanOptions struct {
 	// Faces limits clicked support faces. Nil tries all faces in the normal
 	// support-search order. An empty non-nil slice allows no placement.
 	Faces []cube.Face
+	// RequireFacing restricts the click to the ray from EyePosition along
+	// user.Rotation. The exact model hit supplies the click offset, so a
+	// moving user need not keep aiming at a sampled face centre.
+	RequireFacing bool
 	// Expected returns the exact primary block allowed at each written cell.
 	// Nil permits only the requested target. It may restrict a multi-block
 	// placement to a caller's selected structure or permitted search area.
@@ -74,7 +78,20 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, user Place
 		if !loaded || !CanClickToPlace(support) {
 			continue
 		}
-		for _, offset := range placementClickOffsets(face) {
+		offsets := placementClickOffsets(face)
+		if opts.RequireFacing {
+			end := opts.EyePosition.Add(user.Rotation().Vec3().Mul(opts.Reach))
+			if !trace.ValidBlockRay(src.Range(), opts.EyePosition, end) {
+				return PlacementPlan{}, false
+			}
+			view := &placementVisibilitySource{PlacementSource: src, known: true}
+			hit, ok := trace.BlockIntercept(clicked, view, support, opts.EyePosition, end)
+			if !ok || !view.known || hit.Face() != face {
+				continue
+			}
+			offsets = []mgl64.Vec3{hit.Position().Sub(clicked.Vec3())}
+		}
+		for _, offset := range offsets {
 			hit := clicked.Vec3().Add(offset)
 			if opts.EyePosition.Sub(hit).LenSqr() > opts.Reach*opts.Reach || !placementVisible(src, opts.EyePosition, hit, clicked) {
 				continue

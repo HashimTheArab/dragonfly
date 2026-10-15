@@ -1,6 +1,7 @@
 package block
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -234,5 +235,41 @@ func TestBlock_NormaliseLayerBlock(t *testing.T) {
 				t.Fatalf("normalised = %#v, %v; want %#v, %v", got, valid, test.want, test.valid)
 			}
 		})
+	}
+}
+
+func TestBlock_PlanPlacementFollowsPublishedFacingAfterMovement(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
+	eye := mgl64.Vec3{.5, 65.62, 2.5}
+	direction := target.Side(cube.FaceDown).Vec3().Add(mgl64.Vec3{.5, 1, .5}).Sub(eye)
+	rotation := cube.Rotation{180, math.Atan2(-direction[1], 2) * 180 / math.Pi}
+	for _, movement := range []float64{0, .1, .22, .6} {
+		t.Run(fmt.Sprint(movement), func(t *testing.T) {
+			user := placementTestUser{pos: mgl64.Vec3{.5 + movement, 64, 2.5}, rot: rotation}
+			opts := PlacementPlanOptions{EyePosition: eye.Add(mgl64.Vec3{movement, 0, 0}), Reach: 5, RequireFacing: true, Faces: []cube.Face{cube.FaceUp}}
+			plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts)
+			if movement > .5 {
+				if ok {
+					t.Fatal("accepted a ray that missed the support")
+				}
+				return
+			}
+			if !ok {
+				t.Fatal("moving along a still-valid face ray rejected placement")
+			}
+			if math.Abs(plan.Offset[0]-(.5+movement)) > 1e-6 || plan.Face != cube.FaceUp {
+				t.Fatalf("ray click=%v/%v", plan.Offset, plan.Face)
+			}
+			assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: Stone{}})
+		})
+	}
+	// An obstruction must not become a new click target for this placement.
+	src.blocks[cube.Pos{0, 64, 1}] = Stone{}
+	user := placementTestUser{pos: mgl64.Vec3{.5, 64, 2.5}, rot: rotation}
+	opts := PlacementPlanOptions{EyePosition: eye, Reach: 5, RequireFacing: true, Faces: []cube.Face{cube.FaceUp}}
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts); ok {
+		t.Fatal("published facing crossed obstructed terrain")
 	}
 }
