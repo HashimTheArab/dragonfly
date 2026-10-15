@@ -124,7 +124,7 @@ func (c *MovementComputer) CheckCollision(tx *world.Tx, e world.Entity, pos, vel
 
 	// Entities only ever have a single bounding box.
 	entityBBox := e.H().Type().BBox(e).Translate(pos)
-	blocks := blockBBoxsAround(tx, entityBBox.Extend(vel))
+	blocks := BlockBBoxesAround(tx, entityBBox.Extend(vel))
 
 	if !mgl64.FloatEqualThreshold(deltaY, 0, epsilon) {
 		// First we move the entity BBox on the Y axis.
@@ -168,9 +168,10 @@ func (c *MovementComputer) CheckCollision(tx *world.Tx, e world.Entity, pos, vel
 	return mgl64.Vec3{deltaX, deltaY, deltaZ}, vel
 }
 
-// blockBBoxsAround returns all blocks around the entity passed, using the BBox passed to make a prediction of
-// what blocks need to have their BBox returned.
-func blockBBoxsAround(tx *world.Tx, box cube.BBox) []cube.BBox {
+// BlockBBoxesAround returns world-space block collision boxes around box, with
+// a quarter-block margin. The source owns terrain availability and consistency.
+// Coordinates retain float64 precision through the block model and translation.
+func BlockBBoxesAround(src world.BlockSource, box cube.BBox) []cube.BBox {
 	grown := box.Grow(0.25)
 	min, max := grown.Min(), grown.Max()
 	minX, minY, minZ := int(math.Floor(min[0])), int(math.Floor(min[1])), int(math.Floor(min[2]))
@@ -187,7 +188,7 @@ func blockBBoxsAround(tx *world.Tx, box cube.BBox) []cube.BBox {
 		for x := minX; x < maxX; x++ {
 			for z := minZ; z < maxZ; z++ {
 				pos := cube.Pos{x, y, z}
-				boxes := tx.Block(pos).Model().BBox(pos, tx)
+				boxes := src.Block(pos).Model().BBox(pos, src)
 				if len(boxes) != 0 && blockBBoxs == nil {
 					blockBBoxs = make([]cube.BBox, 0, predicted)
 				}

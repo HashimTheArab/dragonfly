@@ -1,6 +1,7 @@
 package block
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -8,6 +9,130 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
 )
+
+func TestBlock_PredictedBlockAt(t *testing.T) {
+	t.Parallel()
+
+	var (
+		pos          = cube.Pos{4, 64, 7}
+		other        = pos.Side(cube.FaceEast)
+		water        = Water{Still: true, Depth: 8}
+		flowingWater = Water{Depth: 4}
+	)
+	interleaved := []PredictedBlockChange{
+		{Pos: pos, Block: Stone{}},
+		{Pos: other, Block: water, Layer: 1},
+		{Pos: pos, Block: water, Layer: 1},
+		{Pos: pos, Block: Dirt{}},
+		{Pos: pos, Block: flowingWater, Layer: 1},
+		{Pos: other, Block: Obsidian{}},
+		{Pos: pos, Block: Cobblestone{}},
+		{Pos: other, Block: flowingWater, Layer: 1},
+	}
+	tests := []struct {
+		name    string
+		changes []PredictedBlockChange
+		pos     cube.Pos
+		layer   uint8
+		want    world.Block
+		wantOK  bool
+	}{
+		{
+			name: "last primary write wins",
+			changes: []PredictedBlockChange{
+				{Pos: pos, Block: Stone{}},
+				{Pos: pos, Block: Dirt{}},
+				{Pos: pos, Block: Cobblestone{}},
+			},
+			pos: pos, want: Cobblestone{}, wantOK: true,
+		},
+		{
+			name: "last secondary write wins",
+			changes: []PredictedBlockChange{
+				{Pos: pos, Block: water, Layer: 1},
+				{Pos: pos, Block: flowingWater, Layer: 1},
+			},
+			pos: pos, layer: 1, want: flowingWater, wantOK: true,
+		},
+		{
+			name:    "primary ignores interleaved positions and layers",
+			changes: interleaved,
+			pos:     pos, want: Cobblestone{}, wantOK: true,
+		},
+		{
+			name:    "secondary ignores interleaved positions and layers",
+			changes: interleaved,
+			pos:     pos, layer: 1, want: flowingWater, wantOK: true,
+		},
+		{
+			name: "explicit primary air clear",
+			changes: []PredictedBlockChange{
+				{Pos: pos, Block: Stone{}},
+				{Pos: pos, Block: Air{}},
+				{Pos: pos, Block: water, Layer: 1},
+			},
+			pos: pos, want: Air{}, wantOK: true,
+		},
+		{
+			name: "explicit secondary air clear",
+			changes: []PredictedBlockChange{
+				{Pos: pos, Block: water, Layer: 1},
+				{Pos: pos, Block: Air{}, Layer: 1},
+				{Pos: pos, Block: Stone{}},
+			},
+			pos: pos, layer: 1, want: Air{}, wantOK: true,
+		},
+		{
+			name: "matched nil block",
+			changes: []PredictedBlockChange{
+				{Pos: pos, Block: Stone{}},
+				{Pos: pos, Block: nil},
+			},
+			pos: pos, wantOK: true,
+		},
+		{
+			name:    "no matching position",
+			changes: interleaved,
+			pos:     pos.Side(cube.FaceWest),
+		},
+		{
+			name:    "no matching layer",
+			changes: interleaved,
+			pos:     pos, layer: 2,
+		},
+		{
+			name:    "secondary write does not match primary",
+			changes: []PredictedBlockChange{{Pos: pos, Block: water, Layer: 1}},
+			pos:     pos,
+		},
+		{
+			name:    "primary write does not match secondary",
+			changes: []PredictedBlockChange{{Pos: pos, Block: Stone{}}},
+			pos:     pos, layer: 1,
+		},
+		{
+			name:    "empty input",
+			changes: []PredictedBlockChange{},
+			pos:     pos,
+		},
+		{
+			name: "nil input",
+			pos:  pos,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			before := slices.Clone(test.changes)
+			got, ok := PredictedBlockAt(test.changes, test.pos, test.layer)
+			if got != test.want || ok != test.wantOK {
+				t.Fatalf("PredictedBlockAt(%#v, %v, %d) = %#v, %v; want %#v, %v", test.changes, test.pos, test.layer, got, ok, test.want, test.wantOK)
+			}
+			if !slices.Equal(test.changes, before) {
+				t.Fatalf("changes modified: got %#v, want %#v", test.changes, before)
+			}
+		})
+	}
+}
 
 func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 	clicked := cube.Pos{4, 64, 7}

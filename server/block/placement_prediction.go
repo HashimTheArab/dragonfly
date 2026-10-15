@@ -32,6 +32,20 @@ type PredictedBlockChange struct {
 	Layer uint8
 }
 
+// PredictedBlockAt returns the last block written to pos on layer in the ordered
+// changes. The bool reports whether a matching write exists, even if its block
+// is nil or Air. If no write matches, it returns nil, false. It reads changes
+// without modifying them or consulting world state.
+func PredictedBlockAt(changes []PredictedBlockChange, pos cube.Pos, layer uint8) (world.Block, bool) {
+	for i := len(changes) - 1; i >= 0; i-- {
+		change := changes[i]
+		if change.Pos == pos && change.Layer == layer {
+			return change.Block, true
+		}
+	}
+	return nil, false
+}
+
 // PredictPlacement runs placed's actual placement behaviour against src and
 // returns its block writes in order. The bool reports whether every world and
 // player-state query made by the placement rule was known. Running the
@@ -103,7 +117,7 @@ func (v *placementView) Range() cube.Range          { return v.src.Range() }
 func (v *placementView) Dimension() world.Dimension { return v.src.Dimension() }
 
 func (v *placementView) Block(pos cube.Pos) world.Block {
-	if b, ok := v.changedBlock(pos, 0); ok {
+	if b, ok := PredictedBlockAt(v.changes, pos, 0); ok {
 		return b
 	}
 	b, ok := v.src.BlockLoaded(pos)
@@ -115,7 +129,7 @@ func (v *placementView) Block(pos cube.Pos) world.Block {
 }
 
 func (v *placementView) BlockLoaded(pos cube.Pos) (world.Block, bool) {
-	if b, ok := v.changedBlock(pos, 0); ok {
+	if b, ok := PredictedBlockAt(v.changes, pos, 0); ok {
 		return b, true
 	}
 	b, ok := v.src.BlockLoaded(pos)
@@ -129,7 +143,7 @@ func (v *placementView) Liquid(pos cube.Pos) (world.Liquid, bool) {
 	if liquid, ok := v.Block(pos).(world.Liquid); ok {
 		return liquid, true
 	}
-	if b, ok := v.changedBlock(pos, 1); ok {
+	if b, ok := PredictedBlockAt(v.changes, pos, 1); ok {
 		liquid, liquidOK := b.(world.Liquid)
 		return liquid, liquidOK
 	}
@@ -216,7 +230,7 @@ func (v *placementView) SetLiquid(pos cube.Pos, liquid world.Liquid) {
 }
 
 func (v *placementView) secondaryLiquid(pos cube.Pos, primary world.Block) (world.Liquid, bool) {
-	if b, ok := v.changedBlock(pos, 1); ok {
+	if b, ok := PredictedBlockAt(v.changes, pos, 1); ok {
 		liquid, liquidOK := b.(world.Liquid)
 		return liquid, liquidOK
 	}
@@ -243,16 +257,6 @@ func (v *placementView) setPrimaryBlock(pos cube.Pos, b world.Block) {
 func (v *placementView) setSecondaryLiquid(pos cube.Pos, liquid world.Liquid) {
 	b, _ := NormaliseLayerBlock(liquid, 1)
 	v.changes = append(v.changes, PredictedBlockChange{Pos: pos, Block: b, Layer: 1})
-}
-
-func (v *placementView) changedBlock(pos cube.Pos, layer uint8) (world.Block, bool) {
-	for i := len(v.changes) - 1; i >= 0; i-- {
-		change := v.changes[i]
-		if change.Pos == pos && change.Layer == layer {
-			return change.Block, true
-		}
-	}
-	return nil, false
 }
 
 type placementUser struct {

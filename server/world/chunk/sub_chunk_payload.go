@@ -51,6 +51,32 @@ func (m SubChunkHeightMaps) At(index int16) (byte, protocol.Optional[protocol.He
 	return protocol.HeightMapDataHasData, protocol.Option(heightMap)
 }
 
+// Entry builds a non-cache sub-chunk response with the prepared surface and render
+// heights. index must identify a sub-chunk in the unchanged Chunk used to prepare
+// m. terrain must already use the client's network palette, and blockEntityData
+// must contain the encoded block entities for that band. Empty bands carry no
+// payload; otherwise the returned payload owns a copy of both byte slices.
+func (m SubChunkHeightMaps) Entry(index int16, offset protocol.SubChunkOffset, terrain, blockEntityData []byte) protocol.SubChunkEntry {
+	mapType, heights := m.At(index)
+	entry := protocol.SubChunkEntry{
+		Offset:              offset,
+		Result:              protocol.SubChunkResultSuccess,
+		HeightMapType:       mapType,
+		HeightMapData:       heights,
+		RenderHeightMapType: mapType,
+		RenderHeightMapData: heights,
+	}
+	if m.c.Sub()[index].Empty() {
+		entry.Result = protocol.SubChunkResultSuccessAllAir
+		return entry
+	}
+	raw := make([]byte, 0, len(terrain)+len(blockEntityData))
+	raw = append(raw, terrain...)
+	raw = append(raw, blockEntityData...)
+	entry.RawPayload = protocol.Option(raw)
+	return entry
+}
+
 // RequestModeLevelChunk returns the SubChunkCount and SubChunkLimit a LevelChunk carries to
 // announce a column without its terrain, which is what prompts the client to request it a
 // sub-chunk at a time. Protocol 2168 constrains SubChunkCount to 0..64, so the limit alone

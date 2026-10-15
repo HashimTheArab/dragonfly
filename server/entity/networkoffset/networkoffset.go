@@ -5,7 +5,6 @@ import "github.com/df-mc/dragonfly/server/entity"
 
 const (
 	playerStanding   = 1.62001
-	playerSneaking   = 1.27001
 	playerHorizontal = 0.4
 	playerSleeping   = 0.2
 	// The Bedrock wire offset is 0.5. Some server implementations expose a
@@ -14,7 +13,7 @@ const (
 	boat     = 0.375
 )
 
-// PlayerPose contains the player states that change the network position offset.
+// PlayerPose describes the player's pose when encoding movement positions.
 type PlayerPose struct {
 	Sleeping bool
 	Swimming bool
@@ -23,15 +22,14 @@ type PlayerPose struct {
 	Sneaking bool
 }
 
-// Player returns the network offset for a player's current pose.
+// Player returns the network offset for a player's current pose. Sneaking changes
+// the camera eye height, but retains the standing movement-packet offset.
 func Player(pose PlayerPose) float64 {
 	switch {
 	case pose.Sleeping:
 		return playerSleeping
 	case pose.Swimming || pose.Crawling || pose.Gliding:
 		return playerHorizontal
-	case pose.Sneaking:
-		return playerSneaking
 	default:
 		return playerStanding
 	}
