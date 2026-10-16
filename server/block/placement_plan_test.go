@@ -1,11 +1,11 @@
 package block
 
 import (
-	"fmt"
 	"math"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/block/cube/trace"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
@@ -14,7 +14,7 @@ import (
 func TestBlock_PlanPlacementReachAndTerrain(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}
-	user := placementTestUser{pos: mgl64.Vec3{0.5, 64, 2.5}}
+	user := PlacementPose{Position: mgl64.Vec3{0.5, 64, 2.5}, EyeHeight: 1.62}
 	cases := []struct {
 		name   string
 		edit   func(*placementTestSource, *PlacementPlanOptions)
@@ -38,7 +38,6 @@ func TestBlock_PlanPlacementReachAndTerrain(t *testing.T) {
 		{name: "blocked view", edit: func(src *placementTestSource, _ *PlacementPlanOptions) { src.blocks[cube.Pos{0, 64, 1}] = Stone{} }},
 		{name: "unknown view", edit: func(src *placementTestSource, _ *PlacementPlanOptions) { src.unknown[cube.Pos{0, 64, 1}] = true }},
 		{name: "too far", edit: func(_ *placementTestSource, opts *PlacementPlanOptions) { opts.Reach = 1 }},
-		{name: "nonfinite eye", edit: func(_ *placementTestSource, opts *PlacementPlanOptions) { opts.EyePosition[0] = math.NaN() }},
 		{name: "invalid reach", edit: func(_ *placementTestSource, opts *PlacementPlanOptions) { opts.Reach = math.Inf(1) }},
 		{name: "caller reservation", edit: func(_ *placementTestSource, opts *PlacementPlanOptions) {
 			opts.Accept = func([]PredictedBlockChange) bool { return false }
@@ -48,7 +47,7 @@ func TestBlock_PlanPlacementReachAndTerrain(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
-			opts := PlacementPlanOptions{EyePosition: user.pos.Add(mgl64.Vec3{0, 1.62, 0}), Reach: 5, Faces: []cube.Face{cube.FaceUp}}
+			opts := PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceUp}}
 			if test.edit != nil {
 				test.edit(src, &opts)
 			}
@@ -66,11 +65,21 @@ func TestBlock_PlanPlacementReachAndTerrain(t *testing.T) {
 	}
 }
 
+func TestBlock_PlanPlacementRejectsNonFiniteEye(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
+	user := PlacementPose{Position: mgl64.Vec3{math.NaN(), 64, 2.5}, EyeHeight: 1.62}
+	if _, placed := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, PlacementPlanOptions{Reach: 5}); placed {
+		t.Fatal("planned from a non-finite eye")
+	}
+}
+
 func TestBlock_PlanPlacementExactStatesAndYaw(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}
-	user := placementTestUser{pos: mgl64.Vec3{2.5, 64, 2.5}, rot: cube.Rotation{0, 0}}
-	opts := PlacementPlanOptions{EyePosition: user.pos.Add(mgl64.Vec3{0, 1.62, 0}), Reach: 5, Faces: []cube.Face{cube.FaceEast}}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 64, 2.5}, EyeHeight: 1.62, Rotation: cube.Rotation{0, 0}}
+	opts := PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceEast}}
 	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceWest): Stone{}})
 	for _, top := range []bool{false, true} {
 		t.Run(map[bool]string{false: "bottom slab", true: "top slab"}[top], func(t *testing.T) {
@@ -87,9 +96,15 @@ func TestBlock_PlanPlacementExactStatesAndYaw(t *testing.T) {
 	}
 	opts.Faces = []cube.Face{cube.FaceUp}
 	src = newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
-	stairs := Stairs{Block: Stone{}, Facing: user.rot.Direction()}
-	if _, placed := PlanPlacement(src, world.DefaultBlockRegistry, user, target, stairs, Stairs{Block: Stone{}}, opts); !placed {
-		t.Fatal("no current-yaw stair plan")
+	// The aim toward the support's top face from the north-east sets the stair facing.
+	aimed := cube.Rotation{135, 0}.Direction()
+	stairs := Stairs{Block: Stone{}, Facing: aimed}
+	plan, placed := PlanPlacement(src, world.DefaultBlockRegistry, user, target, stairs, Stairs{Block: Stone{}}, opts)
+	if !placed || plan.Rotation.Direction() != aimed {
+		t.Fatalf("no aimed-yaw stair plan: %v %v", placed, plan.Rotation)
+	}
+	if _, placed := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stairs{Block: Stone{}, Facing: aimed.Opposite()}, Stairs{Block: Stone{}}, opts); placed {
+		t.Fatal("accepted a stair facing away from the aim")
 	}
 	opts.RequireYawInvariant = true
 	if _, placed := PlanPlacement(src, world.DefaultBlockRegistry, user, target, stairs, Stairs{Block: Stone{}}, opts); placed {
@@ -103,7 +118,7 @@ func TestBlock_PlanPlacementExactStatesAndYaw(t *testing.T) {
 func TestBlock_PlanPlacementActorRules(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}
-	user := placementTestUser{pos: mgl64.Vec3{0.5, 64, 2.5}}
+	user := PlacementPose{Position: mgl64.Vec3{0.5, 64, 2.5}, EyeHeight: 1.62}
 	for _, test := range []struct {
 		typeName string
 		placed   bool
@@ -118,7 +133,7 @@ func TestBlock_PlanPlacementActorRules(t *testing.T) {
 		t.Run(test.typeName, func(t *testing.T) {
 			src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
 			opts := PlacementPlanOptions{
-				EyePosition: user.pos.Add(mgl64.Vec3{0, 1.62, 0}), Reach: 5,
+				Reach:  5,
 				Actors: []world.PlacementActor{{Type: test.typeName, Bounds: cube.Box(0.1, 64, 0.1, 0.9, 65.8, 0.9)}},
 			}
 			if _, placed := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts); placed != test.placed {
@@ -131,8 +146,8 @@ func TestBlock_PlanPlacementActorRules(t *testing.T) {
 func TestBlock_PlanPlacementPreservesIgnoreBBox(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}
-	user := placementTestUser{pos: mgl64.Vec3{0.5, 64, -2.5}, rot: cube.Rotation{0, 0}}
-	bed := Bed{Colour: item.ColourWhite(), Facing: user.rot.Direction()}
+	user := PlacementPose{Position: mgl64.Vec3{0.5, 64, -2.5}, EyeHeight: 1.62, Rotation: cube.Rotation{0, 0}}
+	bed := Bed{Colour: item.ColourWhite(), Facing: user.Rotation.Direction()}
 	headPos := target.Side(bed.Facing.Face())
 	head := bed
 	head.Head = true
@@ -141,7 +156,7 @@ func TestBlock_PlanPlacementPreservesIgnoreBBox(t *testing.T) {
 		headPos.Side(cube.FaceDown): Stone{},
 	})
 	opts := PlacementPlanOptions{
-		EyePosition: user.pos.Add(mgl64.Vec3{0, 1.62, 0}), Reach: 5, Faces: []cube.Face{cube.FaceUp},
+		Reach: 5, Faces: []cube.Face{cube.FaceUp},
 		Actors: []world.PlacementActor{{Type: "minecraft:player", Bounds: cube.Box(0.1, 64, 0.1, 0.9, 65.8, 0.9)}},
 		Expected: func(pos cube.Pos) (world.Block, bool) {
 			switch pos {
@@ -164,7 +179,7 @@ func TestBlock_PlanPlacementRejectsPartialMultiBlock(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}
 	upper := target.Side(cube.FaceUp)
-	user := placementTestUser{pos: mgl64.Vec3{0.5, 64, 2.5}}
+	user := PlacementPose{Position: mgl64.Vec3{0.5, 64, 2.5}, EyeHeight: 1.62}
 	for _, test := range []struct {
 		name   string
 		edit   func(*placementTestSource, *PlacementPlanOptions)
@@ -182,7 +197,7 @@ func TestBlock_PlanPlacementRejectsPartialMultiBlock(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
 			opts := PlacementPlanOptions{
-				EyePosition: user.pos.Add(mgl64.Vec3{0, 1.62, 0}), Reach: 5, Faces: []cube.Face{cube.FaceUp},
+				Reach: 5, Faces: []cube.Face{cube.FaceUp},
 				Expected: func(pos cube.Pos) (world.Block, bool) { return Stone{}, pos == target || pos == upper },
 			}
 			if test.edit != nil {
@@ -238,52 +253,33 @@ func TestBlock_NormaliseLayerBlock(t *testing.T) {
 	}
 }
 
-func TestBlock_PlanPlacementFollowsPublishedFacingAfterMovement(t *testing.T) {
+func TestBlock_PlanPlacementRotationAimsAtClick(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}
-	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
-	eye := mgl64.Vec3{.5, 65.62, 2.5}
-	direction := target.Side(cube.FaceDown).Vec3().Add(mgl64.Vec3{.5, 1, .5}).Sub(eye)
-	rotation := cube.Rotation{180, math.Atan2(-direction[1], 2) * 180 / math.Pi}
-	for _, movement := range []float64{0, .1, .22, .6} {
-		t.Run(fmt.Sprint(movement), func(t *testing.T) {
-			user := placementTestUser{pos: mgl64.Vec3{.5 + movement, 64, 2.5}, rot: rotation}
-			opts := PlacementPlanOptions{EyePosition: eye.Add(mgl64.Vec3{movement, 0, 0}), Reach: 5, RequireFacing: true, Faces: []cube.Face{cube.FaceUp}}
-			plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts)
-			if movement > .5 {
-				if ok {
-					t.Fatal("accepted a ray that missed the support")
-				}
-				return
+	clicked := target.Side(cube.FaceWest)
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Stone{}})
+	user := PlacementPose{Position: mgl64.Vec3{2.3, 64, .7}, EyeHeight: 1.62}
+	eye := user.Position.Add(mgl64.Vec3{0, user.EyeHeight, 0})
+	for _, slab := range []Slab{{Block: Stone{}}, {Block: Stone{}, Top: true}} {
+		plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, slab, Slab{Block: Stone{}}, PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceEast}})
+		if !ok {
+			t.Fatalf("no plan for %#v", slab)
+		}
+		for i, v := range append(plan.Offset[:], plan.Rotation[:]...) {
+			if v != float64(float32(v)) {
+				t.Fatalf("value %d=%v is not wire precision", i, v)
 			}
-			if !ok {
-				t.Fatal("moving along a still-valid face ray rejected placement")
-			}
-			if math.Abs(plan.Offset[0]-(.5+movement)) > 1e-6 || plan.Face != cube.FaceUp {
-				t.Fatalf("ray click=%v/%v", plan.Offset, plan.Face)
-			}
-			assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: Stone{}})
-		})
+		}
+		hit, ok := trace.BlockIntercept(clicked, src, Stone{}, eye, eye.Add(plan.Rotation.Vec3().Mul(5)))
+		if !ok || hit.Face() != cube.FaceEast || hit.Position().Sub(clicked.Vec3().Add(plan.Offset)).Len() > 1e-5 {
+			t.Fatalf("facing %v does not reach click %v", plan.Rotation, plan.Offset)
+		}
+		assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: slab})
 	}
 	// An obstruction must not become a new click target for this placement.
-	src.blocks[cube.Pos{0, 64, 1}] = Stone{}
-	user := placementTestUser{pos: mgl64.Vec3{.5, 64, 2.5}, rot: rotation}
-	opts := PlacementPlanOptions{EyePosition: eye, Reach: 5, RequireFacing: true, Faces: []cube.Face{cube.FaceUp}}
-	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts); ok {
-		t.Fatal("published facing crossed obstructed terrain")
+	src.blocks[cube.Pos{1, 64, 0}] = Stone{}
+	src.blocks[cube.Pos{1, 65, 0}] = Stone{}
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceEast}}); ok {
+		t.Fatal("aim crossed obstructed terrain")
 	}
-}
-
-func TestBlock_PlanPlacementFacingUsesWireClickPrecision(t *testing.T) {
-	world.DefaultBlockRegistry.Finalize()
-	target := cube.Pos{0, 64, 0}
-	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceWest): Stone{}})
-	user := placementTestUser{pos: mgl64.Vec3{2.5, 64, .5}, rot: cube.Rotation{90, math.Atan2(1.62-.50000001, 2.5) * 180 / math.Pi}}
-	opts := PlacementPlanOptions{EyePosition: user.pos.Add(mgl64.Vec3{0, 1.62, 0}), Reach: 5, RequireFacing: true, Faces: []cube.Face{cube.FaceEast}}
-	slab := Slab{Block: Stone{}}
-	plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, slab, slab, opts)
-	if !ok || plan.Offset[1] != .5 {
-		t.Fatalf("wire-rounded slab click not planned: %v %v", ok, plan.Offset)
-	}
-	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: slab})
 }

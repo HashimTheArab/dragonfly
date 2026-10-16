@@ -136,7 +136,7 @@ func TestBlock_PredictedBlockAt(t *testing.T) {
 
 func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 	clicked := cube.Pos{4, 64, 7}
-	user := placementTestUser{pos: clicked.Vec3Centre(), rot: cube.Rotation{90, 0}}
+	user := PlacementPose{Position: clicked.Vec3Centre(), Rotation: cube.Rotation{90, 0}}
 
 	t.Run("slab merge", func(t *testing.T) {
 		slab := Slab{Block: Stone{}}
@@ -219,8 +219,8 @@ func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 			t.Fatalf("changes = %v, want one", changes)
 		}
 		skull, ok := changes[0].Block.(Skull)
-		if !ok || skull.Attach.Uint8() != StandingAttachment(user.rot.Orientation()).Uint8() {
-			t.Fatalf("change = %#v, want standing orientation %v", changes[0], user.rot.Orientation())
+		if !ok || skull.Attach.Uint8() != StandingAttachment(user.Rotation.Orientation()).Uint8() {
+			t.Fatalf("change = %#v, want standing orientation %v", changes[0], user.Rotation.Orientation())
 		}
 	})
 
@@ -462,7 +462,7 @@ func TestBlock_PredictPlacementUnsupportedUserAccessReturnsUnknown(t *testing.T)
 
 	clicked := cube.Pos{4, 64, 7}
 	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Stone{}})
-	changes, known := PredictPlacement(src, placementTestUser{}, clicked, cube.FaceUp, mgl64.Vec3{}, placementUnsupportedUserBlock{})
+	changes, known := PredictPlacement(src, PlacementPose{}, clicked, cube.FaceUp, mgl64.Vec3{}, placementUnsupportedUserBlock{})
 	if known {
 		t.Fatalf("prediction using unsupported user state was marked known: changes=%v", changes)
 	}
@@ -534,15 +534,7 @@ func (s *placementTestSource) Liquid(pos cube.Pos) (world.Liquid, bool) {
 	return liquid, ok
 }
 
-type placementTestUser struct {
-	pos mgl64.Vec3
-	rot cube.Rotation
-}
-
-func (u placementTestUser) Position() mgl64.Vec3    { return u.pos }
-func (u placementTestUser) Rotation() cube.Rotation { return u.rot }
-
-func predictPlacement(t *testing.T, src PlacementSource, user PlacementUser, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) []PredictedBlockChange {
+func predictPlacement(t *testing.T, src PlacementSource, user PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) []PredictedBlockChange {
 	t.Helper()
 	changes, known := PredictPlacement(src, user, clickedPos, face, clickPos, placed)
 	if !known {

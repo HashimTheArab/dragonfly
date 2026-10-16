@@ -16,11 +16,11 @@ type PlacementSource interface {
 	Dimension() world.Dimension
 }
 
-// PlacementUser exposes player state used by orientation-dependent placement
-// rules.
-type PlacementUser interface {
-	Position() mgl64.Vec3
-	Rotation() cube.Rotation
+// PlacementPose is the player state read by orientation-dependent placement rules.
+type PlacementPose struct {
+	Position  mgl64.Vec3
+	Rotation  cube.Rotation
+	EyeHeight float64
 }
 
 // PredictedBlockChange is a block write produced by placement behaviour.
@@ -58,16 +58,15 @@ func PredictedBlockAt(changes []PredictedBlockChange, pos cube.Pos, layer uint8)
 // click. Most full blocks, such as Cobblestone and Dirt, take the second
 // branch.
 //
-// user may be nil only when the placed block does not consult player position
-// or rotation. Non-block side effects such as sounds, particles and scheduled
-// updates are intentionally discarded.
-func PredictPlacement(src PlacementSource, user PlacementUser, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) (changes []PredictedBlockChange, known bool) {
-	return predictPlacementWithActors(src, user, clickedPos, face, clickPos, placed, nil)
+// Non-block side effects such as sounds, particles and scheduled updates are
+// intentionally discarded.
+func PredictPlacement(src PlacementSource, pose PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) (changes []PredictedBlockChange, known bool) {
+	return predictPlacementWithActors(src, pose, clickedPos, face, clickPos, placed, nil)
 }
 
 // predictPlacementWithActors optionally applies canonical actor obstruction when planning
 // an executable placement, while ordinary prediction remains actor-independent.
-func predictPlacementWithActors(src PlacementSource, user PlacementUser, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block, actors []world.PlacementActor) (changes []PredictedBlockChange, known bool) {
+func predictPlacementWithActors(src PlacementSource, pose PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block, actors []world.PlacementActor) (changes []PredictedBlockChange, known bool) {
 	if src == nil || placed == nil {
 		return nil, false
 	}
@@ -86,7 +85,7 @@ func predictPlacementWithActors(src PlacementSource, user PlacementUser, clicked
 		}
 	}()
 	complete := world.RunBlockTransaction(view, func(tx *world.Tx) {
-		u, ctx := &placementUser{user: user, tx: tx, view: view}, &item.UseContext{}
+		u, ctx := &placementUser{pose: pose, tx: tx, view: view}, &item.UseContext{}
 		if usable, ok := placed.(item.UsableOnBlock); ok {
 			usable.UseOnBlock(clickedPos, face, clickPos, tx, u, ctx)
 			return
@@ -260,7 +259,7 @@ func (v *placementView) setSecondaryLiquid(pos cube.Pos, liquid world.Liquid) {
 }
 
 type placementUser struct {
-	user PlacementUser
+	pose PlacementPose
 	tx   *world.Tx
 	view *placementView
 }
@@ -277,29 +276,11 @@ func (u *placementUser) Close() error {
 	return nil
 }
 
-func (u *placementUser) Position() mgl64.Vec3 {
-	if u.user == nil {
-		u.view.known = false
-		return mgl64.Vec3{}
-	}
-	return u.user.Position()
-}
+func (u *placementUser) Position() mgl64.Vec3    { return u.pose.Position }
+func (u *placementUser) Rotation() cube.Rotation { return u.pose.Rotation }
 
-// EyeHeight preserves the optional eye offset used by vertical placement rules.
-func (u *placementUser) EyeHeight() float64 {
-	if eyed, ok := u.user.(interface{ EyeHeight() float64 }); ok {
-		return eyed.EyeHeight()
-	}
-	return 0
-}
-
-func (u *placementUser) Rotation() cube.Rotation {
-	if u.user == nil {
-		u.view.known = false
-		return cube.Rotation{}
-	}
-	return u.user.Rotation()
-}
+// EyeHeight supplies the eye offset used by vertical placement rules.
+func (u *placementUser) EyeHeight() float64 { return u.pose.EyeHeight }
 
 func (u *placementUser) HeldItems() (item.Stack, item.Stack) {
 	u.unsupported()
