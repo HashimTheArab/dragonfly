@@ -1,7 +1,9 @@
 package session
 
 import (
+	"fmt"
 	"math"
+	"slices"
 
 	"github.com/df-mc/dragonfly/server/cmd"
 	"github.com/go-gl/mathgl/mgl64"
@@ -45,132 +47,147 @@ type translation interface {
 	Params(l language.Tag) []string
 }
 
-// BuildAvailableCommands builds an AvailableCommands packet and the runnable command map for the Source
-// passed. The input map may contain aliases. It returns the AvailableCommands packet and the runnable command map
-// for the commands that the Source can execute.
-func BuildAvailableCommands(
+// CommandSchemaConfig adjusts how AppendAvailableCommands advertises commands.
+type CommandSchemaConfig struct {
+	// SoftEnums names the enums advertised as dynamic enums.
+	SoftEnums map[string]struct{}
+	// Rename maps advertised command names and alias options. Nil keeps them.
+	Rename func(string) string
+}
+
+// AppendAvailableCommands appends the commands src can run to pk with indices into pk's tables and returns
+// the runnable commands by name. Existing entries of pk are never written; an enum requested without options
+// reuses pk's existing enum of that type. On error, such as an index beyond the packed parameter width, pk is
+// unchanged.
+func AppendAvailableCommands(
+	pk *packet.AvailableCommands,
 	commands map[string]cmd.Command,
 	src cmd.Source,
-	softEnums map[string]struct{},
-) (*packet.AvailableCommands, map[string]map[int]cmd.Runnable) {
+	conf CommandSchemaConfig,
+) (map[string]map[int]cmd.Runnable, error) {
+	rename := conf.Rename
+	if rename == nil {
+		rename = func(s string) string { return s }
+	}
+	// Clipping makes every append below copy instead of writing into a backing array shared with pk.
+	out := *pk
+	out.EnumValues, out.Enums = slices.Clip(out.EnumValues), slices.Clip(out.Enums)
+	out.Suffixes, out.DynamicEnums, out.Commands = slices.Clip(out.Suffixes), slices.Clip(out.DynamicEnums), slices.Clip(out.Commands)
+
+	existingEnums := make(map[string]uint32, len(pk.Enums))
+	for i, enum := range pk.Enums {
+		existingEnums[enum.Type] = uint32(i)
+	}
+	enumIndices, valueIndices := map[string]uint32{}, map[string]uint32{}
+	suffixIndices, dynamicEnumIndices := map[string]uint32{}, map[string]uint32{}
+	appendEnum := func(enum commandEnum) uint32 {
+		index := uint32(len(out.Enums))
+		protoEnum := protocol.CommandEnum{Type: enum.Type}
+		for _, opt := range enum.Options {
+			valueIndex, ok := valueIndices[opt]
+			if !ok {
+				valueIndex = uint32(len(out.EnumValues))
+				valueIndices[opt] = valueIndex
+				out.EnumValues = append(out.EnumValues, opt)
+			}
+			protoEnum.ValueIndices = append(protoEnum.ValueIndices, valueIndex)
+		}
+		out.Enums = append(out.Enums, protoEnum)
+		enumIndices[enum.Type] = index
+		return index
+	}
+
 	m := make(map[string]map[int]cmd.Runnable, len(commands))
-
-	pk := &packet.AvailableCommands{}
-
-	var enums []commandEnum
-	enumIndices := map[string]uint32{}
-
-	var dynamicEnums []commandEnum
-	dynamicEnumIndices := map[string]uint32{}
-
-	suffixIndices := map[string]uint32{}
-
 	for alias, c := range commands {
 		if c.Name() != alias {
 			// Don't add duplicate entries for aliases.
 			continue
 		}
-
-		if run := c.Runnables(src); len(run) > 0 {
-			m[alias] = run
-		} else {
+		run := c.Runnables(src)
+		if len(run) == 0 {
 			continue
+		}
+		m[alias] = run
+
+		aliasesIndex := uint32(math.MaxUint32)
+		if aliases := c.Aliases(); len(aliases) > 0 {
+			options := make([]string, len(aliases))
+			for i, a := range aliases {
+				options[i] = rename(a)
+			}
+			aliasesIndex = appendEnum(commandEnum{Type: c.Name() + "Aliases", Options: options})
 		}
 
 		params := c.Params(src)
 		overloads := make([]protocol.CommandOverload, len(params))
-
-		aliasesIndex := uint32(math.MaxUint32)
-		if len(c.Aliases()) > 0 {
-			aliasesIndex = uint32(len(enumIndices))
-			enumIndices[c.Name()+"Aliases"] = aliasesIndex
-			enums = append(enums, commandEnum{Type: c.Name() + "Aliases", Options: c.Aliases()})
-		}
-
 		for i, params := range params {
 			for _, paramInfo := range params {
 				t, enum := valueToParamType(paramInfo, src)
-				suffix := paramInfo.Suffix
-
-				opt := byte(0)
-				if suffix != "" {
-					index, ok := suffixIndices[suffix]
-					if !ok {
-						index = uint32(len(pk.Suffixes))
+				var index uint32
+				if suffix := paramInfo.Suffix; suffix != "" {
+					var ok bool
+					if index, ok = suffixIndices[suffix]; !ok {
+						index = uint32(len(out.Suffixes))
 						suffixIndices[suffix] = index
-						pk.Suffixes = append(pk.Suffixes, suffix)
+						out.Suffixes = append(out.Suffixes, suffix)
 					}
 					t = protocol.CommandArgSuffixed | index
 				} else {
 					t |= protocol.CommandArgValid
 					if len(enum.Options) > 0 || enum.Type != "" {
-						_, dynamic := softEnums[enum.Type]
-						if !dynamic {
-							index, ok := enumIndices[enum.Type]
-							if !ok {
-								index = uint32(len(enums))
-								enumIndices[enum.Type] = index
-								enums = append(enums, enum)
-							}
-							t |= protocol.CommandArgEnum | index
-						} else {
-							index, ok := dynamicEnumIndices[enum.Type]
-							if !ok {
-								index = uint32(len(dynamicEnums))
+						if _, dynamic := conf.SoftEnums[enum.Type]; dynamic {
+							var ok bool
+							if index, ok = dynamicEnumIndices[enum.Type]; !ok {
+								index = uint32(len(out.DynamicEnums))
 								dynamicEnumIndices[enum.Type] = index
-								dynamicEnums = append(dynamicEnums, enum)
+								out.DynamicEnums = append(out.DynamicEnums, protocol.DynamicEnum{Type: enum.Type, Values: enum.Options})
 							}
 							t |= protocol.CommandArgSoftEnum | index
+						} else {
+							var ok bool
+							if index, ok = enumIndices[enum.Type]; !ok {
+								if existing, found := existingEnums[enum.Type]; found && len(enum.Options) == 0 {
+									index = existing
+									enumIndices[enum.Type] = index
+								} else {
+									index = appendEnum(enum)
+								}
+							}
+							t |= protocol.CommandArgEnum | index
 						}
 					}
+				}
+				if index > protocol.CommandArgIndexMask {
+					return nil, fmt.Errorf("command %v: table index %v exceeds the parameter type width", c.Name(), index)
 				}
 				overloads[i].Parameters = append(overloads[i].Parameters, protocol.CommandParameter{
 					Name:     paramInfo.Name,
 					Type:     t,
 					Optional: paramInfo.Optional,
-					Options:  opt,
 				})
 			}
 		}
-		pk.Commands = append(pk.Commands, protocol.Command{
-			Name:            c.Name(),
+		out.Commands = append(out.Commands, protocol.Command{
+			Name:            rename(c.Name()),
 			Description:     c.Description(),
 			AliasesOffset:   aliasesIndex,
 			PermissionLevel: protocol.CommandPermissionLevelAny,
 			Overloads:       overloads,
 		})
 	}
-
-	pk.DynamicEnums = make([]protocol.DynamicEnum, 0, len(dynamicEnums))
-	for _, e := range dynamicEnums {
-		pk.DynamicEnums = append(pk.DynamicEnums, protocol.DynamicEnum{Type: e.Type, Values: e.Options})
-	}
-
-	enumValueIndices := make(map[string]uint32, len(enums)*3)
-	pk.EnumValues = make([]string, 0, len(enumValueIndices))
-
-	pk.Enums = make([]protocol.CommandEnum, 0, len(enums))
-	for _, enum := range enums {
-		protoEnum := protocol.CommandEnum{Type: enum.Type}
-		for _, opt := range enum.Options {
-			index, ok := enumValueIndices[opt]
-			if !ok {
-				index = uint32(len(pk.EnumValues))
-				enumValueIndices[opt] = index
-				pk.EnumValues = append(pk.EnumValues, opt)
-			}
-			protoEnum.ValueIndices = append(protoEnum.ValueIndices, index)
-		}
-		pk.Enums = append(pk.Enums, protoEnum)
-	}
-	return pk, m
+	*pk = out
+	return m, nil
 }
 
 // sendAvailableCommands sends all available commands of the server. Once sent, they will be visible in the
 // /help list and will be auto-completed.
 func (s *Session) sendAvailableCommands(co Controllable, softEnums map[string]struct{}) map[string]map[int]cmd.Runnable {
-	commands := cmd.Commands()
-	pk, m := BuildAvailableCommands(commands, co, softEnums)
+	pk := &packet.AvailableCommands{}
+	m, err := AppendAvailableCommands(pk, cmd.Commands(), co, CommandSchemaConfig{SoftEnums: softEnums})
+	if err != nil {
+		s.conf.Log.Error("build available commands", "err", err)
+		return nil
+	}
 	s.writePacket(pk)
 	return m
 }
