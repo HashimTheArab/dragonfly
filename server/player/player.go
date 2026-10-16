@@ -1811,11 +1811,11 @@ func (p *Player) UseItemOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.Vec
 	case world.Block:
 		// The item IS a block, meaning it is being placed.
 		replacedPos := pos
-		if replaceable, ok := b.(block.Replaceable); !ok || !replaceable.ReplaceableBy(ib) {
+		if !world.CanReplace(b, ib) {
 			// The block clicked was either not replaceable, or not replaceable using the block passed.
 			replacedPos = pos.Side(face)
 		}
-		if replaceable, ok := p.tx.Block(replacedPos).(block.Replaceable); !ok || !replaceable.ReplaceableBy(ib) || replacedPos.OutOfBounds(p.tx.Range()) {
+		if !world.CanReplace(p.tx.Block(replacedPos), ib) || replacedPos.OutOfBounds(p.tx.Range()) {
 			return
 		}
 		if deriver, ok := ib.(world.StateDeriver); ok {
@@ -2133,25 +2133,17 @@ func (p *Player) placeBlock(pos cube.Pos, b world.Block, ignoreBBox bool) bool {
 // If the only entity preventing the block from being placed is the player
 // itself, the second bool returned is true too.
 func (p *Player) obstructedPos(pos cube.Pos, b world.Block) (obstructed, selfOnly bool) {
-	blockBoxes := b.Model().BBox(pos, p.tx)
-	for i, box := range blockBoxes {
-		blockBoxes[i] = box.Translate(pos.Vec3())
-	}
-
 	for e := range p.tx.EntitiesWithin(cube.Box(-3, -3, -3, 3, 3, 3).Translate(pos.Vec3())) {
 		t := e.H().Type()
-		switch t {
-		case entity.ItemType, entity.ArrowType, entity.ExperienceOrbType:
+		actor := world.PlacementActor{Type: t.EncodeEntity(), Bounds: t.BBox(e).Translate(e.Position())}
+		if !world.PlacementObstructed(p.tx, pos, b, actor) {
 			continue
-		default:
-			if cube.AnyIntersections(blockBoxes, t.BBox(e).Translate(e.Position()).Grow(-1e-4)) {
-				obstructed = true
-				if e.H() == p.handle {
-					continue
-				}
-				return true, false
-			}
 		}
+		obstructed = true
+		if e.H() == p.handle {
+			continue
+		}
+		return true, false
 	}
 	return obstructed, true
 }
