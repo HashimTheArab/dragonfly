@@ -2,19 +2,6 @@ package item
 
 import "github.com/df-mc/dragonfly/server/world"
 
-// HasUseBehaviour reports a stack's own use action; add new use contracts here.
-func HasUseBehaviour(s Stack) bool {
-	if s.Empty() {
-		return false
-	}
-	switch s.Item().(type) {
-	case world.Block, UsableOnBlock, Usable, Consumable, Chargeable, Releasable:
-		return true
-	default:
-		return false
-	}
-}
-
 // UseContinuation classifies whether an item's use may continue until a later
 // release. It describes item semantics only, not runtime eligibility such as
 // ammunition, hunger, or game-mode checks.
