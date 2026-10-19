@@ -16,7 +16,6 @@ import (
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/internal/sliceutil"
 	"github.com/df-mc/dragonfly/server/world/chunk"
-	"github.com/df-mc/goleveldb/leveldb"
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/google/uuid"
 )
@@ -1391,7 +1390,7 @@ func (tx *Tx) chunk(pos ChunkPos) *Column {
 func (w *World) loadChunk(pos ChunkPos) (*chunk.Column, error) {
 	column, err := w.conf.Provider.LoadColumn(pos, w.conf.Dim)
 	if err != nil {
-		if !errors.Is(err, leveldb.ErrNotFound) {
+		if !errors.Is(err, ErrColumnNotFound) {
 			return nil, err
 		}
 		ch := chunk.New(w.conf.Blocks, w.Range())
