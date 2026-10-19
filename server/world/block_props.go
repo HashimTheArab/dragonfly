@@ -1,6 +1,6 @@
 package world
 
-import "github.com/bedrock-mc/protocolgen/generated/data/block"
+import "github.com/cinnabar-mc/protocolgen/generated/data/block"
 
 // unknownBlockProperties holds the values used for blocks without an implementation.
 type unknownBlockProperties struct {
