@@ -273,8 +273,8 @@ func TestTranslatePortalPosition(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := translatePortalPosition(tt.pos, tt.source, tt.target); got != tt.want {
-				t.Fatalf("translatePortalPosition(%v, %v, %v) = %v, want %v", tt.pos, tt.source, tt.target, got, tt.want)
+			if got := TranslatePortalPosition(tt.pos, tt.source, tt.target); got != tt.want {
+				t.Fatalf("TranslatePortalPosition(%v, %v, %v) = %v, want %v", tt.pos, tt.source, tt.target, got, tt.want)
 			}
 		})
 	}
