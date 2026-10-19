@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/bedrock-mc/protocolgen/generated/data"
-	sharedblock "github.com/bedrock-mc/protocolgen/generated/data/block"
-	shareditem "github.com/bedrock-mc/protocolgen/generated/data/item"
+	"github.com/cinnabar-mc/protocolgen/generated/data"
+	sharedblock "github.com/cinnabar-mc/protocolgen/generated/data/block"
+	shareditem "github.com/cinnabar-mc/protocolgen/generated/data/item"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
