@@ -1,4 +1,4 @@
-package server
+package customentry
 
 import (
 	"image"
@@ -30,7 +30,7 @@ func (customBlockItem) Properties() customblock.Properties {
 	return customblock.Properties{Cube: true}
 }
 
-func TestCustomItemEntry(t *testing.T) {
+func TestItem(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
 		item           world.CustomItem
@@ -42,7 +42,7 @@ func TestCustomItemEntry(t *testing.T) {
 		{"custom block item", customBlockItem{}, protocol.ItemEntryVersionNone, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			entry := CustomItemEntry(tc.item, 1234)
+			entry := Item(tc.item, 1234)
 			if entry.Name != "test:item" {
 				t.Errorf("name = %q, want test:item", entry.Name)
 			}
