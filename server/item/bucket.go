@@ -183,12 +183,30 @@ type BucketPickupSource interface {
 }
 
 // PickupTarget finds a visible source-liquid face on pos within reach of eye.
-// The ray aims at the cell centre and rejects unavailable terrain, intervening
-// source liquids, and block models in front of the hit, including waterlogged
-// solids. This is a conservative interaction query, not a server-permission check.
+// It tries the centre and each face so a shallow pool's rim cannot hide a
+// reachable top face. Unavailable terrain, intervening sources and block models
+// before the hit are rejected. This conservative query does not check permission.
 func (b Bucket) PickupTarget(pos cube.Pos, src BucketPickupSource, bounds cube.Range, eye mgl64.Vec3, reach float64) (trace.BBoxResult, bool) {
+	centre := pos.Vec3Centre()
+	best := reach * reach
+	var chosen trace.BBoxResult
+	found := false
+	points := []mgl64.Vec3{centre}
+	for _, face := range cube.Faces() {
+		points = append(points, centre.Add(cube.Pos{}.Side(face).Vec3().Mul(.5)))
+	}
+	for _, aim := range points {
+		hit, ok := b.pickupTargetRay(pos, src, bounds, eye, reach, aim)
+		if distance := hit.Position().Sub(eye).LenSqr(); ok && (!found || distance < best) {
+			chosen, best, found = hit, distance, true
+		}
+	}
+	return chosen, found
+}
+
+// pickupTargetRay validates one candidate face ray against the source and terrain.
+func (b Bucket) pickupTargetRay(pos cube.Pos, src BucketPickupSource, bounds cube.Range, eye mgl64.Vec3, reach float64, end mgl64.Vec3) (trace.BBoxResult, bool) {
 	var none trace.BBoxResult
-	end := pos.Vec3Centre()
 	if !(reach > 0) || !trace.ValidBlockSegment(bounds, eye, end) || !src.BlockAvailable(pos) {
 		return none, false
 	}

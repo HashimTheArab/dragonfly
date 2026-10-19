@@ -35,13 +35,15 @@ func (s bucketTerrain) BlockAvailable(pos cube.Pos) bool { return pos != s.missi
 
 func TestBucket_PickupTarget(t *testing.T) {
 	pos := cube.Pos{0, 64, 3}
-	for _, name := range []string{"source", "flowing", "falling", "wall", "waterlogged solid", "unloaded source", "unloaded ray", "out of reach", "filled bucket", "intervening source", "submerged"} {
+	for _, name := range []string{"source", "flowing", "falling", "wall", "waterlogged solid", "unloaded source", "unloaded ray", "out of reach", "filled bucket", "intervening source", "submerged", "basin rim"} {
 		t.Run(name, func(t *testing.T) {
 			src := bucketTerrain{blocks: make(map[cube.Pos]world.Block), liquids: map[cube.Pos]world.Liquid{pos: block.Water{Depth: 8}}, missing: cube.Pos{99, 99, 99}}
 			reach := 4.5
 			eye := mgl64.Vec3{.5, 65.6, .5}
 			bucket := item.Bucket{}
 			switch name {
+			case "basin rim":
+				src.blocks[cube.Pos{0, 64, 2}] = block.Stone{}
 			case "submerged":
 				eye = pos.Vec3Centre()
 			case "flowing":
@@ -64,10 +66,13 @@ func TestBucket_PickupTarget(t *testing.T) {
 				src.liquids[cube.Pos{0, 65, 1}] = block.Water{Depth: 8}
 			}
 			hit, ok := bucket.PickupTarget(pos, src, cube.Range{-64, 319}, eye, reach)
-			if ok != (name == "source" || name == "submerged") {
+			if ok != (name == "source" || name == "submerged" || name == "basin rim") {
 				t.Fatalf("reachable = %v, hit = %v", ok, hit)
 			}
-			if ok && name != "submerged" && (hit.Face() != cube.FaceNorth || hit.Position().Z() != 3) {
+			if ok && name == "basin rim" && hit.Face() != cube.FaceUp {
+				t.Fatalf("basin did not select top face: %v", hit)
+			}
+			if ok && name != "submerged" && name != "basin rim" && (hit.Face() != cube.FaceNorth || hit.Position().Z() != 3) {
 				t.Fatalf("wrong face/hit: %v", hit)
 			}
 		})
