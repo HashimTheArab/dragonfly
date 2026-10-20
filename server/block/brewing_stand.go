@@ -33,7 +33,7 @@ func NewBrewingStand() BrewingStand {
 }
 
 // ContainerSize returns the number of slots in a brewing stand.
-func (BrewingStand) ContainerSize() int { return 5 }
+func (BrewingStand) ContainerSize() int { return BrewingStandFuelSlot + 1 }
 
 // Model ...
 func (b BrewingStand) Model() world.BlockModel {
@@ -48,9 +48,9 @@ func (b BrewingStand) SideClosed(cube.Pos, cube.Pos, *world.Tx) bool {
 // Tick is called to check if the brewing stand should update and start or stop brewing.
 func (b BrewingStand) Tick(_ int64, pos cube.Pos, tx *world.Tx) {
 	// Get each item in the brewing stand. We don't need to validate errors here since we know the bounds of the stand.
-	left, _ := b.inventory.Item(1)
-	middle, _ := b.inventory.Item(2)
-	right, _ := b.inventory.Item(3)
+	left, _ := b.inventory.Item(BrewingStandFirstBottleSlot)
+	middle, _ := b.inventory.Item(BrewingStandFirstBottleSlot + 1)
+	right, _ := b.inventory.Item(BrewingStandFirstBottleSlot + 2)
 
 	// If any of the slots in the inventory got updated, update the appearance of the brewing stand.
 	displayLeft, displayMiddle, displayRight := b.LeftSlot, b.MiddleSlot, b.RightSlot
