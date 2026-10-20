@@ -69,7 +69,7 @@ func NewShulkerBox() ShulkerBox {
 			viewer.ViewSlotChange(slot, after)
 		}
 	})
-	s.inventory.SlotValidatorFunc(canStoreInShulkerBox)
+	s.inventory.SlotValidatorFunc(CanStoreInShulkerBox)
 
 	return s
 }
@@ -80,8 +80,10 @@ func (ShulkerBox) ContainerSize() int { return 27 }
 // ContainerSourceID returns the inventory request source of a shulker box.
 func (ShulkerBox) ContainerSourceID() byte { return protocol.ContainerShulkerBox }
 
-// canStoreInShulkerBox rejects nested shulker boxes.
-func canStoreInShulkerBox(s item.Stack, _ int) bool {
+// CanStoreInShulkerBox reports whether a stack is allowed in a shulker slot.
+// Empty stacks are allowed, but shulker boxes cannot be stored inside each other.
+// It is also the slot validator used by shulker box inventories.
+func CanStoreInShulkerBox(s item.Stack, _ int) bool {
 	if s.Empty() {
 		return true
 	}
