@@ -291,7 +291,7 @@ func (h *ItemStackRequestHandler) handleCreate(a *protocol.CreateStackRequestAct
 
 	h.setItemInSlot(protocol.StackRequestSlotInfo{
 		Container: protocol.FullContainerName{ContainerID: protocol.ContainerCreatedOutput},
-		Slot:      craftingResult,
+		Slot:      CraftingResult,
 	}, res, s, tx)
 	return nil
 }
