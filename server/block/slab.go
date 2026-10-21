@@ -170,3 +170,11 @@ func allSlabs() (b []world.Block) {
 	}
 	return
 }
+
+// PlacementItemCount reports the inventory items represented by this block part.
+func (s Slab) PlacementItemCount() int {
+	if s.Double {
+		return 2
+	}
+	return 1
+}

@@ -103,7 +103,7 @@ type Liquid interface {
 }
 
 // RegisterBlock registers a block type in the DefaultBlockRegistry. Types that
-// only implement BlockActor contribute metadata without replacing block behaviour.
+// only implement BlockActor or Item contribute metadata without replacing block behaviour.
 //
 // This function exists for backwards compatibility and works well for the common "single server per process" setup,
 // where all worlds share the global default registry.

@@ -340,3 +340,11 @@ func supportedFromBelow(pos cube.Pos, tx *world.Tx) bool {
 	below := pos.Side(cube.FaceDown)
 	return tx.Block(below).Model().FaceSolid(below, cube.FaceUp, tx)
 }
+
+// PlacementItemCount reports the inventory items represented by this block part.
+func (b Bed) PlacementItemCount() int {
+	if b.Head {
+		return 0
+	}
+	return 1
+}
