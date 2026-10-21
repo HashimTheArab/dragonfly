@@ -69,6 +69,11 @@ func Perform(block string, input ...world.Item) (output []item.Stack, ok bool) {
 		// Block specific index didn't exist.
 		return nil, false
 	}
+	return performBrewing(blockInd, input...)
+}
+
+// performBrewing applies the same recipe lookup to registered and supplied recipes.
+func performBrewing(blockInd map[string]Recipe, input ...world.Item) (output []item.Stack, ok bool) {
 	r, ok := blockInd[hashItems(input, true)]
 	if !ok {
 		r, ok = blockInd[hashItems(input, false)]

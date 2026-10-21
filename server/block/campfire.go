@@ -117,7 +117,7 @@ func (c Campfire) extinguish(pos cube.Pos, tx *world.Tx) {
 // Activate ...
 func (c Campfire) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.User, ctx *item.UseContext) bool {
 	held, _ := u.HeldItems()
-	if held.Empty() {
+	if !c.CanActivateWith(held) {
 		return false
 	}
 
@@ -127,12 +127,7 @@ func (c Campfire) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.User,
 		return true
 	}
 
-	rawFood, ok := held.Item().(item.Smeltable)
-	if !ok || !rawFood.SmeltInfo().Food {
-		return false
-	}
-
-	if _, ok = tx.Liquid(pos); ok {
+	if _, ok := tx.Liquid(pos); ok {
 		return false
 	}
 
@@ -147,6 +142,27 @@ func (c Campfire) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.User,
 
 			tx.PlaySound(pos.Vec3Centre(), sound.ItemAdd{})
 			tx.SetBlock(pos, c, nil)
+			return true
+		}
+	}
+	return false
+}
+
+// CanActivateWith reports whether the held item can extinguish this campfire or
+// fill a cooking slot. Waterlogging is checked by Activate against the world.
+func (c Campfire) CanActivateWith(held item.Stack) bool {
+	if held.Empty() {
+		return false
+	}
+	if _, ok := held.Item().(item.Shovel); ok && !c.Extinguished {
+		return true
+	}
+	food, ok := held.Item().(item.Smeltable)
+	if !ok || !food.SmeltInfo().Food {
+		return false
+	}
+	for _, it := range c.Items {
+		if it.Item.Empty() {
 			return true
 		}
 	}

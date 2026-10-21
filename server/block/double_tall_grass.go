@@ -85,3 +85,11 @@ func allDoubleTallGrass() (b []world.Block) {
 	}
 	return
 }
+
+// PlacementItemCount reports the inventory items represented by this block part.
+func (d DoubleTallGrass) PlacementItemCount() int {
+	if d.UpperPart {
+		return 0
+	}
+	return 1
+}

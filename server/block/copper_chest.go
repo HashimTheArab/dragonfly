@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	shareditem "github.com/bedrock-mc/protocolgen/generated/data/item"
+	shareditem "github.com/cinnabar-mc/protocolgen/generated/data/item"
 )
 
 // CopperChestNames returns the copper chest oxidation and wax variants from the

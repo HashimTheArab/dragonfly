@@ -129,6 +129,18 @@ func init() {
 	world.RegisterBlock(SmithingTable{})
 	world.RegisterBlock(SmoothBasalt{})
 	world.RegisterBlock(Snow{})
+	for _, b := range allSnowLayers() {
+		world.RegisterBlock(b)
+	}
+	for _, b := range allTurtleEggs() {
+		world.RegisterBlock(b)
+	}
+	for _, b := range allRepeaters() {
+		world.RegisterBlock(b)
+	}
+	for _, b := range allComparators() {
+		world.RegisterBlock(b)
+	}
 	world.RegisterBlock(SoulSand{})
 	world.RegisterBlock(SoulSoil{})
 	world.RegisterBlock(Sponge{Wet: true})

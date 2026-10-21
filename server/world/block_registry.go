@@ -44,7 +44,7 @@ type BlockRegistry interface {
 	// BlockRuntimeID looks up the runtime ID of a previously registered Block.
 	BlockRuntimeID(block Block) (rid uint32)
 	// RegisterBlock registers a Block implementation for a previously registered
-	// state, or collects metadata from a BlockActor without installing behaviour.
+	// state, or collects actor and item metadata without installing behaviour.
 	RegisterBlock(block BlockType)
 	// RegisterBlockState registers a block state that blocks may encode to.
 	RegisterBlockState(blockState BlockState)
@@ -406,8 +406,9 @@ func NewBlockRegistry() BlockRegistry {
 	return br
 }
 
-// RegisterBlock registers a block's behaviour and actor metadata. A type that
-// implements only BlockActor contributes metadata without a gameplay implementation.
+// RegisterBlock registers a block's behaviour, actor and placement-item metadata.
+// A type implementing Item without Block contributes inventory semantics for its
+// exact state without installing gameplay behaviour.
 // RegisterBlock panics on invalid states, traits or conflicting actor metadata.
 func (br *BasicBlockRegistry) RegisterBlock(b BlockType) {
 	br.mu.Lock()
@@ -419,8 +420,9 @@ func (br *BasicBlockRegistry) RegisterBlock(b BlockType) {
 	name, properties := b.EncodeBlock()
 	implementation, implemented := b.(Block)
 	actor, hasActor := b.(BlockActor)
-	if !implemented && !hasActor {
-		panic(fmt.Sprintf("block type %s has neither behaviour nor actor metadata", name))
+	placementItem, hasItem := b.(Item)
+	if !implemented && !hasActor && !hasItem {
+		panic(fmt.Sprintf("block type %s has neither behaviour nor metadata", name))
 	}
 	var actorNames []string
 	var actorID string
@@ -457,6 +459,18 @@ func (br *BasicBlockRegistry) RegisterBlock(b BlockType) {
 		if custom && !known {
 			br.customBlocks[name] = c
 		}
+	}
+	if !implemented && hasItem {
+		rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]
+		if !ok {
+			panic(fmt.Sprintf("placement-item state is not registered (%s {%#v})", name, properties))
+		}
+		unknown, ok := br.blocks[rid].(unknownBlock)
+		if !ok || unknown.placementItem != nil {
+			panic(fmt.Sprintf("placement item already registered for %s {%#v}", name, properties))
+		}
+		unknown.placementItem = placementItem
+		br.blocks[rid] = unknown
 	}
 	for _, actorName := range actorNames {
 		br.registerBlockActorLocked(actorName, actorID)
