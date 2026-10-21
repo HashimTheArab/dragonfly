@@ -142,3 +142,11 @@ func allDoors() (doors []world.Block) {
 	}
 	return
 }
+
+// PlacementItemCount reports the inventory items represented by this block part.
+func (d WoodDoor) PlacementItemCount() int {
+	if d.Top {
+		return 0
+	}
+	return 1
+}

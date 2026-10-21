@@ -160,3 +160,8 @@ func allCandles() []world.Block {
 	}
 	return b
 }
+
+// PlacementItemCount reports the inventory items represented by this block part.
+func (c Candle) PlacementItemCount() int {
+	return c.AdditionalCandles + 1
+}

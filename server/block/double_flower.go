@@ -87,3 +87,11 @@ func allDoubleFlowers() (b []world.Block) {
 	}
 	return
 }
+
+// PlacementItemCount reports the inventory items represented by this block part.
+func (d DoubleFlower) PlacementItemCount() int {
+	if d.UpperPart {
+		return 0
+	}
+	return 1
+}

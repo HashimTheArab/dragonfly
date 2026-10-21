@@ -79,6 +79,8 @@ type BlockState struct {
 type unknownBlock struct {
 	BlockState
 	data map[string]any
+	// placementItem supplies inventory semantics without installing block behaviour.
+	placementItem Item
 }
 
 // IsUnknownBlock reports whether b is a palette state without an implemented

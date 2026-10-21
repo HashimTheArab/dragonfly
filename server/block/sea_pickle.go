@@ -184,3 +184,8 @@ func allSeaPickles() (b []world.Block) {
 	}
 	return
 }
+
+// PlacementItemCount reports the inventory items represented by this block part.
+func (s SeaPickle) PlacementItemCount() int {
+	return s.AdditionalCount + 1
+}
