@@ -45,15 +45,16 @@ func (b *brewer) InsertItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
 			continue
 		}
 
-		if h.Facing == cube.FaceDown {
+		switch {
+		case h.Facing == cube.FaceDown:
 			if !recipe.ValidBrewingReagent(sourceStack.Item()) {
 				// This item is not a valid brewing reagent.
 				continue
 			}
 			slot = BrewingStandIngredientSlot
-		} else if sourceStack.Item() == (BrewingStand{}).FuelItem() {
+		case sourceStack.Item() == (BrewingStand{}).FuelItem():
 			slot = BrewingStandFuelSlot
-		} else {
+		default:
 			_, okPotion := sourceStack.Item().(item.Potion)
 			_, okSplash := sourceStack.Item().(item.SplashPotion)
 			_, okLingering := sourceStack.Item().(item.LingeringPotion)
