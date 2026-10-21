@@ -108,13 +108,20 @@ func (a *Armour) Boots() item.Stack {
 // an amount of damage and damage source. The value returned takes into account
 // the armour itself and its enchantments.
 func (a *Armour) DamageReduction(dmg float64, src world.DamageSource) float64 {
+	return ArmourDamageReduction(dmg, src, a.Items()...)
+}
+
+// ArmourDamageReduction returns the damage prevented by a detached set of armour
+// items. It applies armour before enchantment protection, as the server does.
+// Empty items may be included; no inventory is allocated or changed.
+func ArmourDamageReduction(dmg float64, src world.DamageSource, items ...item.Stack) float64 {
 	var (
 		original                 = dmg
 		defencePoints, toughness float64
 		enchantments             []item.Enchantment
 	)
 
-	for _, it := range a.Items() {
+	for _, it := range items {
 		enchantments = append(enchantments, it.Enchantments()...)
 		if armour, ok := it.Item().(item.Armour); ok {
 			defencePoints += armour.DefencePoints()
@@ -122,7 +129,6 @@ func (a *Armour) DamageReduction(dmg float64, src world.DamageSource) float64 {
 		}
 	}
 
-	dmg -= dmg * enchantment.ProtectionFactor(src, enchantments)
 	if src.ReducedByArmour() {
 		// Armour in Bedrock edition reduces the damage taken by 4% for each effective armour point. Effective
 		// armour point decreases as damage increases, with 1 point lost for every 2 HP of damage. The defence
@@ -130,6 +136,7 @@ func (a *Armour) DamageReduction(dmg float64, src world.DamageSource) float64 {
 		// armour points.
 		dmg -= dmg * 0.04 * math.Max(defencePoints*0.2, defencePoints-dmg/(2+toughness/4))
 	}
+	dmg -= dmg * enchantment.ProtectionFactor(src, enchantments)
 	return original - dmg
 }
 
