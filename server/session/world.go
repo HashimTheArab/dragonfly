@@ -157,6 +157,28 @@ func (s *Session) ViewEntity(e world.Entity) {
 		HeadYaw:         float32(yaw),
 		BodyYaw:         float32(yaw),
 	})
+	if ent, ok := e.(*entity.Ent); ok {
+		if f, ok := ent.Behaviour().(*entity.FireworkBehaviour); ok {
+			if pk, ok := fireworkGlideBoost(f, ent.Age(), s.ent, s.inputTick.Load()); ok {
+				s.writePacket(pk)
+			}
+		}
+	}
+}
+
+// fireworkGlideBoost returns the glide boost a firework attached to self gives the client for the rocket's remaining
+// lifetime, stamped with the client's latest input tick so the client predicts it from there.
+func fireworkGlideBoost(f *entity.FireworkBehaviour, age time.Duration, self *world.EntityHandle, tick uint64) (*packet.MovementEffect, bool) {
+	if !f.Attached() || f.Owner() != self {
+		return nil, false
+	}
+	remaining := max(f.ExistenceDuration()-age, 0)
+	return &packet.MovementEffect{
+		EntityRuntimeID: selfEntityRuntimeID,
+		Type:            packet.MovementEffectTypeGlideBoost,
+		Duration:        int32(remaining / (time.Second / 20)),
+		Tick:            tick,
+	}, true
 }
 
 // ViewEntityGameMode ...
