@@ -14,27 +14,20 @@ func rocketHandle() *world.EntityHandle {
 	return world.EntitySpawnOpts{}.New(entity.FireworkType, entity.FireworkBehaviourConfig{})
 }
 
-// A rocket's boost lasts its lifetime in whole ticks from the owner's input tick, decided once per rocket and sent
-// to each viewer once.
+// A rocket's boost lasts its lifetime in whole ticks from the owner's input tick, decided once per rocket.
 func TestGlideBoostLastsTheRocketLifetimeAndIsDecidedOncePerRocket(t *testing.T) {
 	t.Parallel()
 	var b glideBoost
-	owner, viewer := &Session{}, &Session{}
 	rocket := rocketHandle()
-	effect, ok := b.decide(rocket, 1100*time.Millisecond, 42, owner)
+	effect, ok := b.decide(rocket, 1100*time.Millisecond, 42)
 	want := packet.MovementEffect{Type: packet.MovementEffectTypeGlideBoost, Duration: 22, Tick: 42}
 	if !ok || effect != want {
 		t.Fatalf("first rocket boost = %+v, %v; want %+v", effect, ok, want)
 	}
-	if again, ok := b.decide(rocket, 0, 60, viewer); !ok || again != want {
+	if again, ok := b.decide(rocket, 0, 60); !ok || again != want {
 		t.Fatalf("another viewer of the same rocket got %+v, %v; want %+v", again, ok, want)
 	}
-	for _, s := range []*Session{owner, viewer} {
-		if _, ok := b.decide(rocket, 0, 60, s); ok {
-			t.Fatal("a viewer shown the same rocket again was sent its boost twice")
-		}
-	}
-	if effect, _ := b.decide(rocketHandle(), 1101*time.Millisecond, 100, owner); effect.Duration != 23 {
+	if effect, _ := b.decide(rocketHandle(), 1101*time.Millisecond, 100); effect.Duration != 23 {
 		t.Fatalf("a 1101ms rocket boosts %d ticks, want 23", effect.Duration)
 	}
 }
@@ -57,7 +50,7 @@ func TestGlideBoostReplacesOnlyWhenItLastsAtLeastAsLong(t *testing.T) {
 		{0, 150, true},
 	}
 	for i, step := range steps {
-		if _, sent := b.decide(rocketHandle(), step.lifetime, step.tick, nil); sent != step.sent {
+		if _, sent := b.decide(rocketHandle(), step.lifetime, step.tick); sent != step.sent {
 			t.Fatalf("step %d: sent = %v, want %v", i, sent, step.sent)
 		}
 	}
