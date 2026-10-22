@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image/color"
+	"math"
 	"math/rand/v2"
 	"strings"
 	"time"
@@ -159,7 +160,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 	})
 	if ent, ok := e.(*entity.Ent); ok {
 		if f, ok := ent.Behaviour().(*entity.FireworkBehaviour); ok {
-			if pk, ok := fireworkGlideBoost(f, ent.Age(), s.ent, s.inputTick.Load()); ok {
+			if pk, until, ok := fireworkGlideBoost(f, ent.Age(), s.ent, s.inputTick.Load()); ok && s.extendGlideBoost(until) {
 				s.writePacket(pk)
 			}
 		}
@@ -167,18 +168,39 @@ func (s *Session) ViewEntity(e world.Entity) {
 }
 
 // fireworkGlideBoost returns the glide boost a firework attached to self gives the client for the rocket's remaining
-// lifetime, stamped with the client's latest input tick so the client predicts it from there.
-func fireworkGlideBoost(f *entity.FireworkBehaviour, age time.Duration, self *world.EntityHandle, tick uint64) (*packet.MovementEffect, bool) {
+// lifetime, stamped with the client's latest input tick, and the tick it ends on. A firework that never expires
+// boosts without end.
+func fireworkGlideBoost(f *entity.FireworkBehaviour, age time.Duration, self *world.EntityHandle, tick uint64) (*packet.MovementEffect, uint64, bool) {
 	if !f.Attached() || f.Owner() != self {
-		return nil, false
+		return nil, 0, false
 	}
-	remaining := max(f.ExistenceDuration()-age, 0)
-	return &packet.MovementEffect{
+	pk := &packet.MovementEffect{
 		EntityRuntimeID: selfEntityRuntimeID,
 		Type:            packet.MovementEffectTypeGlideBoost,
-		Duration:        int32(remaining / (time.Second / 20)),
+		Duration:        -1,
 		Tick:            tick,
-	}, true
+	}
+	if f.ExistenceDuration() == 0 {
+		return pk, math.MaxUint64, true
+	}
+	const tickDuration = time.Second / 20
+	remaining := max(f.ExistenceDuration()-age, 0)
+	pk.Duration = int32((remaining + tickDuration - 1) / tickDuration)
+	return pk, tick + uint64(pk.Duration), true
+}
+
+// extendGlideBoost records a glide boost ending on client tick until and reports whether it outlasts the boost the
+// client already has, since the client replaces its boost with every one it receives.
+func (s *Session) extendGlideBoost(until uint64) bool {
+	for {
+		current := s.glideBoostEnd.Load()
+		if until <= current {
+			return false
+		}
+		if s.glideBoostEnd.CompareAndSwap(current, until) {
+			return true
+		}
+	}
 }
 
 // ViewEntityGameMode ...

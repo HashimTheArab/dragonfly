@@ -52,6 +52,8 @@ type Session struct {
 	teleportPos atomic.Pointer[mgl64.Vec3]
 	// inputTick is the client tick of the latest PlayerAuthInput, which stamps predicted movement effects.
 	inputTick atomic.Uint64
+	// glideBoostEnd is the client tick the latest glide boost sent to the client ends on.
+	glideBoostEnd atomic.Uint64
 
 	entityMutex sync.RWMutex
 	// currentEntityRuntimeID holds the runtime ID assigned to the last entity. It is incremented for every
