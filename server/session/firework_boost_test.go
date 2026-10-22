@@ -1,7 +1,6 @@
 package session
 
 import (
-	"math"
 	"testing"
 	"time"
 
@@ -11,69 +10,69 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 )
 
-func attachedFirework(owner *world.EntityHandle, lifetime time.Duration) *entity.FireworkBehaviour {
-	return entity.FireworkBehaviourConfig{
-		Firework:          item.Firework{Duration: time.Second},
-		Owner:             owner,
-		ExistenceDuration: lifetime,
-		Attached:          true,
-	}.New()
+func rocketHandle() *world.EntityHandle {
+	return world.EntitySpawnOpts{}.New(entity.FireworkType, entity.FireworkBehaviourConfig{})
 }
 
-// Only the owner's client gets the boost, lasting the rocket's remaining lifetime rounded up to whole ticks.
-func TestFireworkGlideBoostGoesToOwnerForRemainingLifetime(t *testing.T) {
+// A rocket's boost lasts its lifetime in whole ticks from the owner's input tick, decided once per rocket.
+func TestGlideBoostLastsTheRocketLifetimeAndIsDecidedOncePerRocket(t *testing.T) {
 	t.Parallel()
-	owner := world.EntitySpawnOpts{}.New(entity.FireworkType, entity.FireworkBehaviourConfig{})
-	other := world.EntitySpawnOpts{}.New(entity.FireworkType, entity.FireworkBehaviourConfig{})
-	rocket := attachedFirework(owner, 1100*time.Millisecond)
+	var b glideBoost
+	rocket := rocketHandle()
+	effect, ok := b.decide(rocket, 1100*time.Millisecond, 42)
+	want := packet.MovementEffect{Type: packet.MovementEffectTypeGlideBoost, Duration: 22, Tick: 42}
+	if !ok || effect != want {
+		t.Fatalf("first rocket boost = %+v, %v; want %+v", effect, ok, want)
+	}
+	if again, ok := b.decide(rocket, 0, 60); !ok || again != want {
+		t.Fatalf("another viewer of the same rocket got %+v, %v; want %+v", again, ok, want)
+	}
+	if effect, _ := b.decide(rocketHandle(), 1101*time.Millisecond, 100); effect.Duration != 23 {
+		t.Fatalf("a 1101ms rocket boosts %d ticks, want 23", effect.Duration)
+	}
+}
 
-	pk, until, ok := fireworkGlideBoost(rocket, 0, owner, 42)
-	want := packet.MovementEffect{
-		EntityRuntimeID: selfEntityRuntimeID,
-		Type:            packet.MovementEffectTypeGlideBoost,
-		Duration:        22,
-		Tick:            42,
-	}
-	if !ok || *pk != want || until != 64 {
-		t.Fatalf("fresh rocket boost = %+v until %d, %v; want %+v until 64", pk, until, ok, want)
-	}
-	for _, c := range []struct {
-		lifetime, age time.Duration
-		ticks         int32
+// A boost replaces the current one only when it lasts at least as long as what remains, unlimited ones included.
+func TestGlideBoostReplacesOnlyWhenItLastsAtLeastAsLong(t *testing.T) {
+	t.Parallel()
+	var b glideBoost
+	steps := []struct {
+		lifetime time.Duration
+		tick     uint64
+		sent     bool
 	}{
-		{1101 * time.Millisecond, 0, 23},
-		{1101 * time.Millisecond, 1050 * time.Millisecond, 2},
-		{1100 * time.Millisecond, 2 * time.Second, 0},
-	} {
-		if pk, _, _ := fireworkGlideBoost(attachedFirework(owner, c.lifetime), c.age, owner, 0); pk.Duration != c.ticks {
-			t.Fatalf("lifetime %v at age %v boosts %d ticks, want %d", c.lifetime, c.age, pk.Duration, c.ticks)
+		{time.Second, 100, true},             // ends on 120
+		{500 * time.Millisecond, 105, false}, // ends on 115
+		{750 * time.Millisecond, 105, true},  // ends on 120, a tie
+		{50 * time.Millisecond, 125, true},   // the current boost has run out
+		{0, 130, true},                       // never ends
+		{time.Hour, 140, false},
+		{0, 150, true},
+	}
+	for i, step := range steps {
+		if _, sent := b.decide(rocketHandle(), step.lifetime, step.tick); sent != step.sent {
+			t.Fatalf("step %d: sent = %v, want %v", i, sent, step.sent)
 		}
 	}
-	if pk, until, _ := fireworkGlideBoost(attachedFirework(owner, 0), 0, owner, 42); pk.Duration != -1 || until != math.MaxUint64 {
-		t.Fatalf("never-expiring rocket boost = %d until %d, want -1 until max", pk.Duration, until)
-	}
-	if _, _, ok := fireworkGlideBoost(rocket, 0, other, 42); ok {
-		t.Fatal("another player's client received the owner's boost")
-	}
-	loose := entity.FireworkBehaviourConfig{Owner: owner, ExistenceDuration: time.Second}.New()
-	if _, _, ok := fireworkGlideBoost(loose, 0, owner, 42); ok {
-		t.Fatal("an unattached firework boosted its owner")
+	if b.effect.Duration != -1 {
+		t.Fatalf("a never-expiring rocket boosts for %d ticks, want -1", b.effect.Duration)
 	}
 }
 
-// The client replaces its boost with each one it receives, so a boost ending sooner is never sent.
-func TestExtendGlideBoostNeverShortensTheClientBoost(t *testing.T) {
+// Rockets fly their Duration plus a whole number of ticks from 0 to 11.
+func TestFireworkRandomisedDurationAddsWholeTicks(t *testing.T) {
 	t.Parallel()
-	s := &Session{}
-	if !s.extendGlideBoost(130) {
-		t.Fatal("the first boost was not sent")
-	}
-	for _, until := range []uint64{120, 130} {
-		if s.extendGlideBoost(until) {
-			t.Fatalf("a boost ending on %d replaced one ending on 130", until)
+	const tick = time.Second / 20
+	f := item.Firework{Duration: time.Second}
+	seen := map[time.Duration]bool{}
+	for range 2000 {
+		extra := f.RandomisedDuration() - f.Duration
+		if extra < 0 || extra > 11*tick || extra%tick != 0 {
+			t.Fatalf("randomised extra flight %v is not 0-11 whole ticks", extra)
 		}
+		seen[extra] = true
 	}
-	if !s.extendGlideBoost(140) || !s.extendGlideBoost(math.MaxUint64) || s.extendGlideBoost(200) {
-		t.Fatal("a longer boost was dropped or an unlimited one was shortened")
+	if len(seen) != 12 {
+		t.Fatalf("saw %d distinct extra flight lengths, want 12", len(seen))
 	}
 }
