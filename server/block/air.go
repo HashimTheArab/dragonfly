@@ -28,3 +28,8 @@ func (Air) EncodeItem() (name string, meta int16) {
 func (Air) EncodeBlock() (string, map[string]any) {
 	return "minecraft:air", nil
 }
+
+// PlacementItemCount reports the inventory items represented by this block part.
+func (Air) PlacementItemCount() int {
+	return 0
+}

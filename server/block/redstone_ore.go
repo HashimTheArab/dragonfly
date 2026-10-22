@@ -34,6 +34,10 @@ func (r RedstoneOre) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.Us
 	return false
 }
 
+// CanActivateWith reports that lighting redstone ore never consumes the click:
+// the held item may still be used after Activate lights the ore.
+func (RedstoneOre) CanActivateWith(item.Stack) bool { return false }
+
 // Punch lights the redstone ore when mining starts.
 func (r RedstoneOre) Punch(pos cube.Pos, _ cube.Face, tx *world.Tx, _ item.User) {
 	r.light(pos, tx)

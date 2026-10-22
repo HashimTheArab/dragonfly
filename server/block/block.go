@@ -21,6 +21,34 @@ type Activatable interface {
 	Activate(pos cube.Pos, clickedFace cube.Face, tx *world.Tx, u item.User, ctx *item.UseContext) bool
 }
 
+// ConditionalActivatable exposes the held-item conditions under which a block's
+// activation may consume a click. It must not mutate the block or held stack.
+// World- and actor-dependent refusals may still occur during Activate.
+type ConditionalActivatable interface {
+	Activatable
+	CanActivateWith(held item.Stack) bool
+}
+
+// MayActivate reports whether a block may consume a click before the held item
+// is used. Sneaking bypasses activation while holding an item. Blocks without a
+// held-item condition conservatively retain activation precedence.
+func MayActivate(b world.Block, held item.Stack, sneaking bool) bool {
+	if !CanAttemptActivation(held, sneaking) {
+		return false
+	}
+	if conditional, ok := b.(ConditionalActivatable); ok {
+		return conditional.CanActivateWith(held)
+	}
+	_, ok := b.(Activatable)
+	return ok
+}
+
+// CanAttemptActivation reports whether the stance permits trying a block's
+// activation. Sneaking bypasses activation only while holding an item.
+func CanAttemptActivation(held item.Stack, sneaking bool) bool {
+	return !sneaking || held.Empty()
+}
+
 // Pickable represents a block that may give a different item then the block itself when picked.
 type Pickable interface {
 	// Pick returns the item that is picked when the block is picked.

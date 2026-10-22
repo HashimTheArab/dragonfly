@@ -177,3 +177,11 @@ func allCopperDoors() (doors []world.Block) {
 	f(true)
 	return
 }
+
+// PlacementItemCount reports the inventory items represented by this block part.
+func (d CopperDoor) PlacementItemCount() int {
+	if d.Top {
+		return 0
+	}
+	return 1
+}
