@@ -26,7 +26,7 @@ type brewer struct {
 // newBrewer creates a new initialised brewer. The inventory is properly initialised.
 func newBrewer() *brewer {
 	b := &brewer{viewers: make(map[ContainerViewer]struct{})}
-	b.inventory = inventory.New(5, func(slot int, _, item item.Stack) {
+	b.inventory = inventory.New(BrewingStandFuelSlot+1, func(slot int, _, item item.Stack) {
 		b.mu.Lock()
 		defer b.mu.Unlock()
 		for viewer := range b.viewers {
@@ -45,15 +45,16 @@ func (b *brewer) InsertItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
 			continue
 		}
 
-		if h.Facing == cube.FaceDown {
+		switch {
+		case h.Facing == cube.FaceDown:
 			if !recipe.ValidBrewingReagent(sourceStack.Item()) {
 				// This item is not a valid brewing reagent.
 				continue
 			}
-			slot = 0
-		} else if _, ok := sourceStack.Item().(item.BlazePowder); ok {
-			slot = 4
-		} else {
+			slot = BrewingStandIngredientSlot
+		case sourceStack.Item() == (BrewingStand{}).FuelItem():
+			slot = BrewingStandFuelSlot
+		default:
 			_, okPotion := sourceStack.Item().(item.Potion)
 			_, okSplash := sourceStack.Item().(item.SplashPotion)
 			_, okLingering := sourceStack.Item().(item.LingeringPotion)
@@ -62,7 +63,7 @@ func (b *brewer) InsertItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
 				continue
 			}
 			for brewingSlot, brewingStack := range b.inventory.Slots() {
-				if brewingSlot == 0 || brewingSlot == 4 {
+				if brewingSlot == BrewingStandIngredientSlot || brewingSlot == BrewingStandFuelSlot {
 					continue
 				}
 				if brewingStack.Count() == brewingStack.MaxCount() || !brewingStack.Comparable(sourceStack) {
@@ -73,7 +74,7 @@ func (b *brewer) InsertItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
 				break
 			}
 			// Could not find an empty slot
-			if slot == 0 {
+			if slot == BrewingStandIngredientSlot {
 				continue
 			}
 		}
@@ -104,7 +105,7 @@ func (b *brewer) InsertItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
 // ExtractItem ...
 func (b *brewer) ExtractItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
 	for sourceSlot, sourceStack := range b.inventory.Slots() {
-		if sourceStack.Empty() || sourceSlot == 0 || sourceSlot == 4 {
+		if sourceStack.Empty() || sourceSlot == BrewingStandIngredientSlot || sourceSlot == BrewingStandFuelSlot {
 			continue
 		}
 		_, err := h.inventory.AddItem(sourceStack.Grow(-sourceStack.Count() + 1))
@@ -172,9 +173,9 @@ func (b *brewer) tickBrewing(block string, pos cube.Pos, tx *world.Tx) {
 	b.mu.Lock()
 
 	// Get each item in the brewer. We don't need to validate errors here since we know the bounds of the brewer.
-	left, _ := b.inventory.Item(1)
-	middle, _ := b.inventory.Item(2)
-	right, _ := b.inventory.Item(3)
+	left, _ := b.inventory.Item(BrewingStandFirstBottleSlot)
+	middle, _ := b.inventory.Item(BrewingStandFirstBottleSlot + 1)
+	right, _ := b.inventory.Item(BrewingStandFirstBottleSlot + 2)
 
 	// Keep track of our past durations, since if any of them change, we need to be able to tell they did and then
 	// update the viewers on the change.
@@ -183,15 +184,15 @@ func (b *brewer) tickBrewing(block string, pos cube.Pos, tx *world.Tx) {
 	prevFuelTotal := b.fuelTotal
 
 	// If we need fuel, try and burn some.
-	fuel, _ := b.inventory.Item(4)
+	fuel, _ := b.inventory.Item(BrewingStandFuelSlot)
 
-	if _, ok := fuel.Item().(item.BlazePowder); ok && b.fuelAmount <= 0 {
-		defer b.inventory.SetItem(4, fuel.Grow(-1))
+	if fuel.Item() == (BrewingStand{}).FuelItem() && b.fuelAmount <= 0 {
+		defer b.inventory.SetItem(BrewingStandFuelSlot, fuel.Grow(-1))
 		b.fuelAmount, b.fuelTotal = 20, 20
 	}
 
 	// Now get the ingredient item.
-	ingredient, _ := b.inventory.Item(0)
+	ingredient, _ := b.inventory.Item(BrewingStandIngredientSlot)
 
 	// Check each input and see if it is affected by the ingredient.
 	leftOutput, leftAffected := recipe.Perform(block, left.Item(), ingredient.Item())
@@ -212,17 +213,17 @@ func (b *brewer) tickBrewing(block string, pos cube.Pos, tx *world.Tx) {
 			if b.duration <= 0 {
 				// Create the output items.
 				if leftAffected {
-					defer b.inventory.SetItem(1, leftOutput[0])
+					defer b.inventory.SetItem(BrewingStandFirstBottleSlot, leftOutput[0])
 				}
 				if middleAffected {
-					defer b.inventory.SetItem(2, middleOutput[0])
+					defer b.inventory.SetItem(BrewingStandFirstBottleSlot+1, middleOutput[0])
 				}
 				if rightAffected {
-					defer b.inventory.SetItem(3, rightOutput[0])
+					defer b.inventory.SetItem(BrewingStandFirstBottleSlot+2, rightOutput[0])
 				}
 
 				// Reduce the ingredient by one.
-				defer b.inventory.SetItem(0, ingredient.Grow(-1))
+				defer b.inventory.SetItem(BrewingStandIngredientSlot, ingredient.Grow(-1))
 				tx.PlaySound(pos.Vec3Centre(), sound.PotionBrewed{})
 
 				// Decrement the fuel, and reset the duration.
