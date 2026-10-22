@@ -75,3 +75,86 @@ func TestSupportedItemChangesSurviveSave(t *testing.T) {
 		})
 	}
 }
+
+func TestTeleportSurvivesSaveWithoutTick(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		loaded bool
+		save   bool
+	}{
+		{name: "save/unloaded destination", save: true},
+		{name: "save/loaded destination", save: true, loaded: true},
+		{name: "close/unloaded destination"},
+		{name: "close/loaded destination", loaded: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			// open creates a synchronous world so saving cannot advance entity ticks.
+			open := func() (*world.World, *mcdb.DB) {
+				db, err := mcdb.Open(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				w := world.Config{Provider: db, Entities: DefaultRegistry, Synchronous: true}.New()
+				t.Cleanup(func() { w.Close() })
+				return w, db
+			}
+			source, destination := mgl64.Vec3{1, 10, 1}, mgl64.Vec3{20, 10, 1}
+			w, _ := open()
+			w.Do(func(tx *world.Tx) {
+				tx.AddEntity(NewItem(world.EntitySpawnOpts{Position: source}, item.NewStack(item.Diamond{}, 1)))
+				tx.Block(cube.PosFromVec3(destination))
+			})
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			w, db := open()
+			w.Do(func(tx *world.Tx) {
+				tx.Block(cube.PosFromVec3(source))
+				if test.loaded {
+					tx.Block(cube.PosFromVec3(destination))
+				}
+				for e := range tx.Entities() {
+					e.(*Ent).Teleport(destination)
+				}
+			})
+			if test.save {
+				w.Save()
+				col, err := db.LoadColumn(world.ChunkPos{1, 0}, world.Overworld)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(col.Entities) != 1 {
+					t.Fatalf("saved destination entity count = %d, want 1", len(col.Entities))
+				}
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			w, _ = open()
+			w.Do(func(tx *world.Tx) {
+				tx.Block(cube.PosFromVec3(destination))
+				count := 0
+				for e := range tx.Entities() {
+					count++
+					if e.Position() != destination {
+						t.Errorf("reopened position = %v, want %v", e.Position(), destination)
+					}
+				}
+				if count != 1 {
+					t.Fatalf("reopened destination entity count = %d, want 1", count)
+				}
+				tx.Block(cube.PosFromVec3(source))
+				count = 0
+				for range tx.Entities() {
+					count++
+				}
+				if count != 1 {
+					t.Fatalf("reopened total entity count = %d, want 1", count)
+				}
+			})
+		})
+	}
+}
