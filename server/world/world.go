@@ -1575,11 +1575,14 @@ func (w *World) autoSave() {
 	}
 }
 
-// closeUnusedChunk closes all chunks currently not in use by any viewer.
+// closeUnusedChunks closes chunks without viewers or live players.
 func (w *World) closeUnusedChunks(tx *Tx) {
 	w.reconcileEntityChunks(tx)
 	for pos, c := range w.chunks {
-		if len(c.viewers) == 0 {
+		// A player's loader may still be catching up with its new position.
+		if len(c.viewers) == 0 && !slices.ContainsFunc(c.Entities, func(e *EntityHandle) bool {
+			return e.t.EncodeEntity() == "minecraft:player"
+		}) {
 			w.closeChunk(tx, pos, c)
 		}
 	}
