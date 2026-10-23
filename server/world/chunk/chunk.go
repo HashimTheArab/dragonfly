@@ -261,6 +261,13 @@ func (chunk *Chunk) SetBiome(x uint8, y int16, z uint8, biome uint32) {
 	chunk.biomes[chunk.SubIndex(y)].Set(x, uint8(y), z, biome)
 }
 
+// SetBiomeSection fills the 16x16x16 section containing block height y with biome.
+// It replaces the section's biome storage with a single palette entry and no indices.
+// As with SetBiome, y must be within the Chunk's vertical range.
+func (chunk *Chunk) SetBiomeSection(y int16, biome uint32) {
+	chunk.biomes[chunk.SubIndex(y)] = emptyStorage(biome)
+}
+
 // Light returns the light level at a specific position in the chunk.
 func (chunk *Chunk) Light(x uint8, y int16, z uint8) uint8 {
 	ux, uy, uz, sub := x&0xf, uint8(y&0xf), z&0xf, chunk.SubChunk(y)
