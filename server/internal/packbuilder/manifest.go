@@ -14,6 +14,11 @@ import (
 // buildManifest creates a JSON manifest file for the client to be able to read the resource pack. It creates
 // basic information and writes it to the pack.
 func buildManifest(dir string, headerUUID, moduleUUID uuid.UUID) {
+	buildManifestType(dir, headerUUID, moduleUUID, "resources")
+}
+
+// buildManifestType writes the manifest for either resource or behaviour content.
+func buildManifestType(dir string, headerUUID, moduleUUID uuid.UUID, moduleType string) {
 	m, err := json.Marshal(resource.Manifest{
 		FormatVersion: 2,
 		Header: resource.Header{
@@ -27,7 +32,7 @@ func buildManifest(dir string, headerUUID, moduleUUID uuid.UUID) {
 			{
 				UUID:        moduleUUID.String(),
 				Description: "This resource pack contains auto-generated content from dragonfly",
-				Type:        "resources",
+				Type:        moduleType,
 				Version:     [3]int{0, 0, 1},
 			},
 		},

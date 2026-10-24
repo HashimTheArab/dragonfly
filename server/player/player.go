@@ -903,6 +903,7 @@ func (p *Player) kill(src world.DamageSource) {
 	}
 
 	p.addHealth(-p.MaxHealth())
+	p.tx.Dismount(p)
 
 	keepInv := false
 	p.Handler().HandleDeath(p, src, &keepInv)
@@ -2050,11 +2051,13 @@ func (p *Player) breakTime(pos cube.Pos) time.Duration {
 // affecting how quickly the player breaks blocks.
 func (p *Player) breakContext() block.BreakContext {
 	_, aquaAffinity := p.Armour().Helmet().Enchantment(enchantment.AquaAffinity)
+	_, _, riding := world.Riding(p)
 	ctx := block.BreakContext{
 		Underwater:   p.insideOfWater(),
 		AquaAffinity: aquaAffinity,
 		Airborne:     !p.OnGround(),
 		Flying:       p.Flying(),
+		Riding:       riding,
 	}
 	if e, ok := p.Effect(effect.Haste); ok {
 		ctx.HasteLevel = e.Level()
@@ -2329,8 +2332,9 @@ func (p *Player) Teleport(pos mgl64.Vec3) {
 }
 
 // forceTeleport teleports the player without calling the Handler.
-// It also wakes up the player from sleep.
+// It also dismounts the player and wakes them from sleep.
 func (p *Player) forceTeleport(pos mgl64.Vec3) {
+	p.tx.Dismount(p)
 	p.Wake()
 	p.teleport(pos)
 }
@@ -2349,6 +2353,9 @@ func (p *Player) teleport(pos mgl64.Vec3) {
 // position of the player.
 // Move also rotates the player, adding deltaYaw and deltaPitch to the respective values.
 func (p *Player) Move(deltaPos mgl64.Vec3, deltaYaw, deltaPitch float64) {
+	if _, _, riding := world.Riding(p); riding {
+		return
+	}
 	if p.Dead() || (deltaPos.ApproxEqual(mgl64.Vec3{}) && mgl64.FloatEqual(deltaYaw, 0) && mgl64.FloatEqual(deltaPitch, 0)) {
 		p.onGround = true
 		p.updateFallState(deltaPos.Y())
@@ -2683,6 +2690,10 @@ func (p *Player) Latency() time.Duration {
 
 // Tick ticks the entity, performing actions such as checking if the player is still breaking a block.
 func (p *Player) Tick(tx *world.Tx, current int64) {
+	_, _, riding := world.Riding(p)
+	if riding {
+		p.ResetFallDistance()
+	}
 	if p.Dead() {
 		return
 	}
@@ -2706,7 +2717,12 @@ func (p *Player) Tick(tx *world.Tx, current int64) {
 		}
 	}
 
-	p.checkBlockCollisions(p.data.Vel)
+	velocity := p.data.Vel
+	if riding {
+		// Vehicle velocity is interpolation data; the seat owns player movement.
+		velocity = mgl64.Vec3{}
+	}
+	p.checkBlockCollisions(velocity)
 	p.onGround = p.checkOnGround(mgl64.Vec3{})
 	p.checkEntitySteppers()
 
@@ -2765,14 +2781,16 @@ func (p *Player) Tick(tx *world.Tx, current int64) {
 	}
 	p.prevWorld = tx.World()
 
-	if p.session() == session.Nop && !p.Immobile() {
-		m := p.mc.TickMovement(p, p.Position(), p.Velocity(), p.Rotation(), p.tx)
-		m.Send()
+	if !riding {
+		if p.session() == session.Nop && !p.Immobile() {
+			m := p.mc.TickMovement(p, p.Position(), p.Velocity(), p.Rotation(), p.tx)
+			m.Send()
 
-		p.data.Vel = m.Velocity()
-		p.Move(m.Position().Sub(p.Position()), 0, 0)
-	} else {
-		p.data.Vel = mgl64.Vec3{}
+			p.data.Vel = m.Velocity()
+			p.Move(m.Position().Sub(p.Position()), 0, 0)
+		} else {
+			p.data.Vel = mgl64.Vec3{}
+		}
 	}
 
 	p.portalTravel.StopPortalContact()
@@ -3537,6 +3555,15 @@ func (p *Player) broadcastArmour(_ int, before, after item.Stack) {
 	for _, viewer := range p.viewers() {
 		viewer.ViewEntityArmour(p)
 	}
+}
+
+// ControllingViewer returns the player's session independently of loaded chunks,
+// or nil if the player has no session.
+func (p *Player) ControllingViewer() world.Viewer {
+	if p.s == nil {
+		return nil
+	}
+	return p.s
 }
 
 // viewers returns a list of all viewers of the Player.

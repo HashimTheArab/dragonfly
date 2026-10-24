@@ -158,7 +158,12 @@ const selfEntityRuntimeID = 1
 var errSelfRuntimeID = errors.New("invalid entity runtime ID: runtime ID for self must always be 1")
 
 type Config struct {
-	Log *slog.Logger
+	// InitialDimension and InitialPosition describe the placement already sent in
+	// StartGame. When InitialDimension is set, Spawn corrects a changed placement
+	// using the session's ordinary dimension and teleport handling.
+	InitialDimension world.Dimension
+	InitialPosition  mgl64.Vec3
+	Log              *slog.Logger
 
 	MaxChunkRadius int
 	// ChunkLoadsPerTick is the maximum number of chunks requested for the
@@ -270,6 +275,16 @@ func (s *Session) SetHandle(handle *world.EntityHandle, skin skin.Skin) {
 // Spawn makes the Controllable passed spawn in the world.World.
 // The function passed will be called when the session stops running.
 func (s *Session) Spawn(c Controllable, tx *world.Tx) {
+	if initial := s.conf.InitialDimension; initial != nil {
+		changed := initial != tx.World().Dimension()
+		if changed {
+			dim, _ := world.DimensionID(tx.World().Dimension())
+			s.changeDimension(int32(dim), false, c)
+		}
+		if changed || s.conf.InitialPosition != c.Position() {
+			s.ViewEntityTeleport(c, c.Position())
+		}
+	}
 	s.SendHealth(c.Health(), c.MaxHealth(), c.Absorption())
 	s.SendExperience(c.ExperienceLevel(), c.ExperienceProgress())
 	s.SendFood(c.Food(), 0, 0)
@@ -645,17 +660,39 @@ func (s *Session) writePacket(pk packet.Packet) {
 type actorIdentifier struct {
 	// ID is a unique namespaced identifier for the entity.
 	ID string `nbt:"id"`
+	// BaseID selects the existing actor class used to construct this identity.
+	BaseID string `nbt:"bid"`
 }
 
 // sendAvailableEntities sends all registered entities to the player.
 func (s *Session) sendAvailableEntities(w *world.World) {
-	var identifiers []actorIdentifier
 	for _, t := range w.EntityRegistry().Types() {
-		identifiers = append(identifiers, actorIdentifier{ID: t.EncodeEntity()})
+		if properties, ok := t.(interface{ EntityPropertyDefinitions() map[string]any }); ok {
+			s.writePacket(&packet.SyncActorProperty{PropertyData: properties.EntityPropertyDefinitions()})
+		}
 	}
+	identifiers := availableEntityIdentifiers(w.EntityRegistry())
 	serialisedEntityData, err := nbt.Marshal(map[string]any{"idlist": identifiers})
 	if err != nil {
 		panic("should never happen")
 	}
 	s.writePacket(&packet.AvailableActorIdentifiers{SerialisedEntityIdentifiers: serialisedEntityData})
+}
+
+// availableEntityIdentifiers lists each client-facing identity once.
+func availableEntityIdentifiers(registry world.EntityRegistry) []actorIdentifier {
+	var identifiers []actorIdentifier
+	seen := make(map[string]bool)
+	for _, t := range registry.Types() {
+		id := world.EntityNetworkIdentifier(t)
+		if !seen[id] {
+			identifier := actorIdentifier{ID: id}
+			if base, ok := t.(world.BaseEntityType); ok {
+				identifier.BaseID = base.BaseEntityIdentifier()
+			}
+			identifiers = append(identifiers, identifier)
+			seen[id] = true
+		}
+	}
+	return identifiers
 }

@@ -30,6 +30,17 @@ func (s *Session) parseEntityMetadata(e world.Entity) protocol.EntityMetadata {
 
 	m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagHasGravity)
 	m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagClimb)
+	if _, seat, ok := world.Riding(e); ok {
+		m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagRiding)
+		m[protocol.EntityDataKeySeatOffset] = vec64To32(seat.Position)
+		m[protocol.EntityDataKeySeatLockPassengerRotation] = boolByte(seat.RotationLimit != nil)
+		if seat.RotationLimit != nil {
+			m[protocol.EntityDataKeySeatLockPassengerRotationDegrees] = float32(*seat.RotationLimit)
+		}
+	} else {
+		m[protocol.EntityDataKeySeatOffset] = vec64To32(mgl64.Vec3{})
+		m[protocol.EntityDataKeySeatLockPassengerRotation] = byte(0)
+	}
 	if g, ok := e.H().Type().(glint); ok && g.Glint() {
 		m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagEnchanted)
 	}

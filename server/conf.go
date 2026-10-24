@@ -186,7 +186,10 @@ func (conf Config) New() *Server {
 	world.DefaultBlockRegistry.Finalize()
 
 	if !conf.DisableResourceBuilding {
-		if pack, ok := packbuilder.BuildResourcePack(conf.Blocks); ok {
+		if pack, ok := packbuilder.BuildResourcePack(conf.Blocks, conf.Entities); ok {
+			conf.Resources = append(conf.Resources, pack)
+		}
+		if pack, ok := packbuilder.BuildBehaviourPack(conf.Entities); ok {
 			conf.Resources = append(conf.Resources, pack)
 		}
 	}
