@@ -65,10 +65,10 @@ type Server struct {
 
 // incoming holds data of a player that is connecting to the server.
 type incoming struct {
-	conf player.Config
-	s    *session.Session
-	p    *onlinePlayer
-	w    *world.World
+	conf      player.Config
+	conn      session.Conn
+	w         *world.World
+	admission player.Admission
 }
 
 // onlinePlayer holds the entity handle, XUID and name of a player.
@@ -134,26 +134,14 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 			if !ok {
 				return
 			}
-			srv.pmu.Lock()
-			srv.p[inc.p.handle.UUID()] = inc.p
-			srv.pmu.Unlock()
-
-			ret, err := world.Call(context.Background(), inc.w, func(tx *world.Tx) (bool, error) {
-				p := tx.AddEntity(inc.p.handle).(*player.Player)
-				inc.s.Spawn(p, tx)
-				return !yield(p), nil
-			})
+			ret, err := srv.admitPlayer(inc, yield)
+			if inc.admission != nil {
+				inc.admission.Release()
+			}
 			if err != nil {
-				srv.pmu.Lock()
-				delete(srv.p, inc.p.handle.UUID())
-				srv.pmu.Unlock()
 				srv.pwg.Done()
-				// Join failed before spawn: the entity was never added, so close
-				// the orphaned handle and fully tear the session down (Disconnect
-				// only writes a packet; CloseConnection frees the conn/goroutines).
-				_ = inc.p.handle.Close()
-				inc.s.Disconnect("join failed")
-				inc.s.CloseConnection()
+				_ = inc.conn.WritePacket(&packet.Disconnect{Message: "join failed"})
+				_ = inc.conn.Close()
 				continue
 			}
 			if ret {
@@ -447,8 +435,29 @@ func (srv *Server) finaliseConn(ctx context.Context, conn session.Conn, l Listen
 	id := uuid.MustParse(conn.IdentityData().Identity)
 	data := srv.defaultGameData()
 
-	d, w, err := srv.conf.PlayerProvider.Load(id, srv.dimension)
-	if err != nil {
+	var d player.Config
+	var w *world.World
+	var err error
+	var admission player.Admission
+	handedOff := false
+	defer func() {
+		if admission != nil && !handedOff {
+			admission.Release()
+		}
+	}()
+	if provider, ok := srv.conf.PlayerProvider.(player.AdmissionProvider); ok {
+		admission, err = provider.LoadAdmission(id, srv.dimension)
+		if err == nil && admission != nil {
+			d, w = admission.Resolve()
+		}
+	} else {
+		d, w, err = srv.conf.PlayerProvider.Load(id, srv.dimension)
+	}
+	if err != nil || w == nil {
+		if admission != nil {
+			admission.Release()
+			admission = nil
+		}
 		w = srv.world
 		d.Position = w.Spawn().Vec3Centre()
 		d.GameMode = w.DefaultGameMode()
@@ -473,7 +482,9 @@ func (srv *Server) finaliseConn(ctx context.Context, conn session.Conn, l Listen
 		return
 	}
 	_ = conn.WritePacket(&packet.ItemRegistry{Items: srv.customItems})
-	srv.incoming <- srv.createPlayer(id, conn, d, w)
+	srv.pwg.Add(1)
+	srv.incoming <- incoming{conn: conn, conf: d, w: w, admission: admission}
+	handedOff = true
 }
 
 // defaultGameData returns a minecraft.GameData as sent for a new player. It
@@ -549,9 +560,7 @@ func (srv *Server) handleSessionClose(tx *world.Tx, c session.Controllable) {
 
 // createPlayer creates a new player instance using the UUID and connection
 // passed.
-func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Config, w *world.World) incoming {
-	srv.pwg.Add(1)
-
+func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Config, w *world.World) (*session.Session, *onlinePlayer) {
 	s := session.Config{
 		Log:                  srv.conf.Log,
 		MaxChunkRadius:       srv.conf.MaxChunkRadius,
@@ -573,7 +582,7 @@ func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Con
 
 	handle := world.EntitySpawnOpts{Position: conf.Position, ID: id}.New(player.Type, conf)
 	s.SetHandle(handle, conf.Skin)
-	return incoming{s: s, w: w, conf: conf, p: &onlinePlayer{name: conf.Name, xuid: conf.XUID, handle: handle}}
+	return s, &onlinePlayer{name: conf.Name, xuid: conf.XUID, handle: handle}
 }
 
 // createWorld loads a world with a specific dimension using the provider set
