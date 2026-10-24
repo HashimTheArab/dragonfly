@@ -117,6 +117,9 @@ func (tx *Tx) Mount(rider, vehicle Entity, index int) bool {
 		value := *limit
 		seat.RotationLimit = &value
 	}
+	if _, ok := SeatPosition(vehicle.Position(), vehicle.Rotation().Yaw(), seat); !ok {
+		return false
+	}
 	vd.riders[index] = rider.H()
 	rd.vehicle, rd.seat, rd.seatIndex = vehicle.H(), seat, index
 	tx.UpdateRiders(vehicle)
@@ -147,6 +150,7 @@ func (tx *Tx) Dismount(rider Entity) bool {
 	index, seat := rd.seatIndex, rd.seat
 	delete(vehicle.H().data.riders, index)
 	rd.vehicle, rd.seat, rd.seatIndex = nil, Seat{}, 0
+	rd.Vel = mgl64.Vec3{}
 	for _, v := range tx.ridingViewers(rider, vehicle) {
 		v.ViewEntityAction(vehicle, EntityLinkAction{Rider: rider.H(), Seat: seat, Remove: true})
 		v.ViewEntityState(rider)
@@ -166,10 +170,12 @@ func (tx *Tx) UpdateRiders(vehicle Entity) {
 			continue
 		}
 		d := &h.data
-		yaw := vehicle.Rotation().Yaw() * math.Pi / 180
-		offset := d.seat.Position
-		offset = mgl64.Vec3{offset.X()*math.Cos(yaw) - offset.Z()*math.Sin(yaw), offset.Y(), offset.X()*math.Sin(yaw) + offset.Z()*math.Cos(yaw)}
-		d.Pos, d.Vel = vehicle.Position().Add(offset), vehicle.H().data.Vel
+		position, valid := SeatPosition(vehicle.Position(), vehicle.Rotation().Yaw(), d.seat)
+		d.Vel = mgl64.Vec3{}
+		if !valid {
+			continue
+		}
+		d.Pos = position
 		if limit := d.seat.RotationLimit; limit != nil {
 			delta := math.Mod(d.Rot.Yaw(), 360) - math.Mod(vehicle.Rotation().Yaw(), 360)
 			delta = math.Mod(delta+180, 360)
@@ -184,6 +190,20 @@ func (tx *Tx) UpdateRiders(vehicle Entity) {
 		}
 		tx.UpdateRiders(rider)
 	}
+}
+
+// SeatPosition returns a finite world attachment position, or false if projection overflows.
+func SeatPosition(origin mgl64.Vec3, yaw float64, seat Seat) (mgl64.Vec3, bool) {
+	yaw = math.Mod(yaw, 360)
+	radians := yaw * math.Pi / 180
+	offset := seat.Position
+	position := origin.Add(mgl64.Vec3{offset.X()*math.Cos(radians) - offset.Z()*math.Sin(radians), offset.Y(), offset.X()*math.Sin(radians) + offset.Z()*math.Cos(radians)})
+	for _, coordinate := range position {
+		if math.IsNaN(coordinate) || math.IsInf(coordinate, 0) {
+			return mgl64.Vec3{}, false
+		}
+	}
+	return position, true
 }
 
 // HandleRiderInput delivers finite, clamped input only to the rider's current vehicle.
