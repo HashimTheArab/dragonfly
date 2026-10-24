@@ -40,9 +40,9 @@ func TestResumeProjectileFlight_ContinuesTheDeclaredFlight(t *testing.T) {
 			t.Fatalf("%+v: full flight = %+v, %t", physics, full, ok)
 		}
 		for tick, observed := range projectileFlightPositions(t, start, velocity, physics, 8) {
-			resumed, ok := ResumeProjectileFlight(start, velocity, observed, physics, 100)
-			if !ok {
-				t.Fatalf("%+v: tick %d rejected", physics, tick+1)
+			resumed, flown, ok := ResumeProjectileFlight(start, velocity, observed, physics, 100)
+			if !ok || flown != tick+1 {
+				t.Fatalf("%+v: tick %d resumed after %d ticks, accepted = %t", physics, tick+1, flown, ok)
 			}
 			got, ok := PredictProjectileLanding(wall, func(cube.Pos) bool { return true }, observed, resumed, physics, 100)
 			if !ok || got != full {
@@ -60,13 +60,21 @@ func TestResumeProjectileFlight_IgnoresTerrainAlreadyPassed(t *testing.T) {
 	if retraced, _ := PredictProjectileLanding(blocks, func(cube.Pos) bool { return true }, start, velocity, physics, 100); retraced.Block != (cube.Pos{0, 70, 3}) {
 		t.Fatalf("setup: launch-state prediction = %+v, want the block behind", retraced)
 	}
-	resumed, ok := ResumeProjectileFlight(start, velocity, observed, physics, 100)
+	resumed, _, ok := ResumeProjectileFlight(start, velocity, observed, physics, 100)
 	if !ok {
 		t.Fatal("resume rejected")
 	}
 	got, ok := PredictProjectileLanding(blocks, func(cube.Pos) bool { return true }, observed, resumed, physics, 100)
 	if !ok || !got.Hit || got.Block != (cube.Pos{0, 69, 12}) {
 		t.Fatalf("resumed prediction = %+v, %t; want the block ahead", got, ok)
+	}
+}
+
+func TestResumeProjectileFlight_AtLaunchHasFlownNoTicks(t *testing.T) {
+	start, velocity := mgl64.Vec3{0.5, 70.5, 0.5}, mgl64.Vec3{0, 0, 1.5}
+	resumed, flown, ok := ResumeProjectileFlight(start, velocity, start, ProjectilePhysics{Gravity: 0.025}, 100)
+	if !ok || flown != 0 || resumed != velocity {
+		t.Fatalf("resume at launch = %v after %d ticks, accepted = %t", resumed, flown, ok)
 	}
 }
 
@@ -83,7 +91,7 @@ func TestResumeProjectileFlight_RejectsInvalidInputs(t *testing.T) {
 		{"negative gravity", valid, ProjectilePhysics{Gravity: -1}, 8},
 		{"non-finite", mgl64.Vec3{math.NaN()}, ProjectilePhysics{}, 8},
 	} {
-		if _, ok := ResumeProjectileFlight(valid, valid, tt.observed, tt.physics, tt.ticks); ok {
+		if _, _, ok := ResumeProjectileFlight(valid, valid, tt.observed, tt.physics, tt.ticks); ok {
 			t.Errorf("%s accepted", tt.name)
 		}
 	}
