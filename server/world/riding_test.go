@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/world/chunk"
 	"github.com/go-gl/mathgl/mgl64"
 )
 
@@ -196,4 +197,38 @@ func TestSeatPositionRejectsUnrepresentableCoordinates(t *testing.T) {
 	if _, ok := SeatPosition(vehicle.Position(), 0, Seat{Position: mgl64.Vec3{math.MaxFloat64, 0, 0}}); ok {
 		t.Fatal("overflowed seat coordinates accepted")
 	}
+}
+
+func TestUpdatedRiderPositionAndRotationAreSaved(t *testing.T) {
+	provider := &columnSaveObserver{stored: make(map[ChunkPos]*chunk.Column)}
+	w := Config{Synchronous: true, Provider: provider}.New()
+	defer w.Close()
+	var inputs []RiderInput
+	var changes []bool
+	limit := 0.0
+	typ := ridingTestType{seats: []Seat{{Position: mgl64.Vec3{0, 1, 0}, RotationLimit: &limit}}, inputs: &inputs, changes: &changes}
+	vehicle := EntitySpawnOpts{Position: mgl64.Vec3{8, 70, 8}}.New(typ, testEntityConfig{})
+	rider := EntitySpawnOpts{}.New(testEntityType{}, testEntityConfig{})
+	w.Do(func(tx *Tx) {
+		v, r := tx.AddEntity(vehicle), tx.AddEntity(rider)
+		if !tx.Mount(r, v, 0) {
+			t.Fatal("mount failed")
+		}
+		// Model a resident column whose saved entities have not changed since load.
+		w.chunks[ChunkPos{}].modified = false
+		vehicle.data.Pos = mgl64.Vec3{10, 72, 10}
+		vehicle.data.Rot = cube.Rotation{90, 0}
+		tx.UpdateRiders(v)
+	})
+	w.Save()
+	saved := provider.stored[ChunkPos{}]
+	if saved == nil {
+		t.Fatal("updated rider column was not saved")
+	}
+	for _, e := range saved.Entities {
+		if readVec3(e.Data, "Pos") == (mgl64.Vec3{10, 73, 10}) && readRotation(e.Data) == (cube.Rotation{90, 0}) {
+			return
+		}
+	}
+	t.Fatalf("saved entities lost rider position or rotation: %v", saved.Entities)
 }

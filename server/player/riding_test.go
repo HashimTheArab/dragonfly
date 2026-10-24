@@ -81,3 +81,51 @@ func TestDetachClearsVehicleInterpolationBeforeWalking(t *testing.T) {
 		w.Close()
 	}
 }
+
+func TestMountedPlayerTeleportReleasesSeat(t *testing.T) {
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
+	vehicle := world.EntitySpawnOpts{Position: mgl64.Vec3{8, 70, 8}}.New(ridingTickVehicle{entity.TextType}, entity.StationaryBehaviourConfig{})
+	rider := world.EntitySpawnOpts{}.New(Type, Config{GameMode: world.GameModeCreative})
+	w.Do(func(tx *world.Tx) {
+		v, p := tx.AddEntity(vehicle), tx.AddEntity(rider).(*Player)
+		if !tx.Mount(p, v, 0) {
+			t.Fatal("mount failed")
+		}
+		destination := mgl64.Vec3{24, 80, 24}
+		p.Teleport(destination)
+		tx.UpdateRiders(v)
+		if _, _, ok := world.Riding(p); ok {
+			t.Fatal("teleported player retained vehicle link")
+		}
+		if len(world.RiderLinks(v)) != 0 || p.Position() != destination {
+			t.Fatal("vehicle retained or moved the teleported player")
+		}
+		if !tx.Mount(p, v, 0) {
+			t.Fatal("teleport did not release the seat")
+		}
+	})
+}
+
+func TestMountedPlayerDeathReleasesSeat(t *testing.T) {
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
+	vehicle := world.EntitySpawnOpts{Position: mgl64.Vec3{8, 70, 8}}.New(ridingTickVehicle{entity.TextType}, entity.StationaryBehaviourConfig{})
+	rider := world.EntitySpawnOpts{}.New(Type, Config{})
+	w.Do(func(tx *world.Tx) {
+		v, p := tx.AddEntity(vehicle), tx.AddEntity(rider).(*Player)
+		if !tx.Mount(p, v, 0) {
+			t.Fatal("mount failed")
+		}
+		p.Hurt(p.MaxHealth(), entity.VoidDamageSource{})
+		if !p.Dead() {
+			t.Fatal("player survived fatal damage")
+		}
+		if _, _, ok := world.Riding(p); ok {
+			t.Fatal("dead player retained vehicle link")
+		}
+		if len(world.RiderLinks(v)) != 0 {
+			t.Fatal("death did not release the seat")
+		}
+	})
+}
