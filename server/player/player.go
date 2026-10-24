@@ -2349,6 +2349,9 @@ func (p *Player) teleport(pos mgl64.Vec3) {
 // position of the player.
 // Move also rotates the player, adding deltaYaw and deltaPitch to the respective values.
 func (p *Player) Move(deltaPos mgl64.Vec3, deltaYaw, deltaPitch float64) {
+	if _, _, riding := world.Riding(p); riding {
+		return
+	}
 	if p.Dead() || (deltaPos.ApproxEqual(mgl64.Vec3{}) && mgl64.FloatEqual(deltaYaw, 0) && mgl64.FloatEqual(deltaPitch, 0)) {
 		p.onGround = true
 		p.updateFallState(deltaPos.Y())
@@ -2683,6 +2686,9 @@ func (p *Player) Latency() time.Duration {
 
 // Tick ticks the entity, performing actions such as checking if the player is still breaking a block.
 func (p *Player) Tick(tx *world.Tx, current int64) {
+	if _, _, riding := world.Riding(p); riding {
+		p.ResetFallDistance()
+	}
 	if p.Dead() {
 		return
 	}

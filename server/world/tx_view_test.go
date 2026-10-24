@@ -92,6 +92,7 @@ func TestBlockTransactionView_TxMethodCoverage(t *testing.T) {
 		{"ScheduleBlockUpdate", "AddParticle", "PlayEntityAnimation", "PlaySound"},
 		// Unsupported operations that make the result unreliable.
 		{
+			"Mount", "Dismount", "UpdateRiders", "HandleRiderInput",
 			"MarkEntityModified",
 			"Defer", "DeferErr", "World", "SetBlockEntity", "BlocksWithin", "BuildStructure", "HighestLightBlocker", "HighestBlock", "Light", "SkyLight", "BlockLight",
 			"SetBiome", "Biome", "Temperature", "RainingAt", "SnowingAt", "ThunderingAt", "Raining", "Thundering",
