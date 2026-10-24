@@ -44,9 +44,40 @@ func TestMountedPlayerTickDoesNotSweepVehicleVelocity(t *testing.T) {
 			if generator.generated.Load() != 1 {
 				t.Fatalf("mounted collision sweep visited terrain along velocity %v", p.Velocity())
 			}
-			if p.Velocity() != (mgl64.Vec3{speed, speed, speed}) {
-				t.Fatal("collision handling changed vehicle interpolation velocity")
+			if p.Velocity() != (mgl64.Vec3{}) || v.(*entity.Ent).Velocity() != (mgl64.Vec3{speed, speed, speed}) {
+				t.Fatal("vehicle interpolation leaked into walking velocity")
 			}
 		}
 	})
+}
+
+func TestDetachClearsVehicleInterpolationBeforeWalking(t *testing.T) {
+	for _, remove := range []bool{false, true} {
+		generator := &ridingTickGenerator{}
+		w := world.Config{Synchronous: true, Generator: generator}.New()
+		position := mgl64.Vec3{8, 70, 8}
+		vehicle := world.EntitySpawnOpts{Position: position}.New(ridingTickVehicle{entity.TextType}, entity.StationaryBehaviourConfig{})
+		rider := world.EntitySpawnOpts{}.New(Type, Config{Position: position, GameMode: world.GameModeCreative})
+		w.Do(func(tx *world.Tx) {
+			v, p := tx.AddEntity(vehicle), tx.AddEntity(rider).(*Player)
+			if !tx.Mount(p, v, 0) {
+				t.Fatal("mount failed")
+			}
+			v.(*entity.Ent).SetVelocity(mgl64.Vec3{10000, 10000, 10000})
+			tx.UpdateRiders(v)
+			if remove {
+				tx.RemoveEntity(v)
+			} else if !tx.Dismount(p) {
+				t.Fatal("dismount failed")
+			}
+			if p.Velocity() != (mgl64.Vec3{}) {
+				t.Fatal("detached player retained vehicle interpolation velocity")
+			}
+			p.Tick(tx, 2)
+			if generator.generated.Load() != 1 {
+				t.Fatal("detached player swept terrain along vehicle velocity")
+			}
+		})
+		w.Close()
+	}
 }

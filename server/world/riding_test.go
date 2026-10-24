@@ -167,3 +167,33 @@ func TestSeatRotationLimitWrapsMultipleTurns(t *testing.T) {
 		w.Close()
 	}
 }
+
+func TestSeatPositionUsesReducedFiniteYaw(t *testing.T) {
+	w := Config{Synchronous: true}.New()
+	defer w.Close()
+	var inputs []RiderInput
+	var changes []bool
+	for _, offset := range []mgl64.Vec3{{}, {1, 2, 3}} {
+		typ := ridingTestType{seats: []Seat{{Position: offset}}, inputs: &inputs, changes: &changes}
+		vehicle := EntitySpawnOpts{Position: mgl64.Vec3{8, 70, 8}, Rotation: cube.Rotation{1e308, 0}}.New(typ, testEntityConfig{})
+		rider := NewEntity(testEntityType{}, testEntityConfig{})
+		w.Do(func(tx *Tx) {
+			v, r := tx.AddEntity(vehicle), tx.AddEntity(rider)
+			if !tx.Mount(r, v, 0) {
+				t.Fatal("finite seat rejected")
+			}
+			yaw := math.Mod(1e308, 360) * math.Pi / 180
+			want := v.Position().Add(mgl64.Vec3{offset.X()*math.Cos(yaw) - offset.Z()*math.Sin(yaw), offset.Y(), offset.X()*math.Sin(yaw) + offset.Z()*math.Cos(yaw)})
+			if difference := r.Position().Sub(want).Len(); math.IsNaN(difference) || difference > 1e-9 {
+				t.Fatalf("seat position %v differs from reduced heading %v", r.Position(), want)
+			}
+		})
+	}
+}
+
+func TestSeatPositionRejectsUnrepresentableCoordinates(t *testing.T) {
+	vehicle := &testEntity{data: &EntityData{Pos: mgl64.Vec3{math.MaxFloat64, 0, 0}}}
+	if _, ok := SeatPosition(vehicle.Position(), 0, Seat{Position: mgl64.Vec3{math.MaxFloat64, 0, 0}}); ok {
+		t.Fatal("overflowed seat coordinates accepted")
+	}
+}
