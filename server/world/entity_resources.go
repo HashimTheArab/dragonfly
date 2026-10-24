@@ -15,6 +15,13 @@ type ResourcePackEntityType interface {
 	Resources() EntityResources
 }
 
+// TransientEntityType opts out of saved chunk entity data. Its live handles are
+// still closed normally when their world or chunk closes.
+type TransientEntityType interface {
+	EntityType
+	Transient() bool
+}
+
 // EntityNetworkIdentifier returns the client-facing identifier of t.
 func EntityNetworkIdentifier(t EntityType) string {
 	if network, ok := t.(interface{ NetworkEncodeEntity() string }); ok {

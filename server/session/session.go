@@ -655,6 +655,11 @@ type actorIdentifier struct {
 
 // sendAvailableEntities sends all registered entities to the player.
 func (s *Session) sendAvailableEntities(w *world.World) {
+	for _, t := range w.EntityRegistry().Types() {
+		if properties, ok := t.(interface{ EntityPropertyDefinitions() map[string]any }); ok {
+			s.writePacket(&packet.SyncActorProperty{PropertyData: properties.EntityPropertyDefinitions()})
+		}
+	}
 	identifiers := availableEntityIdentifiers(w.EntityRegistry())
 	serialisedEntityData, err := nbt.Marshal(map[string]any{"idlist": identifiers})
 	if err != nil {
