@@ -33,36 +33,24 @@ func (h *ItemStackRequestHandler) handleCraft(a *protocol.CraftRecipeStackReques
 		return fmt.Errorf("times crafted must be at least 1")
 	}
 
-	size := s.craftingSize()
+	pattern := recipe.CraftingPattern{Input: craft.Input()}
+	if shaped, ok := craft.(recipe.Shaped); ok {
+		pattern.Shape = shaped.Shape()
+	}
 	offset := s.craftingOffset()
-	consumed := make([]bool, size)
-	for _, expected := range craft.Input() {
-		var processed bool
-		for slot := offset; slot < offset+size; slot++ {
-			if consumed[slot-offset] {
-				// We've already consumed this slot, skip it.
-				continue
-			}
-			has, _ := s.ui.Item(int(slot))
-			if has.Empty() != expected.Empty() || has.Count() < expected.Count()*timesCrafted {
-				// We can't process this item, as it's not a part of the recipe.
-				continue
-			}
-			if !matchingStacks(has, expected) {
-				// Not the same item.
-				continue
-			}
-			processed, consumed[slot-offset] = true, true
-			st := has.Grow(-expected.Count() * timesCrafted)
-			h.setItemInSlot(protocol.StackRequestSlotInfo{
-				Container: protocol.FullContainerName{ContainerID: protocol.ContainerCraftingInput},
-				Slot:      byte(slot),
-			}, st, s, tx)
-			break
-		}
-		if !processed {
-			return fmt.Errorf("recipe %v: could not consume expected item: %v", a.RecipeNetworkID, expected)
-		}
+	grid := make([]item.Stack, s.craftingSize())
+	for slot := range grid {
+		grid[slot], _ = s.ui.Item(int(offset) + slot)
+	}
+	consumed, ok := pattern.Match(grid, timesCrafted)
+	if !ok {
+		return fmt.Errorf("recipe %v: crafting grid does not match", a.RecipeNetworkID)
+	}
+	for _, use := range consumed {
+		h.setItemInSlot(protocol.StackRequestSlotInfo{
+			Container: protocol.FullContainerName{ContainerID: protocol.ContainerCraftingInput},
+			Slot:      byte(int(offset) + use.Slot),
+		}, grid[use.Slot].Grow(-use.Count), s, tx)
 	}
 	return h.createResults(s, tx, item.RepeatStacks(craft.Output(), timesCrafted)...)
 }
@@ -167,53 +155,21 @@ func (h *ItemStackRequestHandler) handleCreativeCraft(a *protocol.CraftCreativeS
 // craftingSize gets the crafting size based on the opened container ID.
 func (s *Session) craftingSize() uint32 {
 	if s.openedContainerID.Load() == 1 {
-		return craftingGridSizeLarge
+		return CraftingGridSizeLarge
 	}
-	return craftingGridSizeSmall
+	return CraftingGridSizeSmall
 }
 
 // craftingOffset gets the crafting offset based on the opened container ID.
 func (s *Session) craftingOffset() uint32 {
 	if s.openedContainerID.Load() == 1 {
-		return craftingGridLargeOffset
+		return CraftingGridLargeOffset
 	}
-	return craftingGridSmallOffset
-}
-
-// matchingStacks returns true if the two stacks are the same in a crafting scenario.
-// MatchingStacks reports whether has satisfies expected. ok is false when either side is
-// not a recipe item type, which a caller decoding recipes from an untrusted source has to
-// handle rather than read as a mismatch.
-func MatchingStacks(has, expected recipe.Item) (match, ok bool) {
-	switch expected := expected.(type) {
-	case item.Stack:
-		switch has := has.(type) {
-		case recipe.ItemTag:
-			name, _ := expected.Item().EncodeItem()
-			return has.Contains(name), true
-		case item.Stack:
-			_, variants := expected.Value("variants")
-			if !variants {
-				return has.Comparable(expected), true
-			}
-			nameOne, _ := has.Item().EncodeItem()
-			nameTwo, _ := expected.Item().EncodeItem()
-			return nameOne == nameTwo, true
-		}
-	case recipe.ItemTag:
-		switch has := has.(type) {
-		case item.Stack:
-			name, _ := has.Item().EncodeItem()
-			return expected.Contains(name), true
-		case recipe.ItemTag:
-			return has.Tag() == expected.Tag(), true
-		}
-	}
-	return false, false
+	return CraftingGridSmallOffset
 }
 
 func matchingStacks(has, expected recipe.Item) bool {
-	match, ok := MatchingStacks(has, expected)
+	match, ok := recipe.MatchingStacks(has, expected)
 	if !ok {
 		panic(fmt.Errorf("unexpected recipe item pair %T and %T", has, expected))
 	}
