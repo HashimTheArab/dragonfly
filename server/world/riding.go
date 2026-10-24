@@ -61,8 +61,9 @@ func Riding(e Entity) (*EntityHandle, Seat, bool) {
 
 // RiderLink is one occupied seat, ordered by its seat index by RiderLinks.
 type RiderLink struct {
-	Rider *EntityHandle
-	Seat  Seat
+	Rider     *EntityHandle
+	Seat      Seat
+	SeatIndex int
 }
 
 // RiderLinks returns occupied seats for late viewers in e's transaction.
@@ -75,7 +76,7 @@ func RiderLinks(e Entity) []RiderLink {
 	out := make([]RiderLink, 0, len(indices))
 	for _, index := range indices {
 		h := e.H().data.riders[index]
-		out = append(out, RiderLink{Rider: h, Seat: h.data.seat})
+		out = append(out, RiderLink{Rider: h, Seat: h.data.seat, SeatIndex: index})
 	}
 	return out
 }

@@ -128,3 +128,21 @@ func TestMountRejectsCyclesAndOtherWorlds(t *testing.T) {
 		}
 	})
 }
+
+// transientTestType opts one actor out of serialized terrain data.
+type transientTestType struct{ testEntityType }
+
+func (transientTestType) Transient() bool { return true }
+
+func TestTransientActorsStayOutOfTerrainStorage(t *testing.T) {
+	w := Config{Synchronous: true}.New()
+	defer w.Close()
+	w.Do(func(tx *Tx) {
+		persistent := NewEntity(testEntityType{}, testEntityConfig{})
+		transient := NewEntity(transientTestType{}, testEntityConfig{})
+		column := w.columnTo(&Column{Entities: []*EntityHandle{persistent, transient}}, ChunkPos{})
+		if len(column.Entities) != 1 || column.Entities[0].Data["identifier"] != persistent.Type().EncodeEntity() {
+			t.Fatalf("saved transient actor: %v", column.Entities)
+		}
+	})
+}
