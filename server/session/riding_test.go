@@ -7,6 +7,7 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/go-gl/mathgl/mgl64"
+	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 )
@@ -109,6 +110,32 @@ func TestActorIdentifiersUseNetworkIdentity(t *testing.T) {
 	ids := availableEntityIdentifiers(reg)
 	if len(ids) != 1 || ids[0].ID != "minecraft:minecart" {
 		t.Fatalf("identifiers: %v", ids)
+	}
+}
+
+// baseActorType keeps its custom identity while selecting an existing client actor class.
+type baseActorType struct{ networkEncodedOffsetType }
+
+// NetworkEncodeEntity advertises a distinct identity for the custom actor.
+func (baseActorType) NetworkEncodeEntity() string { return "test:vehicle" }
+
+// BaseEntityIdentifier selects the existing actor class for client construction.
+func (baseActorType) BaseEntityIdentifier() string { return "minecraft:boat" }
+
+func TestActorIdentifiersRetainBaseIdentity(t *testing.T) {
+	reg := world.EntityRegistryConfig{}.New([]world.EntityType{baseActorType{}})
+	data, err := nbt.Marshal(map[string]any{"idlist": availableEntityIdentifiers(reg)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		IDs []map[string]any `nbt:"idlist"`
+	}
+	if err := nbt.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.IDs) != 1 || decoded.IDs[0]["id"] != "test:vehicle" || decoded.IDs[0]["bid"] != "minecraft:boat" {
+		t.Fatalf("actor base identity lost: %v", decoded.IDs)
 	}
 }
 

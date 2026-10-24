@@ -645,6 +645,8 @@ func (s *Session) writePacket(pk packet.Packet) {
 type actorIdentifier struct {
 	// ID is a unique namespaced identifier for the entity.
 	ID string `nbt:"id"`
+	// BaseID selects the existing actor class used to construct this identity.
+	BaseID string `nbt:"bid"`
 }
 
 // sendAvailableEntities sends all registered entities to the player.
@@ -669,7 +671,11 @@ func availableEntityIdentifiers(registry world.EntityRegistry) []actorIdentifier
 	for _, t := range registry.Types() {
 		id := world.EntityNetworkIdentifier(t)
 		if !seen[id] {
-			identifiers = append(identifiers, actorIdentifier{ID: id})
+			identifier := actorIdentifier{ID: id}
+			if base, ok := t.(world.BaseEntityType); ok {
+				identifier.BaseID = base.BaseEntityIdentifier()
+			}
+			identifiers = append(identifiers, identifier)
 			seen[id] = true
 		}
 	}

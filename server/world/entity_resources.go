@@ -15,6 +15,12 @@ type ResourcePackEntityType interface {
 	Resources() EntityResources
 }
 
+// BaseEntityType selects an existing client actor class for a custom network identity.
+type BaseEntityType interface {
+	EntityType
+	BaseEntityIdentifier() string
+}
+
 // TransientEntityType opts out of saved chunk entity data. Its live handles are
 // still closed normally when their world or chunk closes.
 type TransientEntityType interface {
