@@ -2051,11 +2051,13 @@ func (p *Player) breakTime(pos cube.Pos) time.Duration {
 // affecting how quickly the player breaks blocks.
 func (p *Player) breakContext() block.BreakContext {
 	_, aquaAffinity := p.Armour().Helmet().Enchantment(enchantment.AquaAffinity)
+	_, _, riding := world.Riding(p)
 	ctx := block.BreakContext{
 		Underwater:   p.insideOfWater(),
 		AquaAffinity: aquaAffinity,
 		Airborne:     !p.OnGround(),
 		Flying:       p.Flying(),
+		Riding:       riding,
 	}
 	if e, ok := p.Effect(effect.Haste); ok {
 		ctx.HasteLevel = e.Level()
@@ -3553,6 +3555,15 @@ func (p *Player) broadcastArmour(_ int, before, after item.Stack) {
 	for _, viewer := range p.viewers() {
 		viewer.ViewEntityArmour(p)
 	}
+}
+
+// ControllingViewer returns the player's session independently of loaded chunks,
+// or nil if the player has no session.
+func (p *Player) ControllingViewer() world.Viewer {
+	if p.s == nil {
+		return nil
+	}
+	return p.s
 }
 
 // viewers returns a list of all viewers of the Player.

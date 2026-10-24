@@ -4,11 +4,46 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/df-mc/dragonfly/server/block"
+	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/entity"
+	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 	"github.com/go-gl/mathgl/mgl64"
 )
+
+func TestGroundedMountedPlayerMiningPenalty(t *testing.T) {
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
+	position := mgl64.Vec3{8, 70, 8}
+	vehicle := world.EntitySpawnOpts{Position: position}.New(ridingTickVehicle{entity.TextType}, entity.StationaryBehaviourConfig{})
+	rider := world.EntitySpawnOpts{}.New(Type, Config{Position: position})
+	w.Do(func(tx *world.Tx) {
+		tx.SetBlock(cube.Pos{8, 69, 8}, block.Stone{}, nil)
+		v, p := tx.AddEntity(vehicle), tx.AddEntity(rider).(*Player)
+		p.Tick(tx, 1)
+		if !p.OnGround() {
+			t.Fatal("player is not grounded")
+		}
+		walking := block.BreakDuration(block.Stone{}, item.Stack{}, p.breakContext())
+		if !tx.Mount(p, v, 0) {
+			t.Fatal("mount failed")
+		}
+		p.Tick(tx, 2)
+		ctx := p.breakContext()
+		if ctx.Airborne || !ctx.Riding {
+			t.Fatalf("grounded mounted mining context: %+v", ctx)
+		}
+		if got := block.BreakDuration(block.Stone{}, item.Stack{}, ctx); got != walking*5 {
+			t.Fatalf("mounted mining duration = %v, want %v", got, walking*5)
+		}
+		tx.Dismount(p)
+		if p.breakContext().Riding {
+			t.Fatal("dismounted mining context retained riding")
+		}
+	})
+}
 
 // ridingTickGenerator counts terrain loads caused by the player's collision work.
 type ridingTickGenerator struct {
