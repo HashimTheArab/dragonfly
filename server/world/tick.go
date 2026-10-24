@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
-	"github.com/df-mc/dragonfly/server/internal/sliceutil"
 )
 
 // ticker implements World ticking methods.
@@ -236,50 +235,19 @@ func (t ticker) anyWithinDistance(pos ChunkPos, loaded []ChunkPos, r int32) bool
 // tickEntities ticks all entities in the world, making sure they are still located in the correct chunks and
 // updating where necessary.
 func (t ticker) tickEntities(tx *Tx, tick int64) {
-	for handle, lastPos := range tx.World().entities {
+	w := tx.World()
+	for handle, lastPos := range w.entities {
 		e := handle.mustEntity(tx)
 		chunkPos := chunkPosFromVec3(handle.data.Pos)
 
-		c, ok := tx.World().chunks[chunkPos]
+		c, ok := w.chunks[chunkPos]
 		if !ok {
 			continue
 		}
 
-		if lastPos != chunkPos {
-			// The entity was stored using an outdated chunk position. We update it and make sure it is ready
-			// for loaders to view it.
-			tx.World().entities[handle] = chunkPos
-			c.Entities = append(c.Entities, handle)
-			c.modified = true
+		w.moveEntity(tx, handle, lastPos, chunkPos, c)
 
-			var viewers []Viewer
-
-			// When changing an entity's world, then teleporting it immediately, we could end up in a situation
-			// where the old chunk of the entity was not loaded. In this case, it should be safe simply to ignore
-			// the loaders from the old chunk. We can assume they never saw the entity in the first place.
-			if old, ok := tx.World().chunks[lastPos]; ok {
-				old.Entities = sliceutil.DeleteVal(old.Entities, handle)
-				old.modified = true
-				viewers = old.viewers
-			}
-
-			for _, viewer := range viewers {
-				if slices.Index(c.viewers, viewer) == -1 {
-					// First we hide the entity from all loaders that were previously viewing it, but no
-					// longer are.
-					viewer.HideEntity(e)
-				}
-			}
-			for _, viewer := range c.viewers {
-				if slices.Index(viewers, viewer) == -1 {
-					// Then we show the entity to all loaders that are now viewing the entity in the new
-					// chunk.
-					showEntity(e, viewer)
-				}
-			}
-		}
-
-		if tx.World().conf.Synchronous || len(c.viewers) > 0 {
+		if w.conf.Synchronous || len(c.viewers) > 0 {
 			if te, ok := e.(TickerEntity); ok {
 				c.modified = true
 				te.Tick(tx, tick)

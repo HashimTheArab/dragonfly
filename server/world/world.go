@@ -1181,6 +1181,62 @@ func (w *World) PortalDestination(dim Dimension) *World {
 	return w
 }
 
+// reconcileEntityChunks moves entities to their current columns before any
+// columns are saved or closed. A teleport may happen between entity ticks.
+func (w *World) reconcileEntityChunks(tx *Tx) {
+	for handle, lastPos := range w.entities {
+		pos := chunkPosFromVec3(handle.data.Pos)
+		if pos == lastPos {
+			continue
+		}
+		c := tx.chunk(pos)
+		if _, ok := w.chunks[pos]; !ok {
+			// A failed load returns a stand-in column that cannot be saved.
+			continue
+		}
+		w.moveEntity(tx, handle, lastPos, pos, c)
+	}
+}
+
+// moveEntity updates column ownership and viewers after an entity changes chunks.
+func (w *World) moveEntity(tx *Tx, handle *EntityHandle, lastPos, chunkPos ChunkPos, c *Column) {
+	if lastPos == chunkPos {
+		return
+	}
+	e := handle.mustEntity(tx)
+	// The entity was stored using an outdated chunk position. We update it and make sure it is ready
+	// for loaders to view it.
+	w.entities[handle] = chunkPos
+	c.Entities = append(c.Entities, handle)
+	c.modified = true
+
+	var viewers []Viewer
+
+	// When changing an entity's world, then teleporting it immediately, we could end up in a situation
+	// where the old chunk of the entity was not loaded. In this case, it should be safe simply to ignore
+	// the loaders from the old chunk. We can assume they never saw the entity in the first place.
+	if old, ok := w.chunks[lastPos]; ok {
+		old.Entities = sliceutil.DeleteVal(old.Entities, handle)
+		old.modified = true
+		viewers = old.viewers
+	}
+
+	for _, viewer := range viewers {
+		if slices.Index(c.viewers, viewer) == -1 {
+			// First we hide the entity from all loaders that were previously viewing it, but no
+			// longer are.
+			viewer.HideEntity(e)
+		}
+	}
+	for _, viewer := range c.viewers {
+		if slices.Index(viewers, viewer) == -1 {
+			// Then we show the entity to all loaders that are now viewing the entity in the new
+			// chunk.
+			showEntity(e, viewer)
+		}
+	}
+}
+
 // Save saves the World to the provider.
 func (w *World) Save() {
 	<-w.exec(w.save(w.saveChunk))
@@ -1192,6 +1248,7 @@ func (w *World) save(f func(*Tx, ChunkPos, *Column)) execFunc {
 		if w.conf.ReadOnly {
 			return
 		}
+		w.reconcileEntityChunks(tx)
 		w.conf.Log.Debug("Saving chunks in memory to disk...")
 		for pos, c := range w.chunks {
 			f(tx, pos, c)
@@ -1517,10 +1574,14 @@ func (w *World) autoSave() {
 	}
 }
 
-// closeUnusedChunk closes all chunks currently not in use by any viewer.
+// closeUnusedChunks closes chunks without viewers or live players.
 func (w *World) closeUnusedChunks(tx *Tx) {
+	w.reconcileEntityChunks(tx)
 	for pos, c := range w.chunks {
-		if len(c.viewers) == 0 {
+		// A player's loader may still be catching up with its new position.
+		if len(c.viewers) == 0 && !slices.ContainsFunc(c.Entities, func(e *EntityHandle) bool {
+			return e.t.EncodeEntity() == "minecraft:player"
+		}) {
 			w.closeChunk(tx, pos, c)
 		}
 	}
@@ -1581,6 +1642,11 @@ func (w *World) columnFrom(c *chunk.Column, _ ChunkPos) *Column {
 		if !ok {
 			w.conf.Log.Error("read column: entity without identifier field", "ID", e.ID)
 			col.unsupportedEntities = append(col.unsupportedEntities, e)
+			continue
+		}
+		if eid == "minecraft:player" {
+			// Players rejoin through their player provider, not saved chunk snapshots.
+			col.modified = true
 			continue
 		}
 		t, ok := w.conf.Entities.Lookup(eid)
