@@ -146,3 +146,24 @@ func TestTransientActorsStayOutOfTerrainStorage(t *testing.T) {
 		}
 	})
 }
+
+func TestSeatRotationLimitWrapsMultipleTurns(t *testing.T) {
+	for _, test := range []struct{ vehicle, rider, want float64 }{
+		{720, 10, 730}, {-720, -10, -730}, {1080, -1090, 1070}, {-1080, 1090, -1070},
+	} {
+		w := Config{Synchronous: true}.New()
+		var inputs []RiderInput
+		var changes []bool
+		limit := 30.0
+		typ := ridingTestType{seats: []Seat{{RotationLimit: &limit}}, inputs: &inputs, changes: &changes}
+		vehicle := EntitySpawnOpts{Rotation: cube.Rotation{test.vehicle, 0}}.New(typ, testEntityConfig{})
+		rider := EntitySpawnOpts{Rotation: cube.Rotation{test.rider, 0}}.New(testEntityType{}, testEntityConfig{})
+		w.Do(func(tx *Tx) {
+			v, r := tx.AddEntity(vehicle), tx.AddEntity(rider)
+			if !tx.Mount(r, v, 0) || r.Rotation().Yaw() != test.want {
+				t.Errorf("vehicle %v, rider %v: got %v, want %v", test.vehicle, test.rider, r.Rotation().Yaw(), test.want)
+			}
+		})
+		w.Close()
+	}
+}

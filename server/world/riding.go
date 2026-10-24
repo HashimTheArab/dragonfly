@@ -171,7 +171,12 @@ func (tx *Tx) UpdateRiders(vehicle Entity) {
 		offset = mgl64.Vec3{offset.X()*math.Cos(yaw) - offset.Z()*math.Sin(yaw), offset.Y(), offset.X()*math.Sin(yaw) + offset.Z()*math.Cos(yaw)}
 		d.Pos, d.Vel = vehicle.Position().Add(offset), vehicle.H().data.Vel
 		if limit := d.seat.RotationLimit; limit != nil {
-			delta := math.Mod(d.Rot.Yaw()-vehicle.Rotation().Yaw()+540, 360) - 180
+			delta := math.Mod(d.Rot.Yaw(), 360) - math.Mod(vehicle.Rotation().Yaw(), 360)
+			delta = math.Mod(delta+180, 360)
+			if delta < 0 {
+				delta += 360
+			}
+			delta -= 180
 			d.Rot[0] = vehicle.Rotation().Yaw() + max(-*limit, min(*limit, delta))
 		}
 		for _, v := range tx.ridingViewers(rider, vehicle) {
