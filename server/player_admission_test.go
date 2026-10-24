@@ -98,10 +98,14 @@ type admissionListener struct{ Listener }
 func (admissionListener) Disconnect(c session.Conn, _ string) error { return c.Close() }
 
 // admissionServer builds only the world and server state needed for login.
-func admissionServer(t *testing.T) (*Server, *admissionFixture, *admissionConn) {
+func admissionServer(t *testing.T, dimension ...world.Dimension) (*Server, *admissionFixture, *admissionConn) {
 	t.Helper()
 	log := slog.New(slog.DiscardHandler)
-	w := world.Config{Log: log, Entities: entity.DefaultRegistry}.New()
+	var dim world.Dimension = world.Overworld
+	if len(dimension) != 0 {
+		dim = dimension[0]
+	}
+	w := world.Config{Log: log, Dim: dim, Entities: entity.DefaultRegistry}.New()
 	t.Cleanup(func() { _ = w.Close() })
 	a := &admissionFixture{w: w, data: player.Config{Position: mgl64.Vec3{3, 70, 5}}}
 	c := &admissionConn{id: uuid.New(), closed: make(chan struct{})}
@@ -133,29 +137,43 @@ func TestLoginFailureReleasesAdmission(t *testing.T) {
 
 // TestLoginRevalidatesBeforeSpawn retains ownership through the handshake and uses the new placement.
 func TestLoginRevalidatesBeforeSpawn(t *testing.T) {
-	srv, a, c := admissionServer(t)
-	srv.finaliseConn(t.Context(), c, admissionListener{})
-	if a.releases != 0 || a.resolves != 1 {
-		t.Fatal("handshake released the destination before spawn")
-	}
-	original := a.w
-	fallback := world.Config{Log: srv.conf.Log, Entities: entity.DefaultRegistry}.New()
-	t.Cleanup(func() { _ = fallback.Close() })
-	if err := original.Close(); err != nil {
-		t.Fatal(err)
-	}
-	a.w, a.data.Position = fallback, mgl64.Vec3{9, 80, 7}
-	spawned := false
-	for p := range srv.Accept() {
-		if p.Tx().World() != fallback || p.Position() != a.data.Position || a.releases != 0 {
-			t.Fatal("spawn used stale placement or released its reservation early")
-		}
-		spawned = true
-		_ = p.Close()
-		break
-	}
-	if !spawned || a.resolves != 2 || a.releases != 1 {
-		t.Fatalf("admission = spawned %t, %d resolutions, %d releases", spawned, a.resolves, a.releases)
+	for _, mode := range []string{"same_world", "same_type_fallback", "other_type_fallback"} {
+		t.Run(mode, func(t *testing.T) {
+			var dimension world.Dimension = world.Overworld
+			if mode == "other_type_fallback" {
+				dimension = world.Nether
+			}
+			srv, a, c := admissionServer(t, dimension)
+			srv.finaliseConn(t.Context(), c, admissionListener{})
+			if a.releases != 0 || a.resolves != 1 {
+				t.Fatal("handshake released the destination before spawn")
+			}
+			original := a.w
+			fallback := original
+			if mode != "same_world" {
+				fallback = world.Config{Log: srv.conf.Log, Entities: entity.DefaultRegistry}.New()
+				t.Cleanup(func() { _ = fallback.Close() })
+				if err := original.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			a.w, a.data.Position = fallback, mgl64.Vec3{9, 80, 7}
+			spawned := false
+			for p := range srv.Accept() {
+				if p.Tx().World() != fallback || p.Position() != a.data.Position || a.releases != 0 {
+					t.Fatal("spawn used stale placement or released its reservation early")
+				}
+				if p.Data().Session.ChangingDimension() != (mode == "other_type_fallback") {
+					t.Error("fallback did not use the session's dimension transition")
+				}
+				spawned = true
+				_ = p.Close()
+				break
+			}
+			if !spawned || a.resolves != 2 || a.releases != 1 {
+				t.Fatalf("admission = spawned %t, %d resolutions, %d releases", spawned, a.resolves, a.releases)
+			}
+		})
 	}
 }
 

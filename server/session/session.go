@@ -156,7 +156,12 @@ const selfEntityRuntimeID = 1
 var errSelfRuntimeID = errors.New("invalid entity runtime ID: runtime ID for self must always be 1")
 
 type Config struct {
-	Log *slog.Logger
+	// InitialDimension and InitialPosition describe the placement already sent in
+	// StartGame. When InitialDimension is set, Spawn corrects a changed placement
+	// using the session's ordinary dimension and teleport handling.
+	InitialDimension world.Dimension
+	InitialPosition  mgl64.Vec3
+	Log              *slog.Logger
 
 	MaxChunkRadius int
 	// ChunkLoadsPerTick is the maximum number of chunks requested for the
@@ -268,6 +273,16 @@ func (s *Session) SetHandle(handle *world.EntityHandle, skin skin.Skin) {
 // Spawn makes the Controllable passed spawn in the world.World.
 // The function passed will be called when the session stops running.
 func (s *Session) Spawn(c Controllable, tx *world.Tx) {
+	if initial := s.conf.InitialDimension; initial != nil {
+		changed := initial != tx.World().Dimension()
+		if changed {
+			dim, _ := world.DimensionID(tx.World().Dimension())
+			s.changeDimension(int32(dim), false, c)
+		}
+		if changed || s.conf.InitialPosition != c.Position() {
+			s.ViewEntityTeleport(c, c.Position())
+		}
+	}
 	s.SendHealth(c.Health(), c.MaxHealth(), c.Absorption())
 	s.SendExperience(c.ExperienceLevel(), c.ExperienceProgress())
 	s.SendFood(c.Food(), 0, 0)

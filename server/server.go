@@ -558,10 +558,13 @@ func (srv *Server) handleSessionClose(tx *world.Tx, c session.Controllable) {
 	srv.pwg.Done()
 }
 
-// createPlayer creates a new player instance using the UUID and connection
-// passed.
-func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Config, w *world.World) (*session.Session, *onlinePlayer) {
+// createPlayer keeps the handshake placement so spawn can correct a revalidated destination.
+func (srv *Server) createPlayer(inc incoming, conf player.Config, w *world.World) (*session.Session, *onlinePlayer) {
+	conn := inc.conn
+	id := uuid.MustParse(conn.IdentityData().Identity)
 	s := session.Config{
+		InitialDimension:     inc.w.Dimension(),
+		InitialPosition:      inc.conf.Position,
 		Log:                  srv.conf.Log,
 		MaxChunkRadius:       srv.conf.MaxChunkRadius,
 		ChunkLoadsPerTick:    srv.conf.ChunkLoadsPerTick,
