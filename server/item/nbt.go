@@ -251,7 +251,9 @@ func readDisplay(m map[string]any, s *Stack) {
 		} else if lore, ok := display["Lore"].([]any); ok {
 			loreLines := make([]string, 0, len(lore))
 			for _, l := range lore {
-				loreLines = append(loreLines, l.(string))
+				if line, ok := l.(string); ok {
+					loreLines = append(loreLines, line)
+				}
 			}
 			*s = s.WithLore(loreLines...)
 		}
@@ -273,7 +275,7 @@ func readDragonflyData(m map[string]any, s *Stack) {
 		}
 		var values []mapValue
 		if err := gob.NewDecoder(bytes.NewBuffer(d)).Decode(&values); err != nil {
-			panic("error decoding item user data: " + err.Error())
+			return
 		}
 		for _, val := range values {
 			*s = s.WithValue(val.K, val.V)

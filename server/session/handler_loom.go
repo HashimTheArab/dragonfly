@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"

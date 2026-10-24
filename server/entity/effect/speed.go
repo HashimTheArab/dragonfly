@@ -33,3 +33,8 @@ func (speed) End(e world.Entity, lvl int) {
 func (speed) RGBA() color.RGBA {
 	return color.RGBA{R: 0x33, G: 0xeb, B: 0xff, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (speed) Metadata() Metadata {
+	return Metadata{Name: "speed", Icon: "speed_effect"}
+}

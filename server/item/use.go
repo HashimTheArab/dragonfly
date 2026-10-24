@@ -1,5 +1,59 @@
 package item
 
+import "github.com/df-mc/dragonfly/server/world"
+
+// UseContinuation classifies whether an item's use may continue until a later
+// release. It describes item semantics only, not runtime eligibility such as
+// ammunition, hunger, or game-mode checks.
+type UseContinuation uint8
+
+const (
+	UseContinuationUnclassified UseContinuation = iota
+	UseContinuationInstant
+	UseContinuationContinued
+)
+
+// ClassifyUseContinuation returns Dragonfly's continued-use classification for it.
+func ClassifyUseContinuation(it world.Item) UseContinuation {
+	switch held := it.(type) {
+	case GlassBottle, *GlassBottle, Bowl, *Bowl:
+		// Consumption remainders have no held-use phase of their own.
+		return UseContinuationInstant
+	case Bucket:
+		if held.CanConsume() {
+			return UseContinuationContinued
+		}
+		return UseContinuationInstant
+	case *Bucket:
+		if held == nil {
+			return UseContinuationUnclassified
+		}
+		if held.CanConsume() {
+			return UseContinuationContinued
+		}
+		return UseContinuationInstant
+	case Crossbow:
+		if held.Item.Empty() {
+			return UseContinuationContinued
+		}
+		return UseContinuationInstant
+	case *Crossbow:
+		if held == nil {
+			return UseContinuationUnclassified
+		}
+		if held.Item.Empty() {
+			return UseContinuationContinued
+		}
+		return UseContinuationInstant
+	}
+	switch it.(type) {
+	case Consumable, Releasable, Chargeable:
+		return UseContinuationContinued
+	default:
+		return UseContinuationUnclassified
+	}
+}
+
 // UseContext is passed to every item Use methods. It may be used to subtract items or to deal damage to them
 // after the action is complete.
 type UseContext struct {

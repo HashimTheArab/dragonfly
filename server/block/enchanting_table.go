@@ -15,6 +15,8 @@ type EnchantingTable struct {
 	sourceWaterDisplacer
 }
 
+func (EnchantingTable) OpensContainer() {}
+
 // Model ...
 func (e EnchantingTable) Model() world.BlockModel {
 	return model.EnchantingTable{}
@@ -54,10 +56,13 @@ func (EnchantingTable) EncodeBlock() (string, map[string]any) {
 	return "minecraft:enchanting_table", nil
 }
 
+// BlockActorID returns the Bedrock NBT identifier for EnchantingTable.
+func (EnchantingTable) BlockActorID() string { return "EnchantTable" }
+
 // EncodeNBT is used to encode the block to NBT, so that the enchanting table book will be rendered properly client-side.
 // The actual rotation value doesn't need to be set in the NBT, we just need to write the default NBT for the block.
 func (e EnchantingTable) EncodeNBT() map[string]any {
-	return map[string]any{"id": "EnchantTable"}
+	return map[string]any{"id": e.BlockActorID()}
 }
 
 // DecodeNBT is used to implement world.NBTer.

@@ -29,6 +29,8 @@ const (
 	hashBookshelf
 	hashBrewingStand
 	hashBricks
+	hashBuddingAmethyst
+	hashButton
 	hashCactus
 	hashCake
 	hashCalcite
@@ -61,6 +63,8 @@ const (
 	hashCopperTrapdoor
 	hashCoral
 	hashCoralBlock
+	hashCoralFan
+	hashCoralWallFan
 	hashCraftingTable
 	hashDeadBush
 	hashDecoratedPot
@@ -115,7 +119,9 @@ const (
 	hashIron
 	hashIronBars
 	hashIronChain
+	hashIronDoor
 	hashIronOre
+	hashIronTrapdoor
 	hashItemFrame
 	hashJukebox
 	hashKelp
@@ -135,6 +141,7 @@ const (
 	hashMagma
 	hashMelon
 	hashMelonSeeds
+	hashMobSpawner
 	hashMossCarpet
 	hashMud
 	hashMudBricks
@@ -162,6 +169,7 @@ const (
 	hashPolishedTuff
 	hashPortal
 	hashPotato
+	hashPressurePlate
 	hashPrismarine
 	hashPumpkin
 	hashPumpkinSeeds
@@ -181,6 +189,7 @@ const (
 	hashReinforcedDeepslate
 	hashResin
 	hashResinBricks
+	hashRespawnAnchor
 	hashSand
 	hashSandstone
 	hashSapling
@@ -214,10 +223,12 @@ const (
 	hashSugarCane
 	hashSulfur
 	hashSulfurBricks
+	hashSweetBerryBush
 	hashTNT
 	hashTerracotta
 	hashTintedGlass
 	hashTorch
+	hashTripwireHook
 	hashTuff
 	hashTuffBricks
 	hashVines
@@ -349,6 +360,14 @@ func (Bricks) Hash() (uint64, uint64) {
 	return hashBricks, 0
 }
 
+func (BuddingAmethyst) Hash() (uint64, uint64) {
+	return hashBuddingAmethyst, 0
+}
+
+func (b Button) Hash() (uint64, uint64) {
+	return hashButton, hashBlock(b.Block) | uint64(b.Facing)<<32 | uint64(boolByte(b.Pressed))<<35
+}
+
 func (c Cactus) Hash() (uint64, uint64) {
 	return hashCactus, uint64(c.Age)
 }
@@ -475,6 +494,14 @@ func (c Coral) Hash() (uint64, uint64) {
 
 func (c CoralBlock) Hash() (uint64, uint64) {
 	return hashCoralBlock, uint64(c.Type.Uint8()) | uint64(boolByte(c.Dead))<<3
+}
+
+func (c CoralFan) Hash() (uint64, uint64) {
+	return hashCoralFan, uint64(c.Type.Uint8()) | uint64(boolByte(c.Dead))<<3 | uint64(boolByte(c.AlongZ))<<4
+}
+
+func (c CoralWallFan) Hash() (uint64, uint64) {
+	return hashCoralWallFan, uint64(c.Type.Uint8()) | uint64(boolByte(c.Dead))<<3 | uint64(c.Facing)<<4
 }
 
 func (CraftingTable) Hash() (uint64, uint64) {
@@ -693,8 +720,16 @@ func (c IronChain) Hash() (uint64, uint64) {
 	return hashIronChain, uint64(c.Axis)
 }
 
+func (d IronDoor) Hash() (uint64, uint64) {
+	return hashIronDoor, uint64(d.Facing) | uint64(boolByte(d.Open))<<2 | uint64(boolByte(d.Top))<<3 | uint64(boolByte(d.Right))<<4
+}
+
 func (i IronOre) Hash() (uint64, uint64) {
 	return hashIronOre, uint64(i.Type.Uint8())
+}
+
+func (t IronTrapdoor) Hash() (uint64, uint64) {
+	return hashIronTrapdoor, uint64(t.Facing) | uint64(boolByte(t.Open))<<2 | uint64(boolByte(t.Top))<<3
 }
 
 func (i ItemFrame) Hash() (uint64, uint64) {
@@ -771,6 +806,10 @@ func (Melon) Hash() (uint64, uint64) {
 
 func (m MelonSeeds) Hash() (uint64, uint64) {
 	return hashMelonSeeds, uint64(m.Growth) | uint64(m.Direction)<<8
+}
+
+func (MobSpawner) Hash() (uint64, uint64) {
+	return hashMobSpawner, 0
 }
 
 func (MossCarpet) Hash() (uint64, uint64) {
@@ -881,6 +920,10 @@ func (p Potato) Hash() (uint64, uint64) {
 	return hashPotato, uint64(p.Growth)
 }
 
+func (p PressurePlate) Hash() (uint64, uint64) {
+	return hashPressurePlate, hashBlock(p.Block) | uint64(p.RedstoneSignal)<<32
+}
+
 func (p Prismarine) Hash() (uint64, uint64) {
 	return hashPrismarine, uint64(p.Type.Uint8())
 }
@@ -955,6 +998,10 @@ func (Resin) Hash() (uint64, uint64) {
 
 func (r ResinBricks) Hash() (uint64, uint64) {
 	return hashResinBricks, uint64(boolByte(r.Chiseled))
+}
+
+func (r RespawnAnchor) Hash() (uint64, uint64) {
+	return hashRespawnAnchor, uint64(r.Charge)
 }
 
 func (s Sand) Hash() (uint64, uint64) {
@@ -1089,6 +1136,10 @@ func (SulfurBricks) Hash() (uint64, uint64) {
 	return hashSulfurBricks, 0
 }
 
+func (s SweetBerryBush) Hash() (uint64, uint64) {
+	return hashSweetBerryBush, uint64(s.Age)
+}
+
 func (TNT) Hash() (uint64, uint64) {
 	return hashTNT, 0
 }
@@ -1103,6 +1154,10 @@ func (TintedGlass) Hash() (uint64, uint64) {
 
 func (t Torch) Hash() (uint64, uint64) {
 	return hashTorch, uint64(t.Facing) | uint64(t.Type.Uint8())<<3
+}
+
+func (t TripwireHook) Hash() (uint64, uint64) {
+	return hashTripwireHook, uint64(t.Facing) | uint64(boolByte(t.Attached))<<2 | uint64(boolByte(t.Powered))<<3
 }
 
 func (t Tuff) Hash() (uint64, uint64) {

@@ -31,12 +31,8 @@ func (c Coral) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.
 	if !tx.Block(pos.Side(cube.FaceDown)).Model().FaceSolid(pos.Side(cube.FaceDown), cube.FaceUp, tx) {
 		return false
 	}
-	if liquid, ok := tx.Liquid(pos); ok {
-		if water, ok := liquid.(Water); ok {
-			if water.Depth != 8 {
-				return false
-			}
-		}
+	if !coralPlaceableIn(pos, tx) {
+		return false
 	}
 
 	place(tx, pos, c, user, ctx)
@@ -99,6 +95,17 @@ func (c Coral) EncodeItem() (name string, meta int16) {
 		return "minecraft:dead_" + c.Type.String() + "_coral", 0
 	}
 	return "minecraft:" + c.Type.String() + "_coral", 0
+}
+
+// coralPlaceableIn reports whether coral may be placed at pos, which holds only where there is no liquid at all or a
+// water source: flowing water washes it away and lava is not water.
+func coralPlaceableIn(pos cube.Pos, tx *world.Tx) bool {
+	liquid, ok := tx.Liquid(pos)
+	if !ok {
+		return true
+	}
+	water, ok := liquid.(Water)
+	return ok && water.Depth == 8
 }
 
 // allCoral returns a list of all coral block variants

@@ -25,6 +25,9 @@ type Smoker struct {
 	Lit bool
 }
 
+func (Smoker) OpensContainer() {}
+
+// ContainerSize returns the number of slots in a smoker.
 func (Smoker) ContainerSize() int { return 3 }
 
 // NewSmoker creates a new initialised smoker. The smelter is properly initialised.
@@ -102,6 +105,9 @@ func (s Smoker) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.User, _
 	return false
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Smoker.
+func (Smoker) BlockActorID() string { return "Smoker" }
+
 // EncodeNBT ...
 func (s Smoker) EncodeNBT() map[string]interface{} {
 	if s.smelter == nil {
@@ -115,7 +121,7 @@ func (s Smoker) EncodeNBT() map[string]interface{} {
 		"BurnDuration": int16(maximum.Milliseconds() / 50),
 		"StoredXPInt":  int16(s.Experience()),
 		"Items":        nbtconv.InvToNBT(s.inventory),
-		"id":           "Smoker",
+		"id":           s.BlockActorID(),
 	}
 }
 

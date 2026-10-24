@@ -132,16 +132,15 @@ type Conn interface {
 	ChunkRadius() int
 	// Latency returns the current latency measured over the Conn.
 	Latency() time.Duration
-	// Flush flushes the packets buffered by the Conn, sending all of them out immediately.
-	Flush() error
 	// RemoteAddr returns the remote network address.
 	RemoteAddr() net.Addr
 	// ReadPacket reads a packet.Packet from the Conn. An error is returned if a deadline was set that was
 	// exceeded or if the Conn was closed while awaiting a packet.
 	ReadPacket() (pk packet.Packet, err error)
-	// WritePacket writes a packet.Packet to the Conn. An error is returned if the Conn was closed before sending the
-	// packet.
+	// WritePacket queues a packet for the next flush.
 	WritePacket(pk packet.Packet) error
+	// WritePacketImmediate queues packets and submits them with the pending batch. Any configured send delay still applies.
+	WritePacketImmediate(pks ...packet.Packet) error
 	// StartGameContext starts the game for the Conn with a context to cancel it.
 	StartGameContext(ctx context.Context, data minecraft.GameData) error
 }
@@ -157,9 +156,21 @@ const selfEntityRuntimeID = 1
 var errSelfRuntimeID = errors.New("invalid entity runtime ID: runtime ID for self must always be 1")
 
 type Config struct {
-	Log *slog.Logger
+	// InitialDimension and InitialPosition describe the placement already sent in
+	// StartGame. When InitialDimension is set, Spawn corrects a changed placement
+	// using the session's ordinary dimension and teleport handling.
+	InitialDimension world.Dimension
+	InitialPosition  mgl64.Vec3
+	Log              *slog.Logger
 
 	MaxChunkRadius int
+	// ChunkLoadsPerTick is the maximum number of chunks requested for the
+	// player each tick. Values of zero or less select the default of 4.
+	ChunkLoadsPerTick int
+	// MaxChunkTransactions stops new chunk requests for a client with the blob
+	// cache enabled while this many chunk transactions await its response.
+	// Values of zero or less select the default of 8.
+	MaxChunkTransactions int
 
 	EmoteChatMuted bool
 
@@ -182,11 +193,17 @@ func (conf Config) New(conn Conn) *Session {
 	if conf.Log == nil {
 		conf.Log = slog.Default()
 	}
+	if conf.ChunkLoadsPerTick <= 0 {
+		conf.ChunkLoadsPerTick = 4
+	}
+	if conf.MaxChunkTransactions <= 0 {
+		conf.MaxChunkTransactions = 8
+	}
 	conf.Log = conf.Log.With("name", conn.IdentityData().DisplayName, "uuid", conn.IdentityData().Identity, "raddr", conn.RemoteAddr().String())
 
 	s := &Session{}
 	*s = Session{
-		openChunkTransactions:  make([]map[uint64]struct{}, 0, 8),
+		openChunkTransactions:  make([]map[uint64]struct{}, 0, conf.MaxChunkTransactions),
 		closeBackground:        make(chan struct{}),
 		handlers:               map[uint32]packetHandler{},
 		packets:                make(chan packet.Packet, 256),
@@ -256,6 +273,16 @@ func (s *Session) SetHandle(handle *world.EntityHandle, skin skin.Skin) {
 // Spawn makes the Controllable passed spawn in the world.World.
 // The function passed will be called when the session stops running.
 func (s *Session) Spawn(c Controllable, tx *world.Tx) {
+	if initial := s.conf.InitialDimension; initial != nil {
+		changed := initial != tx.World().Dimension()
+		if changed {
+			dim, _ := world.DimensionID(tx.World().Dimension())
+			s.changeDimension(int32(dim), false, c)
+		}
+		if changed || s.conf.InitialPosition != c.Position() {
+			s.ViewEntityTeleport(c, c.Position())
+		}
+	}
 	s.SendHealth(c.Health(), c.MaxHealth(), c.Absorption())
 	s.SendExperience(c.ExperienceLevel(), c.ExperienceProgress())
 	s.SendFood(c.Food(), 0, 0)
@@ -478,8 +505,8 @@ func (s *Session) background() {
 	}
 }
 
-// sendChunks sends the next up to 4 chunks to the connection. What chunks are loaded depends on the connection of
-// the chunk loader and the chunks that were previously loaded.
+// sendChunks sends the next up to Config.ChunkLoadsPerTick chunks to the connection. What chunks are loaded depends on
+// the connection of the chunk loader and the chunks that were previously loaded.
 func (s *Session) sendChunks(tx *world.Tx, c Controllable) {
 	var worldSwitched bool
 	if w := tx.World(); s.chunkLoader.World() != w && w != nil {
@@ -497,12 +524,11 @@ func (s *Session) sendChunks(tx *world.Tx, c Controllable) {
 		})
 	}
 
-	s.blobMu.Lock()
-	const maxChunkTransactions = 8
-	toLoad := maxChunkTransactions - len(s.openChunkTransactions)
-	s.blobMu.Unlock()
-	if toLoad > 4 {
-		toLoad = 4
+	toLoad := s.conf.ChunkLoadsPerTick
+	if s.conn.ClientCacheEnabled() {
+		s.blobMu.Lock()
+		toLoad = min(toLoad, s.conf.MaxChunkTransactions-len(s.openChunkTransactions))
+		s.blobMu.Unlock()
 	}
 	s.chunkLoader.Load(tx, toLoad)
 }
@@ -535,7 +561,7 @@ func (s *Session) changeDimension(dim int32, silent bool, c Controllable) {
 
 	s.writePacket(&packet.ChangeDimension{
 		Dimension:       dim,
-		Position:        vec64To32(c.Position().Add(entityOffset(c))),
+		Position:        vec64To32(entityNetworkPosition(c, c.Position())),
 		LoadingScreenID: protocol.Option(id),
 	})
 	s.writePacket(&packet.StopSound{StopAll: silent})

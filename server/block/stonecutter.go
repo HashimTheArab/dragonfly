@@ -17,6 +17,8 @@ type Stonecutter struct {
 	Facing cube.Direction
 }
 
+func (Stonecutter) OpensContainer() {}
+
 // Model ...
 func (Stonecutter) Model() world.BlockModel {
 	return model.Stonecutter{}

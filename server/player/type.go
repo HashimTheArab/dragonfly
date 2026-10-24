@@ -2,6 +2,7 @@ package player
 
 import (
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/entity/networkoffset"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 )
@@ -42,8 +43,10 @@ func (t ptype) Open(tx *world.Tx, handle *world.EntityHandle, data *world.Entity
 	return p
 }
 
-func (ptype) EncodeEntity() string   { return "minecraft:player" }
-func (ptype) NetworkOffset() float64 { return 1.621 }
+func (ptype) EncodeEntity() string { return "minecraft:player" }
+
+// NetworkOffset returns the standing player's Bedrock movement offset.
+func (ptype) NetworkOffset() float64 { return networkoffset.Player(networkoffset.PlayerPose{}) }
 func (ptype) BBox(e world.Entity) cube.BBox {
 	p := e.(*Player)
 	s := p.Scale()

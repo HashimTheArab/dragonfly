@@ -1,7 +1,6 @@
 package block
 
 import (
-	"fmt"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
@@ -33,6 +32,7 @@ type DecoratedPot struct {
 	Decorations [4]PotDecoration
 }
 
+// ContainerSize returns the number of slots in a decorated pot.
 func (DecoratedPot) ContainerSize() int { return 1 }
 
 // SideClosed ...
@@ -156,6 +156,9 @@ func (p DecoratedPot) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx 
 	return placed(ctx)
 }
 
+// BlockActorID returns the Bedrock NBT identifier for DecoratedPot.
+func (DecoratedPot) BlockActorID() string { return "DecoratedPot" }
+
 // EncodeNBT ...
 func (p DecoratedPot) EncodeNBT() map[string]any {
 	var sherds []any
@@ -169,7 +172,7 @@ func (p DecoratedPot) EncodeNBT() map[string]any {
 	}
 
 	m := map[string]any{
-		"id":     "DecoratedPot",
+		"id":     p.BlockActorID(),
 		"sherds": sherds,
 	}
 	if !p.Item.Empty() {
@@ -183,17 +186,21 @@ func (p DecoratedPot) DecodeNBT(data map[string]any) any {
 	p.Item = item.MapNBT(data, "item")
 	p.Decorations = [4]PotDecoration{}
 	if sherds := nbtconv.Slice(data, "sherds"); sherds != nil {
-		for i, name := range sherds {
+		for i, value := range sherds {
 			if i >= len(p.Decorations) {
 				break
 			}
-			it, ok := world.ItemByName(name.(string), 0)
+			name, ok := value.(string)
 			if !ok {
-				panic(fmt.Errorf("unknown item %s", name))
+				continue
+			}
+			it, ok := world.ItemByName(name, 0)
+			if !ok {
+				continue
 			}
 			decoration, ok := it.(PotDecoration)
 			if !ok {
-				panic(fmt.Errorf("item %s is not a pot decoration", name))
+				continue
 			}
 			p.Decorations[i] = decoration
 		}

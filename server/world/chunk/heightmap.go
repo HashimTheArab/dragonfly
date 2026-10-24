@@ -8,6 +8,13 @@ import (
 // that diffuse or obstruct light.
 type HeightMap []int16
 
+// LightBlockerMap is a reusable chunk-wide view of the highest fully
+// light-blocking block in every column. Changed columns are recalculated lazily
+// and, like Chunk itself, the view is not safe for concurrent use.
+type LightBlockerMap struct {
+	chunk *Chunk
+}
+
 // At returns the height map value at a specific column in the chunk.
 func (h HeightMap) At(x, z uint8) int16 {
 	return h[(uint16(x)<<4)|uint16(z)]
@@ -43,4 +50,14 @@ func (h HeightMap) HighestNeighbour(x, z uint8) int16 {
 		}
 	}
 	return highest
+}
+
+// At returns the highest fully light-blocking block at x and z. If the column
+// has no such block, the chunk's minimum Y is returned.
+func (h LightBlockerMap) At(x, z uint8) int16 {
+	minY := int16(h.chunk.r[0])
+	if y := h.chunk.heightMapAt(x, z); y > minY {
+		return y - 1
+	}
+	return minY
 }

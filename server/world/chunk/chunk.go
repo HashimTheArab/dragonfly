@@ -2,6 +2,7 @@ package chunk
 
 import (
 	"slices"
+	"sync"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
 )
@@ -16,18 +17,28 @@ type Chunk struct {
 	br BlockRegistry
 	// air is the runtime ID of air.
 	air uint32
-	// recalculateHeightMap is true if the chunk's height map should be recalculated on the next call to the HeightMap
-	// function.
+	// recalculateHeightMap is true if at least one column of the chunk's height map
+	// must be recalculated on the next call to HeightMap.
 	recalculateHeightMap bool
 	// legacyStates is true if the Chunk was decoded holding a block entry older than CurrentBlockVersion.
 	legacyStates bool
 	// heightMap is the height map of the chunk.
 	heightMap HeightMap
+	// heightMapValid records which columns in heightMap are current.
+	heightMapValid [4]uint64
 	// sub holds all sub chunks part of the chunk. The pointers held by the array are nil if no sub chunk is
 	// allocated at the indices.
 	sub []*SubChunk
 	// biomes is an array of biome IDs. There is one biome ID for every column in the chunk.
 	biomes []*PalettedStorage
+
+	// blockEntities holds NBT data for block entities indexed by absolute world position.
+	// The values stored are raw NBT compounds as sent by the network.
+	//
+	// Note: Chunk methods are generally not concurrency-safe. These fields are guarded so that block entity
+	// data can safely be updated/read independently by consumers that may have concurrent packet handling.
+	blockEntitiesMu sync.RWMutex
+	blockEntities   map[cube.Pos]map[string]any
 }
 
 // New initialises a new chunk and returns it, so that it may be used.
@@ -51,6 +62,87 @@ func New(br BlockRegistry, r cube.Range) *Chunk {
 	}
 }
 
+// BlockRegistry returns the registry used by this chunk's runtime IDs.
+func (chunk *Chunk) BlockRegistry() BlockRegistry {
+	return chunk.br
+}
+
+// BlockEntityData returns detached block entity NBT at the position passed, if present.
+func (chunk *Chunk) BlockEntityData(pos cube.Pos) (map[string]any, bool) {
+	chunk.blockEntitiesMu.RLock()
+	defer chunk.blockEntitiesMu.RUnlock()
+	if chunk.blockEntities == nil {
+		return nil, false
+	}
+	d, ok := chunk.blockEntities[pos]
+	if !ok {
+		return nil, false
+	}
+	return CloneBlockEntityData(d), true
+}
+
+// BlockEntities returns a detached snapshot of every block entity, ordered by
+// ascending Y, Z, then X. Nested NBT maps, lists, and arrays are copied too.
+// The snapshot is safe to modify independently of the chunk.
+func (chunk *Chunk) BlockEntities() []BlockEntity {
+	chunk.blockEntitiesMu.RLock()
+	entities := make([]BlockEntity, 0, len(chunk.blockEntities))
+	for pos, data := range chunk.blockEntities {
+		entities = append(entities, BlockEntity{Pos: pos, Data: CloneBlockEntityData(data)})
+	}
+	chunk.blockEntitiesMu.RUnlock()
+	sortBlockEntities(entities)
+	return entities
+}
+
+// SetBlockEntityData stores detached raw NBT at the position passed: compounds,
+// lists, scalars, and fixed numeric arrays, as returned by the NBT decoder.
+// Arbitrary Go structs and pointers are not supported. The caller must not mutate
+// data during this call. Nil deletes the entry.
+func (chunk *Chunk) SetBlockEntityData(pos cube.Pos, data map[string]any) {
+	// Only Y is relevant for a chunk's range check. (cube.Pos.OutOfBounds only checks Y.)
+	// We allow deletes regardless of bounds, but ignore inserts that are out of range.
+	if data != nil && pos.OutOfBounds(chunk.r) {
+		return
+	}
+
+	chunk.blockEntitiesMu.Lock()
+	defer chunk.blockEntitiesMu.Unlock()
+	if data == nil { // Clear block entities if nil data is passed
+		if chunk.blockEntities == nil {
+			return
+		}
+		delete(chunk.blockEntities, pos)
+		if len(chunk.blockEntities) == 0 {
+			// Release the map so chunks without block entities don't retain extra allocations.
+			chunk.blockEntities = nil
+		}
+		return
+	}
+	if chunk.blockEntities == nil {
+		chunk.blockEntities = make(map[cube.Pos]map[string]any, 1)
+	}
+	chunk.blockEntities[pos] = CloneBlockEntityData(data)
+}
+
+// ClearBlockEntityDataInRange clears raw block entity NBT entries within the inclusive position range passed.
+func (chunk *Chunk) ClearBlockEntityDataInRange(min, max cube.Pos) {
+	chunk.blockEntitiesMu.Lock()
+	defer chunk.blockEntitiesMu.Unlock()
+	if chunk.blockEntities == nil {
+		return
+	}
+	for pos := range chunk.blockEntities {
+		if !pos.Within(min, max) {
+			continue
+		}
+		delete(chunk.blockEntities, pos)
+	}
+	if len(chunk.blockEntities) == 0 {
+		chunk.blockEntities = nil
+	}
+}
+
 // Clone returns an independent copy of the Chunk.
 func (chunk *Chunk) Clone() *Chunk {
 	clone := &Chunk{
@@ -60,6 +152,7 @@ func (chunk *Chunk) Clone() *Chunk {
 		recalculateHeightMap: chunk.recalculateHeightMap,
 		legacyStates:         chunk.legacyStates,
 		heightMap:            slices.Clone(chunk.heightMap),
+		heightMapValid:       chunk.heightMapValid,
 		sub:                  make([]*SubChunk, len(chunk.sub)),
 		biomes:               make([]*PalettedStorage, len(chunk.biomes)),
 	}
@@ -68,6 +161,13 @@ func (chunk *Chunk) Clone() *Chunk {
 	}
 	for i, biomes := range chunk.biomes {
 		clone.biomes[i] = biomes.Clone()
+	}
+	entities := chunk.BlockEntities()
+	if len(entities) != 0 {
+		clone.blockEntities = make(map[cube.Pos]map[string]any, len(entities))
+		for _, entity := range entities {
+			clone.blockEntities[entity.Pos] = entity.Data
+		}
 	}
 	return clone
 }
@@ -118,6 +218,14 @@ func (chunk *Chunk) Sub() []*SubChunk {
 	return chunk.sub
 }
 
+// SetSubChunk replaces the sub-chunk at index and invalidates the cached height
+// map. The index is relative to the Chunk's vertical range.
+func (chunk *Chunk) SetSubChunk(index int16, sub *SubChunk) {
+	chunk.sub[index] = sub
+	chunk.heightMapValid = [4]uint64{}
+	chunk.recalculateHeightMap = true
+}
+
 // Block returns the runtime ID of the block at a given x, y and z in a chunk at the given layer. If no
 // sub chunk exists at the given y, the block is assumed to be air.
 func (chunk *Chunk) Block(x uint8, y int16, z uint8, layer uint8) uint32 {
@@ -138,7 +246,9 @@ func (chunk *Chunk) SetBlock(x uint8, y int16, z uint8, layer uint8, block uint3
 		return
 	}
 	sub.Layer(layer).Set(x, uint8(y), z, block)
-	chunk.recalculateHeightMap = true
+	if layer == 0 {
+		chunk.invalidateHeightMapColumn(x, z)
+	}
 }
 
 // Biome returns the biome ID at a specific column in the chunk.
@@ -225,12 +335,44 @@ func (chunk *Chunk) HeightMap() HeightMap {
 	if chunk.recalculateHeightMap {
 		for x := uint8(0); x < 16; x++ {
 			for z := uint8(0); z < 16; z++ {
-				chunk.heightMap.Set(x, z, chunk.highestLightBlocker(x, z, true))
+				chunk.heightMapAt(x, z)
 			}
 		}
 		chunk.recalculateHeightMap = false
 	}
 	return chunk.heightMap
+}
+
+// LightBlockerMap returns a reusable chunk-wide view of the highest fully
+// light-blocking block in every column. Later block edits invalidate only their
+// columns, which the view recalculates lazily.
+func (chunk *Chunk) LightBlockerMap() LightBlockerMap {
+	return LightBlockerMap{chunk: chunk}
+}
+
+// columnBit returns the heightMapValid word index and mask bit for a column.
+func columnBit(x, z uint8) (word uint16, bit uint64) {
+	i := uint16(x&15)<<4 | uint16(z&15)
+	return i >> 6, uint64(1) << (i & 63)
+}
+
+// invalidateHeightMapColumn marks one column for lazy recalculation.
+func (chunk *Chunk) invalidateHeightMapColumn(x, z uint8) {
+	word, bit := columnBit(x, z)
+	chunk.heightMapValid[word] &^= bit
+	chunk.recalculateHeightMap = true
+}
+
+// heightMapAt returns the first free Y above the highest light blocker in one
+// column, calculating and caching it when the column is stale.
+func (chunk *Chunk) heightMapAt(x, z uint8) int16 {
+	word, bit := columnBit(x, z)
+	x, z = x&15, z&15
+	if chunk.heightMapValid[word]&bit == 0 {
+		chunk.heightMap.Set(x, z, chunk.highestLightBlocker(x, z, true))
+		chunk.heightMapValid[word] |= bit
+	}
+	return chunk.heightMap.At(x, z)
 }
 
 // Compact compacts the chunk as much as possible, getting rid of any sub chunks that are empty, and compacts
@@ -239,6 +381,14 @@ func (chunk *Chunk) HeightMap() HeightMap {
 func (chunk *Chunk) Compact() {
 	for i := range chunk.sub {
 		chunk.sub[i].compact()
+	}
+}
+
+// CompactForRuntimeCache performs cheap in-memory compaction on chunk block storages. It collapses uniform
+// storages and shrinks oversized storage widths, but avoids scanning multi-value storages for unused palette entries.
+func (chunk *Chunk) CompactForRuntimeCache() {
+	for i := range chunk.sub {
+		chunk.sub[i].compactForRuntimeCache()
 	}
 }
 

@@ -2,6 +2,12 @@ package enchantment
 
 import "github.com/df-mc/dragonfly/server/item"
 
+const (
+	riptideID    = 30
+	loyaltyID    = 31
+	channelingID = 32
+)
+
 func init() {
 	item.RegisterEnchantment(0, Protection)
 	item.RegisterEnchantment(1, FireProtection)
@@ -33,7 +39,7 @@ func init() {
 	// TODO: (27) Curse of Binding.
 	item.RegisterEnchantment(28, CurseOfVanishing)
 	// TODO: (29) Impaling.
-	// TODO: (30) Riptide.
+	item.RegisterEnchantment(riptideID, Riptide)
 	// TODO: (31) Loyalty.
 	// TODO: (32) Channeling.
 	item.RegisterEnchantment(33, Multishot)

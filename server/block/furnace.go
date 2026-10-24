@@ -24,6 +24,8 @@ type Furnace struct {
 	Lit bool
 }
 
+func (Furnace) OpensContainer() {}
+
 // NewFurnace creates a new initialised furnace. The smelter is properly initialised.
 func NewFurnace(face cube.Direction) Furnace {
 	return Furnace{
@@ -32,6 +34,7 @@ func NewFurnace(face cube.Direction) Furnace {
 	}
 }
 
+// ContainerSize returns the number of slots in a furnace.
 func (Furnace) ContainerSize() int { return 3 }
 
 // Tick is called to check if the furnace should update and start or stop smelting.
@@ -101,6 +104,9 @@ func (f Furnace) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.User, 
 	return false
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Furnace.
+func (Furnace) BlockActorID() string { return "Furnace" }
+
 // EncodeNBT ...
 func (f Furnace) EncodeNBT() map[string]interface{} {
 	if f.smelter == nil {
@@ -114,7 +120,7 @@ func (f Furnace) EncodeNBT() map[string]interface{} {
 		"BurnDuration": int16(maximum.Milliseconds() / 50),
 		"StoredXPInt":  int16(f.Experience()),
 		"Items":        nbtconv.InvToNBT(f.inventory),
-		"id":           "Furnace",
+		"id":           f.BlockActorID(),
 	}
 }
 

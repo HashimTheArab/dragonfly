@@ -173,7 +173,7 @@ func (c ExplosionConfig) Explode(tx *world.Tx, src world.ExplosionSource) {
 		if !ok {
 			continue
 		}
-		impact := (1 - e.Position().Sub(explosionPos).Len()/d) * c.exposure(tx, explosionPos, e)
+		impact := c.Impact(tx, explosionPos, size, e.Position(), e.H().Type().BBox(e).Translate(e.Position()))
 		if c.SuppressUnderwaterImpact && impact <= 0 {
 			// The blast never reached the entity. Skip the call entirely, as entities with a constant damage term,
 			// such as players, would otherwise still be hurt through the liquid that blocked it.
@@ -220,13 +220,41 @@ func (c ExplosionConfig) Explode(tx *world.Tx, src world.ExplosionSource) {
 	tx.PlaySound(explosionPos, c.Sound)
 }
 
-// exposure returns the exposure of an explosion to an entity, used to calculate the impact of an explosion.
-func (c ExplosionConfig) exposure(tx *world.Tx, origin mgl64.Vec3, e world.Entity) float64 {
-	pos := e.Position()
-	box := e.H().Type().BBox(e).Translate(pos)
+// ExplosionImpactUpperBound returns the impact with full exposure. The result
+// bounds Impact without reading any blocks, making it useful before expensive
+// exposure checks.
+func ExplosionImpactUpperBound(origin mgl64.Vec3, size float64, entityPos mgl64.Vec3) float64 {
+	if size <= 0 {
+		return 0
+	}
+	return max(0, 1-entityPos.Sub(origin).Len()/(size*2))
+}
 
+// Impact returns the distance- and exposure-adjusted impact of an explosion on
+// an entity box. It uses the same calculation as Explode before entity damage
+// and armour are applied.
+func (c ExplosionConfig) Impact(src world.BlockSource, origin mgl64.Vec3, size float64, entityPos mgl64.Vec3, box cube.BBox) float64 {
+	bound := ExplosionImpactUpperBound(origin, size, entityPos)
+	if bound == 0 {
+		return 0
+	}
+	return bound * c.Exposure(src, origin, box)
+}
+
+// ExplosionDamage returns the raw player damage for an explosion impact, before
+// armour, enchantments, and effects reduce it.
+func ExplosionDamage(size, impact float64) float64 {
+	return math.Floor((impact*impact+impact)*3.5*size*2 + 1)
+}
+
+// Exposure returns the fraction of rays from origin to box that reach it without hitting a
+// block in src. SuppressUnderwaterImpact only applies if src is a world.LiquidSource.
+func (c ExplosionConfig) Exposure(src world.BlockSource, origin mgl64.Vec3, box cube.BBox) float64 {
 	boxMin, boxMax := box.Min(), box.Max()
 	diff := boxMax.Sub(boxMin).Mul(2.0).Add(mgl64.Vec3{1, 1, 1})
+	if diff[0] <= 0 || diff[1] <= 0 || diff[2] <= 0 {
+		return 0.0
+	}
 
 	step := mgl64.Vec3{1.0 / diff[0], 1.0 / diff[1], 1.0 / diff[2]}
 	if step[0] < 0.0 || step[1] < 0.0 || step[2] < 0.0 {
@@ -235,6 +263,9 @@ func (c ExplosionConfig) exposure(tx *world.Tx, origin mgl64.Vec3, e world.Entit
 
 	xOffset := (1.0 - math.Floor(diff[0])/diff[0]) / 2.0
 	zOffset := (1.0 - math.Floor(diff[2])/diff[2]) / 2.0
+
+	liquids, underwater := src.(world.LiquidSource)
+	underwater = underwater && c.SuppressUnderwaterImpact
 
 	var checks, misses float64
 	for x := 0.0; x <= 1.0; x += step[0] {
@@ -245,24 +276,33 @@ func (c ExplosionConfig) exposure(tx *world.Tx, origin mgl64.Vec3, e world.Entit
 					lerp(y, boxMin[1], boxMax[1]),
 					lerp(z, boxMin[2], boxMax[2]) + zOffset,
 				}
+				checks++
+				if point.Sub(origin).LenSqr() == 0 {
+					// Nothing can block a ray of no length.
+					misses++
+					continue
+				}
+
 				var collided bool
 				trace.TraverseBlocks(origin, point, func(pos cube.Pos) (cont bool) {
-					if c.SuppressUnderwaterImpact {
-						if _, liquid := tx.Liquid(pos); liquid {
+					if underwater {
+						if _, liquid := liquids.Liquid(pos); liquid {
 							collided = true
 							return false
 						}
 					}
-					_, collided = trace.BlockIntercept(pos, tx, tx.Block(pos), origin, point)
+					collided = trace.BlockIntersects(pos, src, src.Block(pos), origin, point)
 					return !collided
 				})
 
 				if !collided {
 					misses++
 				}
-				checks++
 			}
 		}
+	}
+	if checks == 0 {
+		return 0.0
 	}
 	return misses / checks
 }

@@ -26,6 +26,8 @@ type Beacon struct {
 	level int
 }
 
+func (Beacon) OpensContainer() {}
+
 // BeaconSource represents a block which is capable of contributing to powering a beacon pyramid.
 type BeaconSource interface {
 	// PowersBeacon returns a bool which indicates whether this block can contribute to powering up a
@@ -59,10 +61,13 @@ func (b Beacon) DecodeNBT(data map[string]any) any {
 	return b
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Beacon.
+func (Beacon) BlockActorID() string { return "Beacon" }
+
 // EncodeNBT ...
 func (b Beacon) EncodeNBT() map[string]any {
 	m := map[string]any{
-		"id":     "Beacon",
+		"id":     b.BlockActorID(),
 		"Levels": int32(b.level),
 	}
 	if primary, ok := effect.ID(b.Primary); ok {

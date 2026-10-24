@@ -38,6 +38,8 @@ type Hopper struct {
 	viewers   map[ContainerViewer]struct{}
 }
 
+func (Hopper) OpensContainer() {}
+
 // NewHopper creates a new initialised hopper. The inventory is properly initialised.
 func NewHopper() Hopper {
 	m := new(sync.RWMutex)
@@ -55,6 +57,7 @@ func NewHopper() Hopper {
 	}
 }
 
+// ContainerSize returns the number of slots in a hopper.
 func (Hopper) ContainerSize() int { return 5 }
 
 // Model ...
@@ -252,6 +255,9 @@ func (h Hopper) EncodeBlock() (string, map[string]any) {
 	}
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Hopper.
+func (Hopper) BlockActorID() string { return "Hopper" }
+
 // EncodeNBT ...
 func (h Hopper) EncodeNBT() map[string]any {
 	if h.inventory == nil {
@@ -263,7 +269,7 @@ func (h Hopper) EncodeNBT() map[string]any {
 	m := map[string]any{
 		"Items":            nbtconv.InvToNBT(h.inventory),
 		"TransferCooldown": int32(h.TransferCooldown),
-		"id":               "Hopper",
+		"id":               h.BlockActorID(),
 	}
 	if h.CustomName != "" {
 		m["CustomName"] = h.CustomName

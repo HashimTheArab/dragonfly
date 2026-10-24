@@ -1,6 +1,10 @@
 package item
 
-import "image/color"
+import (
+	"image/color"
+
+	"github.com/df-mc/dragonfly/server/world"
+)
 
 type (
 	// Armour represents an item that may be worn as armour. Generally, these items provide armour points, which
@@ -53,7 +57,39 @@ type (
 		Armour
 		Boots() bool
 	}
+	// BodyType is an item that can be worn in the body armour slot.
+	BodyType interface {
+		Body() bool
+	}
+	// ArmourSlotProvider exposes the armour-container slot accepted by an item
+	// whose concrete type is supplied outside Dragonfly's vanilla registry.
+	ArmourSlotProvider interface {
+		ArmourSlot() (int, bool)
+	}
 )
+
+// ArmourSlot returns the armour-container slot accepted for an item. The bool is false when the item is not wearable.
+func ArmourSlot(it world.Item) (int, bool) {
+	if provider, ok := it.(ArmourSlotProvider); ok {
+		if slot, wearable := provider.ArmourSlot(); wearable {
+			return slot, true
+		}
+	}
+	switch wearable := it.(type) {
+	case HelmetType:
+		return 0, wearable.Helmet()
+	case ChestplateType:
+		return 1, wearable.Chestplate()
+	case LeggingsType:
+		return 2, wearable.Leggings()
+	case BootsType:
+		return 3, wearable.Boots()
+	case BodyType:
+		return 4, wearable.Body()
+	default:
+		return 0, false
+	}
+}
 
 // ArmourTierLeather is the ArmourTier of leather armour
 type ArmourTierLeather struct {

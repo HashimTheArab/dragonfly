@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	_ "embed"
 	"encoding/base64"
 	"fmt"
 	"iter"
@@ -17,8 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/df-mc/dragonfly/server/internal/blockinternal"
-	"github.com/df-mc/dragonfly/server/internal/iteminternal"
+	"github.com/df-mc/dragonfly/server/customentry"
 	"github.com/df-mc/dragonfly/server/internal/sliceutil"
 	_ "github.com/df-mc/dragonfly/server/item" // Imported for maintaining correct initialisation order.
 	"github.com/df-mc/dragonfly/server/player"
@@ -30,7 +28,6 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft"
-	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
@@ -68,10 +65,10 @@ type Server struct {
 
 // incoming holds data of a player that is connecting to the server.
 type incoming struct {
-	conf player.Config
-	s    *session.Session
-	p    *onlinePlayer
-	w    *world.World
+	conf      player.Config
+	conn      session.Conn
+	w         *world.World
+	admission player.Admission
 }
 
 // onlinePlayer holds the entity handle, XUID and name of a player.
@@ -137,26 +134,14 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 			if !ok {
 				return
 			}
-			srv.pmu.Lock()
-			srv.p[inc.p.handle.UUID()] = inc.p
-			srv.pmu.Unlock()
-
-			ret, err := world.Call(context.Background(), inc.w, func(tx *world.Tx) (bool, error) {
-				p := tx.AddEntity(inc.p.handle).(*player.Player)
-				inc.s.Spawn(p, tx)
-				return !yield(p), nil
-			})
+			ret, err := srv.admitPlayer(inc, yield)
+			if inc.admission != nil {
+				inc.admission.Release()
+			}
 			if err != nil {
-				srv.pmu.Lock()
-				delete(srv.p, inc.p.handle.UUID())
-				srv.pmu.Unlock()
 				srv.pwg.Done()
-				// Join failed before spawn: the entity was never added, so close
-				// the orphaned handle and fully tear the session down (Disconnect
-				// only writes a packet; CloseConnection frees the conn/goroutines).
-				_ = inc.p.handle.Close()
-				inc.s.Disconnect("join failed")
-				inc.s.CloseConnection()
+				_ = inc.conn.WritePacket(&packet.Disconnect{Message: "join failed"})
+				_ = inc.conn.Close()
 				continue
 			}
 			if ret {
@@ -403,11 +388,7 @@ func (srv *Server) makeBlockEntries() {
 	}
 
 	for i, b := range custom {
-		name, _ := b.EncodeBlock()
-		srv.customBlocks = append(srv.customBlocks, protocol.BlockEntry{
-			Name:       name,
-			Properties: blockinternal.Components(name, b, 10000+int32(i)),
-		})
+		srv.customBlocks = append(srv.customBlocks, customentry.Block(b, 10000+int32(i)))
 	}
 }
 
@@ -416,23 +397,11 @@ func (srv *Server) makeBlockEntries() {
 // at startup
 func (srv *Server) makeItemComponents() {
 	custom := world.CustomItems()
-	srv.customItems = make([]protocol.ItemEntry, len(custom))
+	srv.customItems = make([]protocol.ItemEntry, 0, len(custom))
 
-	for i, it := range custom {
-		name, _ := it.EncodeItem()
+	for _, it := range custom {
 		rid, _, _ := world.ItemRuntimeID(it)
-		_, isCustomBlock := it.(world.CustomBlock)
-		var entryVersion int32 = protocol.ItemEntryVersionDataDriven
-		if isCustomBlock {
-			entryVersion = protocol.ItemEntryVersionNone
-		}
-		srv.customItems[i] = protocol.ItemEntry{
-			Name:           name,
-			ComponentBased: !isCustomBlock,
-			RuntimeID:      int16(rid),
-			Version:        entryVersion,
-			Data:           iteminternal.Components(it),
-		}
+		srv.customItems = append(srv.customItems, customentry.Item(it, int16(rid)))
 	}
 }
 
@@ -466,14 +435,35 @@ func (srv *Server) finaliseConn(ctx context.Context, conn session.Conn, l Listen
 	id := uuid.MustParse(conn.IdentityData().Identity)
 	data := srv.defaultGameData()
 
-	d, w, err := srv.conf.PlayerProvider.Load(id, srv.dimension)
-	if err != nil {
+	var d player.Config
+	var w *world.World
+	var err error
+	var admission player.Admission
+	handedOff := false
+	defer func() {
+		if admission != nil && !handedOff {
+			admission.Release()
+		}
+	}()
+	if provider, ok := srv.conf.PlayerProvider.(player.AdmissionProvider); ok {
+		admission, err = provider.LoadAdmission(id, srv.dimension)
+		if err == nil && admission != nil {
+			d, w = admission.Resolve()
+		}
+	} else {
+		d, w, err = srv.conf.PlayerProvider.Load(id, srv.dimension)
+	}
+	if err != nil || w == nil {
+		if admission != nil {
+			admission.Release()
+			admission = nil
+		}
 		w = srv.world
 		d.Position = w.Spawn().Vec3Centre()
 		d.GameMode = w.DefaultGameMode()
 	}
 
-	data.PlayerPosition = vec64To32(d.Position).Add(mgl32.Vec3{0, 1.62})
+	data.PlayerPosition = vec64To32(d.Position).Add(mgl32.Vec3{0, float32(player.Type.NetworkOffset())})
 	dim, _ := world.DimensionID(w.Dimension())
 	data.Dimension = int32(dim)
 	data.Yaw, data.Pitch = float32(d.Rotation.Yaw()), float32(d.Rotation.Pitch())
@@ -492,7 +482,9 @@ func (srv *Server) finaliseConn(ctx context.Context, conn session.Conn, l Listen
 		return
 	}
 	_ = conn.WritePacket(&packet.ItemRegistry{Items: srv.customItems})
-	srv.incoming <- srv.createPlayer(id, conn, d, w)
+	srv.pwg.Add(1)
+	srv.incoming <- incoming{conn: conn, conf: d, w: w, admission: admission}
+	handedOff = true
 }
 
 // defaultGameData returns a minecraft.GameData as sent for a new player. It
@@ -513,7 +505,7 @@ func (srv *Server) defaultGameData() minecraft.GameData {
 
 		PlayerGameMode:    int32(gm),
 		PlayerPermissions: packet.PermissionLevelMember,
-		PlayerPosition:    vec64To32(srv.world.Spawn().Vec3Centre().Add(mgl64.Vec3{0, 1.62})),
+		PlayerPosition:    vec64To32(srv.world.Spawn().Vec3Centre().Add(mgl64.Vec3{0, player.Type.NetworkOffset()})),
 
 		Items:        srv.itemEntries(),
 		CustomBlocks: srv.customBlocks,
@@ -566,19 +558,22 @@ func (srv *Server) handleSessionClose(tx *world.Tx, c session.Controllable) {
 	srv.pwg.Done()
 }
 
-// createPlayer creates a new player instance using the UUID and connection
-// passed.
-func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Config, w *world.World) incoming {
-	srv.pwg.Add(1)
-
+// createPlayer keeps the handshake placement so spawn can correct a revalidated destination.
+func (srv *Server) createPlayer(inc incoming, conf player.Config, w *world.World) (*session.Session, *onlinePlayer) {
+	conn := inc.conn
+	id := uuid.MustParse(conn.IdentityData().Identity)
 	s := session.Config{
-		Log:            srv.conf.Log,
-		MaxChunkRadius: srv.conf.MaxChunkRadius,
-		EmoteChatMuted: srv.conf.MuteEmoteChat,
-		JoinMessage:    srv.conf.JoinMessage,
-		QuitMessage:    srv.conf.QuitMessage,
-		HandleStop:     srv.handleSessionClose,
-		BlockRegistry:  w.BlockRegistry(),
+		InitialDimension:     inc.w.Dimension(),
+		InitialPosition:      inc.conf.Position,
+		Log:                  srv.conf.Log,
+		MaxChunkRadius:       srv.conf.MaxChunkRadius,
+		ChunkLoadsPerTick:    srv.conf.ChunkLoadsPerTick,
+		MaxChunkTransactions: srv.conf.MaxChunkTransactions,
+		EmoteChatMuted:       srv.conf.MuteEmoteChat,
+		JoinMessage:          srv.conf.JoinMessage,
+		QuitMessage:          srv.conf.QuitMessage,
+		HandleStop:           srv.handleSessionClose,
+		BlockRegistry:        w.BlockRegistry(),
 	}.New(conn)
 
 	conf.Name = conn.IdentityData().DisplayName
@@ -590,7 +585,7 @@ func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Con
 
 	handle := world.EntitySpawnOpts{Position: conf.Position, ID: id}.New(player.Type, conf)
 	s.SetHandle(handle, conf.Skin)
-	return incoming{s: s, w: w, conf: conf, p: &onlinePlayer{name: conf.Name, xuid: conf.XUID, handle: handle}}
+	return s, &onlinePlayer{name: conf.Name, xuid: conf.XUID, handle: handle}
 }
 
 // createWorld loads a world with a specific dimension using the provider set
@@ -674,6 +669,7 @@ func vec64To32(vec3 mgl64.Vec3) mgl32.Vec3 {
 // itemEntries loads a list of all custom item entries of the server, ready to
 // be sent in the StartGame packet.
 func (srv *Server) itemEntries() []protocol.ItemEntry {
+	vanillaItems := world.VanillaItemEntries()
 	entries := make([]protocol.ItemEntry, 0, len(vanillaItems))
 
 	for name, e := range vanillaItems {
@@ -687,21 +683,4 @@ func (srv *Server) itemEntries() []protocol.ItemEntry {
 	}
 	entries = append(entries, srv.customItems...)
 	return entries
-}
-
-var (
-	//go:embed world/vanilla_items.nbt
-	vanillaItemsData []byte
-	vanillaItems     = map[string]struct {
-		RuntimeID      int32          `nbt:"runtime_id"`
-		ComponentBased bool           `nbt:"component_based"`
-		Version        int32          `nbt:"version"`
-		Data           map[string]any `nbt:"data,omitempty"`
-	}{}
-)
-
-// init reads all item entries from the resource JSON, and sets the according
-// values in the runtime ID maps.
-func init() {
-	_ = nbt.Unmarshal(vanillaItemsData, &vanillaItems)
 }

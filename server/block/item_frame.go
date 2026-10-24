@@ -122,15 +122,20 @@ func (i ItemFrame) DecodeNBT(data map[string]any) any {
 	return i
 }
 
+// BlockActorID returns the Bedrock NBT identifier for the frame's glowing variant.
+func (i ItemFrame) BlockActorID() string {
+	if i.Glowing {
+		return "GlowItemFrame"
+	}
+	return "ItemFrame"
+}
+
 // EncodeNBT ...
 func (i ItemFrame) EncodeNBT() map[string]any {
 	m := map[string]any{
 		"ItemDropChance": float32(i.DropChance),
 		"ItemRotation":   uint8(i.Rotations),
-		"id":             "ItemFrame",
-	}
-	if i.Glowing {
-		m["id"] = "GlowItemFrame"
+		"id":             i.BlockActorID(),
 	}
 	if !i.Item.Empty() {
 		m["Item"] = item.WriteNBT(i.Item, true)

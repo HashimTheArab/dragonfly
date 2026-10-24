@@ -23,25 +23,36 @@ var (
 )
 
 func init() {
-	dec := nbt.NewDecoder(bytes.NewBuffer(blockStateData))
-
-	// Register all block states present in the block_states.nbt file. These are all possible options registered
-	// blocks may encode to.
-	for {
-		var s BlockState
-		if err := dec.Decode(&s); err != nil {
-			break
-		}
+	states, err := decodeBlockStates(blockStateData)
+	if err != nil {
+		panic(err)
+	}
+	for _, s := range states {
 		DefaultBlockRegistry.RegisterBlockState(s)
 	}
 
 	var m struct {
 		Blocks []DataDrivenBlock `nbt:"blocks"`
 	}
-	if err := nbt.NewDecoderWithEncoding(bytes.NewBuffer(dataDrivenBlockData), nbt.LittleEndian).Decode(&m); err != nil {
+	if err := nbt.UnmarshalEncoding(dataDrivenBlockData, &m, nbt.LittleEndian); err != nil {
 		panic(err)
 	}
 	dataDrivenBlocks = m.Blocks
+}
+
+// decodeBlockStates reads the full embedded palette and rejects a damaged record.
+func decodeBlockStates(data []byte) ([]BlockState, error) {
+	reader := bytes.NewReader(data)
+	decoder := nbt.NewDecoder(reader)
+	var states []BlockState
+	for reader.Len() > 0 {
+		var state BlockState
+		if err := decoder.Decode(&state); err != nil {
+			return nil, fmt.Errorf("decode vanilla block state %d: %w", len(states), err)
+		}
+		states = append(states, state)
+	}
+	return states, nil
 }
 
 // DataDrivenBlock holds the name of a block and the components that define it.
@@ -68,6 +79,15 @@ type BlockState struct {
 type unknownBlock struct {
 	BlockState
 	data map[string]any
+	// placementItem supplies inventory semantics without installing block behaviour.
+	placementItem Item
+}
+
+// IsUnknownBlock reports whether b is a palette state without an implemented
+// block type. Its native interaction behavior is not known to Dragonfly.
+func IsUnknownBlock(b Block) bool {
+	_, unknown := b.(unknownBlock)
+	return unknown
 }
 
 // EncodeBlock ...
@@ -78,6 +98,47 @@ func (b unknownBlock) EncodeBlock() (string, map[string]any) {
 // Model ...
 func (unknownBlock) Model() BlockModel {
 	return unknownModel{}
+}
+
+// ContainerSize returns the client-visible capacity of chest blocks that are
+// present in the palette but do not yet have a dedicated block implementation.
+func (b unknownBlock) ContainerSize() int {
+	if b.Name != "minecraft:trapped_chest" && !strings.HasSuffix(b.Name, "copper_chest") {
+		return 0
+	}
+	_, pairedX := b.data["pairx"].(int32)
+	_, pairedZ := b.data["pairz"].(int32)
+	if pairedX && pairedZ {
+		return 54
+	}
+	return 27
+}
+
+// Friction returns the vanilla friction of the block, so a block dragonfly has no type for
+// still slows or slips the way players expect. block.Frictional is matched structurally.
+func (b unknownBlock) Friction() float64 {
+	if p, ok := unknownBlockProps[b.Name]; ok {
+		return p.friction
+	}
+	return 0.6
+}
+
+// LightDiffusionLevel returns how much light the block filters. Without this every unknown
+// block is treated as fully opaque, which darkens anything behind glass or a fence.
+func (b unknownBlock) LightDiffusionLevel() uint8 {
+	if p, ok := unknownBlockProps[b.Name]; ok {
+		return p.dampening
+	}
+	return 15
+}
+
+// LightEmissionLevel returns the light the block gives off. Blocks whose emission depends on
+// their state report the resting value, since the state is not modelled.
+func (b unknownBlock) LightEmissionLevel() uint8 {
+	if p, ok := unknownBlockProps[b.Name]; ok {
+		return p.emission
+	}
+	return 0
 }
 
 // Hash ...

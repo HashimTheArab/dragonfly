@@ -16,7 +16,6 @@ import (
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/internal/sliceutil"
 	"github.com/df-mc/dragonfly/server/world/chunk"
-	"github.com/df-mc/goleveldb/leveldb"
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/google/uuid"
 )
@@ -47,6 +46,7 @@ type World struct {
 	// advance is a bool that specifies if this World should advance the current
 	// tick, time and weather saved in the Settings struct held by the World.
 	advance bool
+	paused  atomic.Bool // the tick loop skips ticks; see SetPaused
 
 	o sync.Once
 
@@ -1390,12 +1390,12 @@ func (tx *Tx) chunk(pos ChunkPos) *Column {
 func (w *World) loadChunk(pos ChunkPos) (*chunk.Column, error) {
 	column, err := w.conf.Provider.LoadColumn(pos, w.conf.Dim)
 	if err != nil {
-		if !errors.Is(err, leveldb.ErrNotFound) {
+		if !errors.Is(err, ErrColumnNotFound) {
 			return nil, err
 		}
 		ch := chunk.New(w.conf.Blocks, w.Range())
 		w.conf.Generator.GenerateChunk(pos, ch)
-		column = &chunk.Column{Chunk: ch}
+		column = &chunk.Column{Chunk: ch, Generated: true}
 	}
 	chunk.LightArea([]*chunk.Chunk{column.Chunk}, int(pos[0]), int(pos[1])).Fill()
 	return column, nil
@@ -1535,6 +1535,8 @@ type Column struct {
 	*chunk.Chunk
 	Entities      []*EntityHandle
 	BlockEntities map[cube.Pos]Block
+	// unsupportedEntities retain saved actors that this registry cannot simulate.
+	unsupportedEntities []chunk.Entity
 
 	viewers []Viewer
 	loaders []*Loader
@@ -1546,7 +1548,7 @@ func (w *World) columnTo(col *Column, pos ChunkPos) *chunk.Column {
 	scheduled := w.scheduledUpdates.fromChunk(pos)
 	c := &chunk.Column{
 		Chunk:           col.Chunk,
-		Entities:        make([]chunk.Entity, 0, len(col.Entities)),
+		Entities:        slices.Clone(col.unsupportedEntities),
 		BlockEntities:   make([]chunk.BlockEntity, 0, len(col.BlockEntities)),
 		ScheduledBlocks: make([]chunk.ScheduledBlockUpdate, 0, len(scheduled)),
 		Tick:            w.scheduledUpdates.currentTick,
@@ -1571,6 +1573,7 @@ func (w *World) columnTo(col *Column, pos ChunkPos) *chunk.Column {
 func (w *World) columnFrom(c *chunk.Column, _ ChunkPos) *Column {
 	col := &Column{
 		Chunk:         c.Chunk,
+		modified:      c.Generated,
 		Entities:      make([]*EntityHandle, 0, len(c.Entities)),
 		BlockEntities: make(map[cube.Pos]Block, len(c.BlockEntities)),
 	}
@@ -1578,11 +1581,13 @@ func (w *World) columnFrom(c *chunk.Column, _ ChunkPos) *Column {
 		eid, ok := e.Data["identifier"].(string)
 		if !ok {
 			w.conf.Log.Error("read column: entity without identifier field", "ID", e.ID)
+			col.unsupportedEntities = append(col.unsupportedEntities, e)
 			continue
 		}
 		t, ok := w.conf.Entities.Lookup(eid)
 		if !ok {
 			w.conf.Log.Error("read column: unknown entity type", "ID", e.ID, "type", eid)
+			col.unsupportedEntities = append(col.unsupportedEntities, e)
 			continue
 		}
 		col.Entities = append(col.Entities, entityFromData(t, e.ID, e.Data))

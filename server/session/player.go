@@ -83,7 +83,7 @@ func (s *Session) CloseCurrentContainer(tx *world.Tx, clientRequested bool) {
 // SendRespawn spawns the Controllable entity of the session client-side in the world, provided it has died.
 func (s *Session) SendRespawn(pos mgl64.Vec3, c Controllable) {
 	s.writePacket(&packet.Respawn{
-		Position:        vec64To32(pos.Add(entityOffset(c))),
+		Position:        vec64To32(entityNetworkPosition(c, pos)),
 		State:           packet.RespawnStateReadyToSpawn,
 		EntityRuntimeID: selfEntityRuntimeID,
 	})
@@ -308,17 +308,14 @@ func (s *Session) invByID(id int32, tx *world.Tx) (*inventory.Inventory, bool) {
 		if !s.containerOpened.Load() {
 			return nil, false
 		}
-		switch id {
-		case protocol.ContainerLevelEntity:
+		if id == protocol.ContainerLevelEntity {
 			return s.openedWindow.Load(), true
-		case protocol.ContainerShulkerBox:
-			if _, shulkerbox := tx.Block(*s.openedPos.Load()).(block.ShulkerBox); shulkerbox {
-				return s.openedWindow.Load(), true
-			}
-		case protocol.ContainerBarrel:
-			if _, barrel := tx.Block(*s.openedPos.Load()).(block.Barrel); barrel {
-				return s.openedWindow.Load(), true
-			}
+		}
+		if source, ok := tx.Block(*s.openedPos.Load()).(block.ContainerSource); ok &&
+			int32(source.ContainerSourceID()) == id {
+			return s.openedWindow.Load(), true
+		}
+		switch id {
 		case protocol.ContainerBeaconPayment:
 			if _, beacon := tx.Block(*s.openedPos.Load()).(block.Beacon); beacon {
 				return s.ui, true
@@ -365,11 +362,10 @@ func (s *Session) invByID(id int32, tx *world.Tx) (*inventory.Inventory, bool) {
 // it will be shown to the client.
 func (s *Session) Disconnect(message string) {
 	if s != Nop {
-		_ = s.conn.WritePacket(&packet.Disconnect{
+		_ = s.conn.WritePacketImmediate(&packet.Disconnect{
 			HideDisconnectionScreen: message == "",
 			Message:                 message,
 		})
-		_ = s.conn.Flush()
 	}
 }
 
@@ -933,7 +929,7 @@ func (s *Session) SendDebugShapes(dim world.Dimension) {
 			continue
 		}
 		s.debugShapes[update.id] = update.shape
-		shapes = append(shapes, debugShapeToProtocol(update.shape, dim, s.shapeAttachedEntityRuntimeID(update.shape)))
+		shapes = append(shapes, debugShapeToProtocol(update.shape, dim, s.shapeAttachedEntityID(update.shape)))
 	}
 	s.debugShapeUpdates = s.debugShapeUpdates[:0]
 	s.debugShapesMu.Unlock()
@@ -1006,6 +1002,8 @@ func stackFromItem(br world.BlockRegistry, it item.Stack) protocol.ItemStack {
 	var blockRuntimeID uint32
 	if b, ok := it.Item().(world.Block); ok {
 		blockRuntimeID = br.BlockRuntimeID(b)
+	} else if b, ok := it.Item().(world.BlockRuntimeRepresentable); ok {
+		blockRuntimeID = br.BlockRuntimeID(b.BlockForRuntimeID())
 	}
 
 	rid, meta, _ := world.ItemRuntimeID(it.Item())
@@ -1036,12 +1034,43 @@ func stackToItem(br world.BlockRegistry, it protocol.ItemStack) item.Stack {
 			t = block.Air{}
 		}
 	}
-	//noinspection SpellCheckingInspection
-	if nbter, ok := t.(world.NBTer); ok && len(it.NBTData) != 0 {
-		t = nbter.DecodeNBT(it.NBTData).(world.Item)
+	s, err := DecodeResolvedStack(t, it, StackDecodeOptions{})
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+// StackDecodeOptions controls whether an absent item NBT payload is applied to
+// the resolved type or its existing defaults are preserved.
+type StackDecodeOptions struct {
+	// DecodeEmptyNBT applies an empty, non-nil map to NBTer items even if the
+	// network stack has no tags. This initialises container items, but may reset
+	// variants whose decoder expects their identity to be encoded in NBT.
+	DecodeEmptyNBT bool
+}
+
+// DecodeResolvedStack applies network item and stack NBT to an already resolved
+// item type. It does not interpret the stack's runtime IDs. Invalid item decoder
+// results are replaced with air and reported as an error; stack tags are still
+// applied to that fallback. The resolved item type must be non-nil.
+func DecodeResolvedStack(t world.Item, it protocol.ItemStack, options StackDecodeOptions) (item.Stack, error) {
+	var decodeErr error
+	if nbter, ok := t.(world.NBTer); ok && (options.DecodeEmptyNBT || len(it.NBTData) != 0) {
+		data := it.NBTData
+		if data == nil {
+			data = map[string]any{}
+		}
+		decoded := nbter.DecodeNBT(data)
+		if decodedItem, ok := decoded.(world.Item); ok {
+			t = decodedItem
+		} else {
+			decodeErr = fmt.Errorf("item %T decoded NBT to %T, which does not implement world.Item", t, decoded)
+			t = block.Air{}
+		}
 	}
 	s := item.NewStack(t, int(it.Count))
-	return item.ReadNBT(it.NBTData, &s)
+	return item.ReadNBT(it.NBTData, &s), decodeErr
 }
 
 // instanceFromItem converts an item.Stack to its network ItemInstance representation.
@@ -1172,8 +1201,9 @@ func protocolToSkin(sk protocol.Skin) (s skin.Skin, err error) {
 	return
 }
 
-// shapeAttachedEntityRuntimeID returns the runtime ID of the entity attached to a debug shape.
-func (s *Session) shapeAttachedEntityRuntimeID(shape debug.Shape) uint64 {
+// shapeAttachedEntityID returns the ID of the entity attached to a debug shape. The shape field is an actor
+// unique ID, which for a Session is the same value as the runtime ID.
+func (s *Session) shapeAttachedEntityID(shape debug.Shape) uint64 {
 	var handle *world.EntityHandle
 	switch shape := shape.(type) {
 	case *debug.Arrow:

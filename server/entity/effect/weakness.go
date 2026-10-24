@@ -25,3 +25,8 @@ func (weakness) Multiplier(lvl int) float64 {
 func (weakness) RGBA() color.RGBA {
 	return color.RGBA{R: 0x48, G: 0x4d, B: 0x48, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (weakness) Metadata() Metadata {
+	return Metadata{Name: "weakness", Icon: "weakness_effect"}
+}

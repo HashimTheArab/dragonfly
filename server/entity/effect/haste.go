@@ -25,3 +25,8 @@ func (haste) Multiplier(lvl int) float64 {
 func (haste) RGBA() color.RGBA {
 	return color.RGBA{R: 0xd9, G: 0xc0, B: 0x43, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (haste) Metadata() Metadata {
+	return Metadata{Name: "haste", Icon: "haste_effect"}
+}
