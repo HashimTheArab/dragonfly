@@ -9,6 +9,78 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 )
 
+// controlledRiderType opens a rider with a viewer independent of chunk loading.
+type controlledRiderType struct {
+	testEntityType
+	viewer Viewer
+}
+
+// Open binds the controlling viewer to the transaction-scoped rider.
+func (t controlledRiderType) Open(_ *Tx, h *EntityHandle, d *EntityData) Entity {
+	return &controlledRider{testEntity: testEntity{handle: h, data: d}, viewer: t.viewer}
+}
+
+// controlledRider exposes its controlling viewer without a chunk loader.
+type controlledRider struct {
+	testEntity
+	viewer Viewer
+}
+
+// ControllingViewer returns the rider's own viewer.
+func (e *controlledRider) ControllingViewer() Viewer { return e.viewer }
+
+// ridingViewer records rider updates that must reach a controlling client.
+type ridingViewer struct {
+	NopViewer
+	moves, states int
+	links         []EntityLinkAction
+}
+
+// ViewEntityMovement records seat movement.
+func (v *ridingViewer) ViewEntityMovement(Entity, mgl64.Vec3, cube.Rotation, bool) { v.moves++ }
+
+// ViewEntityState records rider metadata updates.
+func (v *ridingViewer) ViewEntityState(Entity) { v.states++ }
+
+// ViewEntityAction records mount and dismount links.
+func (v *ridingViewer) ViewEntityAction(_ Entity, action EntityAction) {
+	if link, ok := action.(EntityLinkAction); ok {
+		v.links = append(v.links, link)
+	}
+}
+
+func TestRidingNotifiesControllingViewerOutsideLoadedChunks(t *testing.T) {
+	for _, loaded := range []bool{false, true} {
+		w := Config{Synchronous: true}.New()
+		viewer := &ridingViewer{}
+		var inputs []RiderInput
+		var changes []bool
+		vehicle := EntitySpawnOpts{Position: mgl64.Vec3{8, 70, 8}}.New(ridingTestType{seats: []Seat{{}}, inputs: &inputs, changes: &changes}, testEntityConfig{})
+		rider := NewEntity(controlledRiderType{viewer: viewer}, testEntityConfig{})
+		w.Do(func(tx *Tx) {
+			v, r := tx.AddEntity(vehicle), tx.AddEntity(rider)
+			if loaded {
+				loader := NewLoader(0, w, viewer)
+				loader.Move(tx, v.Position())
+				loader.Load(tx, 1)
+				viewer.moves, viewer.states, viewer.links = 0, 0, nil
+			}
+			if !tx.Mount(r, v, 0) {
+				t.Fatal("mount failed")
+			}
+			vehicle.data.Pos = mgl64.Vec3{1024, 80, 1024}
+			tx.UpdateRiders(v)
+			if !tx.Dismount(r) {
+				t.Fatal("dismount failed")
+			}
+			if viewer.moves != 2 || viewer.states != 2 || len(viewer.links) != 2 || viewer.links[0].Remove || !viewer.links[1].Remove {
+				t.Fatalf("controlling viewer missed or duplicated riding updates: %+v", viewer)
+			}
+		})
+		w.Close()
+	}
+}
+
 // ridingTestType opens an entity with observable rider callbacks.
 type ridingTestType struct {
 	testEntityType
