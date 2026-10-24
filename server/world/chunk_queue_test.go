@@ -13,6 +13,48 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 )
 
+func TestLoaderAlignedBurstsKeepEachLoadersWorkAvailable(t *testing.T) {
+	withQueuedChunkWorld(t, func(tx *Tx) {
+		w := tx.World()
+		w.conf.ChunkLoadWorkers = 2
+		for i := range 6 {
+			l := NewLoader(5, w, NopViewer{})
+			defer l.Close(tx)
+			l.Move(tx, mgl64.Vec3{float64(i * 1600), 0, 0})
+			l.Load(tx, 4)
+			if got := len(l.pending); got != 4 {
+				t.Fatalf("loader %d offered four chunks but only %d remain available to the workers", i, got)
+			}
+			// A second call may not add an unbounded backlog for this loader.
+			l.Load(tx, 4)
+			if got := len(l.pending); got != 4 {
+				t.Fatalf("loader %d exceeded its waiting allowance: %d", i, got)
+			}
+		}
+	})
+}
+
+func TestChunkWorkerQueueRetainsTotalCapacityAcrossLoaders(t *testing.T) {
+	w := &World{conf: Config{ChunkLoadWorkers: 2}}
+	pool := newChunkWorkerPool(w)
+	for i := 0; i < cap(pool.queue); {
+		l := &Loader{}
+		for range 4 {
+			if !pool.schedule(&chunkRequest{loader: l, done: make(chan struct{})}, 4) {
+				t.Fatalf("different loaders filled only %d of %d waiting slots", i, cap(pool.queue))
+			}
+			i++
+		}
+	}
+	if pool.schedule(&chunkRequest{loader: &Loader{}, done: make(chan struct{})}, 4) {
+		t.Fatal("another loader exceeded the total queue capacity")
+	}
+	pool.drainAndAbort()
+	if len(pool.waiting) != 0 {
+		t.Fatal("closing retained waiting loader references")
+	}
+}
+
 func TestChunkWorkerQueueBoundsWaitingWork(t *testing.T) {
 	for _, tc := range []struct{ workers, batch, limit int }{
 		{1, 1, 2}, {3, 1, 6}, {12, 1, 24}, {1, 4, 4}, {12, 48, 48},
@@ -74,8 +116,8 @@ func TestLoaderBackpressureKeepsNearestRequestFirst(t *testing.T) {
 		t.Run(fmt.Sprint(budget), func(t *testing.T) {
 			withQueuedChunkWorld(t, func(tx *Tx) {
 				w := tx.World()
-				fillChunkQueue(t, w.chunkWorkers, budget)
 				l := NewLoader(3, w, NopViewer{})
+				fillChunkQueue(t, w.chunkWorkers, l, budget)
 				defer l.Close(tx)
 				before := slices.Clone(l.loadQueue)
 				// A ready chunk behind the rejected request must wait for the next Load call.
@@ -97,8 +139,8 @@ func TestLoaderBackpressureKeepsNearestRequestFirst(t *testing.T) {
 func TestLoaderMoveReprioritisesDeferredWork(t *testing.T) {
 	withQueuedChunkWorld(t, func(tx *Tx) {
 		w := tx.World()
-		fillChunkQueue(t, w.chunkWorkers, 48)
 		l := NewLoader(3, w, NopViewer{})
+		fillChunkQueue(t, w.chunkWorkers, l, 48)
 		defer l.Close(tx)
 		l.Load(tx, 48)
 		l.Move(tx, mgl64.Vec3{1600, 0, 0})
@@ -108,7 +150,11 @@ func TestLoaderMoveReprioritisesDeferredWork(t *testing.T) {
 		}
 
 		// Free one waiting slot without completing any other loader's request.
-		(<-w.chunkWorkers.queue).abort()
+		req := <-w.chunkWorkers.queue
+		w.chunkWorkers.mu.Lock()
+		w.chunkWorkers.removeWaiting(req)
+		w.chunkWorkers.mu.Unlock()
+		req.abort()
 		l.Load(tx, 48)
 		if _, ok := l.pending[centre]; !ok {
 			t.Fatal("current centre was not admitted when a slot became available")
@@ -129,7 +175,7 @@ func TestChunkQueueSaturationPreservesSharedAndImmediateLoads(t *testing.T) {
 		defer l2.Close(tx)
 		l1.Load(tx, 1)
 		req := w.chunkRequests[pos]
-		fillChunkQueue(t, w.chunkWorkers, 1)
+		fillChunkQueue(t, w.chunkWorkers, l1, 1)
 		l2.Load(tx, 1)
 		if w.chunkRequests[pos] != req || len(req.callbacks) != 2 {
 			t.Fatal("saturation prevented two loaders from sharing one request")
@@ -139,6 +185,9 @@ func TestChunkQueueSaturationPreservesSharedAndImmediateLoads(t *testing.T) {
 		if got := <-w.chunkWorkers.queue; got != req {
 			t.Fatal("accepted request order changed")
 		}
+		w.chunkWorkers.mu.Lock()
+		w.chunkWorkers.removeWaiting(req)
+		w.chunkWorkers.mu.Unlock()
 		var err error
 		req.col, err = w.loadChunk(pos)
 		if err != nil {
@@ -154,9 +203,9 @@ func TestChunkQueueSaturationPreservesSharedAndImmediateLoads(t *testing.T) {
 			t.Fatalf("shared completion delivery: moved=%v current=%v", first.chunks, second.chunks)
 		}
 
-		fillChunkQueue(t, w.chunkWorkers, 1)
+		fillChunkQueue(t, w.chunkWorkers, l1, 1)
 		calls := 0
-		if !w.loadChunkAsync(tx, pos, 1, func(gotTx *Tx, got *Column) {
+		if !w.loadChunkAsync(tx, pos, nil, 1, func(gotTx *Tx, got *Column) {
 			if gotTx != tx || got != col {
 				t.Error("resident load changed its owner or column")
 			}
@@ -254,8 +303,8 @@ func TestChunkWorkerBackpressureAllowsImmediateCompletion(t *testing.T) {
 func BenchmarkLoaderBackpressure(b *testing.B) {
 	withQueuedChunkWorld(b, func(tx *Tx) {
 		w := tx.World()
-		fillChunkQueue(b, w.chunkWorkers, 48)
 		l := NewLoader(20, w, NopViewer{})
+		fillChunkQueue(b, w.chunkWorkers, l, 48)
 		defer l.Close(tx)
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -285,9 +334,9 @@ func withQueuedChunkWorld(t testing.TB, f func(*Tx)) {
 }
 
 // fillChunkQueue fills the admission allowance, leaving accepted requests in order.
-func fillChunkQueue(t testing.TB, pool *chunkWorkerPool, batchSize int) {
+func fillChunkQueue(t testing.TB, pool *chunkWorkerPool, loader *Loader, batchSize int) {
 	t.Helper()
-	for pool.schedule(&chunkRequest{done: make(chan struct{})}, batchSize) {
+	for pool.schedule(&chunkRequest{loader: loader, done: make(chan struct{})}, batchSize) {
 	}
 	if len(pool.queue) == 0 {
 		t.Fatal("queue did not accept any fixture requests")
