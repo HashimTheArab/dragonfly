@@ -2686,7 +2686,8 @@ func (p *Player) Latency() time.Duration {
 
 // Tick ticks the entity, performing actions such as checking if the player is still breaking a block.
 func (p *Player) Tick(tx *world.Tx, current int64) {
-	if _, _, riding := world.Riding(p); riding {
+	_, _, riding := world.Riding(p)
+	if riding {
 		p.ResetFallDistance()
 	}
 	if p.Dead() {
@@ -2712,7 +2713,12 @@ func (p *Player) Tick(tx *world.Tx, current int64) {
 		}
 	}
 
-	p.checkBlockCollisions(p.data.Vel)
+	velocity := p.data.Vel
+	if riding {
+		// Vehicle velocity is interpolation data; the seat owns player movement.
+		velocity = mgl64.Vec3{}
+	}
+	p.checkBlockCollisions(velocity)
 	p.onGround = p.checkOnGround(mgl64.Vec3{})
 	p.checkEntitySteppers()
 
@@ -2771,14 +2777,16 @@ func (p *Player) Tick(tx *world.Tx, current int64) {
 	}
 	p.prevWorld = tx.World()
 
-	if p.session() == session.Nop && !p.Immobile() {
-		m := p.mc.TickMovement(p, p.Position(), p.Velocity(), p.Rotation(), p.tx)
-		m.Send()
+	if !riding {
+		if p.session() == session.Nop && !p.Immobile() {
+			m := p.mc.TickMovement(p, p.Position(), p.Velocity(), p.Rotation(), p.tx)
+			m.Send()
 
-		p.data.Vel = m.Velocity()
-		p.Move(m.Position().Sub(p.Position()), 0, 0)
-	} else {
-		p.data.Vel = mgl64.Vec3{}
+			p.data.Vel = m.Velocity()
+			p.Move(m.Position().Sub(p.Position()), 0, 0)
+		} else {
+			p.data.Vel = mgl64.Vec3{}
+		}
 	}
 
 	p.portalTravel.StopPortalContact()
