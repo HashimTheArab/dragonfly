@@ -59,6 +59,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 	if s.entityHidden(e) {
 		return
 	}
+	defer s.viewRidingLinks(e)
 	var runtimeID uint64
 
 	_, controllable := e.(Controllable)
@@ -146,16 +147,17 @@ func (s *Session) ViewEntity(e world.Entity) {
 	}
 
 	s.writePacket(&packet.AddActor{
-		EntityUniqueID:  int64(runtimeID),
-		EntityRuntimeID: runtimeID,
-		EntityType:      id,
-		EntityMetadata:  metadata,
-		Position:        vec64To32(entityNetworkPosition(e, e.Position())),
-		Velocity:        vec64To32(vel),
-		Pitch:           float32(pitch),
-		Yaw:             float32(yaw),
-		HeadYaw:         float32(yaw),
-		BodyYaw:         float32(yaw),
+		EntityUniqueID:   int64(runtimeID),
+		EntityRuntimeID:  runtimeID,
+		EntityType:       id,
+		EntityMetadata:   metadata,
+		EntityProperties: entityProperties(e),
+		Position:         vec64To32(entityNetworkPosition(e, e.Position())),
+		Velocity:         vec64To32(vel),
+		Pitch:            float32(pitch),
+		Yaw:              float32(yaw),
+		HeadYaw:          float32(yaw),
+		BodyYaw:          float32(yaw),
 	})
 }
 
@@ -280,10 +282,7 @@ func entityTypeOffset(entityType world.EntityType) float64 {
 
 // entityNetworkIdentifier returns the identifier encoded to the client for an entity type.
 func entityNetworkIdentifier(entityType world.EntityType) string {
-	if networkType, ok := entityType.(NetworkEncodeableEntity); ok {
-		return networkType.NetworkEncodeEntity()
-	}
-	return entityType.EncodeEntity()
+	return world.EntityNetworkIdentifier(entityType)
 }
 
 // entityNetworkPosition converts an entity base position to Bedrock network space.
@@ -1079,6 +1078,8 @@ func (s *Session) ViewBlockUpdate(pos cube.Pos, b world.Block, layer int) {
 // ViewEntityAction ...
 func (s *Session) ViewEntityAction(e world.Entity, a world.EntityAction) {
 	switch act := a.(type) {
+	case world.EntityLinkAction:
+		s.viewEntityLink(e.H(), act)
 	case entity.GlideBoostAction:
 		s.viewGlideBoost(e, act.Duration)
 	case entity.SwingArmAction:
@@ -1172,9 +1173,20 @@ func (s *Session) ViewEntityAction(e world.Entity, a world.EntityAction) {
 // ViewEntityState ...
 func (s *Session) ViewEntityState(e world.Entity) {
 	s.writePacket(&packet.SetActorData{
-		EntityRuntimeID: s.entityRuntimeID(e),
-		EntityMetadata:  s.entityMetadata(e),
+		EntityRuntimeID:  s.entityRuntimeID(e),
+		EntityMetadata:   s.entityMetadata(e),
+		EntityProperties: entityProperties(e),
 	})
+}
+
+// entityProperties reads optional typed properties for initial and later replication.
+func entityProperties(e world.Entity) protocol.EntityProperties {
+	if properties, ok := e.(interface {
+		EntityProperties() protocol.EntityProperties
+	}); ok {
+		return properties.EntityProperties()
+	}
+	return protocol.EntityProperties{}
 }
 
 // entityMetadata returns the metadata of an entity as viewed by the session, including any overrides

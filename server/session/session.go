@@ -649,13 +649,24 @@ type actorIdentifier struct {
 
 // sendAvailableEntities sends all registered entities to the player.
 func (s *Session) sendAvailableEntities(w *world.World) {
-	var identifiers []actorIdentifier
-	for _, t := range w.EntityRegistry().Types() {
-		identifiers = append(identifiers, actorIdentifier{ID: t.EncodeEntity()})
-	}
+	identifiers := availableEntityIdentifiers(w.EntityRegistry())
 	serialisedEntityData, err := nbt.Marshal(map[string]any{"idlist": identifiers})
 	if err != nil {
 		panic("should never happen")
 	}
 	s.writePacket(&packet.AvailableActorIdentifiers{SerialisedEntityIdentifiers: serialisedEntityData})
+}
+
+// availableEntityIdentifiers lists each client-facing identity once.
+func availableEntityIdentifiers(registry world.EntityRegistry) []actorIdentifier {
+	var identifiers []actorIdentifier
+	seen := make(map[string]bool)
+	for _, t := range registry.Types() {
+		id := world.EntityNetworkIdentifier(t)
+		if !seen[id] {
+			identifiers = append(identifiers, actorIdentifier{ID: id})
+			seen[id] = true
+		}
+	}
+	return identifiers
 }
