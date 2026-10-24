@@ -3,6 +3,7 @@ package packbuilder
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -66,4 +67,33 @@ func TestEntityResourceRejectsUnsafePathsAndIdentity(t *testing.T) {
 		}()
 		checkEntityDefinition([]byte(`{"minecraft:client_entity":{"description":{"identifier":"other:ship"}}}`), "minecraft:client_entity", "test:ship")
 	})
+}
+
+func TestEntityLanguageAssetsMergeWithGeneratedEntries(t *testing.T) {
+	for _, name := range []string{"en_US.lang", "fr_FR.lang"} {
+		t.Run(name, func(t *testing.T) {
+			client := []byte(`{"minecraft:client_entity":{"description":{"identifier":"test:ship"}}}`)
+			reg := world.EntityRegistryConfig{}.New([]world.EntityType{resourceEntityType{resources: world.EntityResources{
+				ClientEntity: client, Assets: map[string][]byte{"texts/" + name: []byte("entity.test:ship.name=Ship")},
+			}}})
+			dir := t.TempDir()
+			buildEntities(dir, []world.EntityRegistry{reg})
+			buildLanguageFile(dir, []string{"tile.test:block.name=Block"})
+			data, err := os.ReadFile(filepath.Join(dir, "texts", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "entity.test:ship.name=Ship"
+			if name == "en_US.lang" {
+				want += "\ntile.test:block.name=Block"
+			}
+			if string(data) != want {
+				t.Fatalf("entity translations = %q, want %q", data, want)
+			}
+			data, err = os.ReadFile(filepath.Join(dir, "texts/en_US.lang"))
+			if err != nil || !strings.Contains(string(data), "tile.test:block.name=Block") {
+				t.Fatalf("generated translations = %q, %v", data, err)
+			}
+		})
+	}
 }

@@ -903,6 +903,7 @@ func (p *Player) kill(src world.DamageSource) {
 	}
 
 	p.addHealth(-p.MaxHealth())
+	p.tx.Dismount(p)
 
 	keepInv := false
 	p.Handler().HandleDeath(p, src, &keepInv)
@@ -2329,8 +2330,9 @@ func (p *Player) Teleport(pos mgl64.Vec3) {
 }
 
 // forceTeleport teleports the player without calling the Handler.
-// It also wakes up the player from sleep.
+// It also dismounts the player and wakes them from sleep.
 func (p *Player) forceTeleport(pos mgl64.Vec3) {
+	p.tx.Dismount(p)
 	p.Wake()
 	p.teleport(pos)
 }

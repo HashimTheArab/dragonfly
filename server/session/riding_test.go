@@ -163,13 +163,18 @@ func (v inputVehicle) HandleRiderInput(_ world.Entity, _ int, input world.RiderI
 type inputRider struct {
 	Controllable
 	entity ridingEntity
+	dead   bool
 }
 
 func (r inputRider) H() *world.EntityHandle  { return r.entity.H() }
 func (r inputRider) Position() mgl64.Vec3    { return r.entity.Position() }
 func (r inputRider) Rotation() cube.Rotation { return r.entity.Rotation() }
 func (r inputRider) Close() error            { return nil }
-func (inputRider) Sneaking() bool            { return false }
+
+// Dead supplies the controller state independently of the vehicle.
+func (r inputRider) Dead() bool { return r.dead }
+
+func (inputRider) Sneaking() bool { return false }
 
 func TestAuthInputDeliversSteeringWithoutTrustingVehiclePosition(t *testing.T) {
 	w := world.Config{Synchronous: true}.New()
@@ -191,6 +196,32 @@ func TestAuthInputDeliversSteeringWithoutTrustingVehiclePosition(t *testing.T) {
 		}
 		if vehicle.Position() != (mgl64.Vec3{}) || rider.Position() != (mgl64.Vec3{0, 1, 0}) {
 			t.Fatal("client vehicle position became authoritative")
+		}
+	})
+}
+
+func TestDeadControllerInputDoesNotSteer(t *testing.T) {
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
+	var input []world.RiderInput
+	vh := world.NewEntity(inputVehicleType{input: &input}, ridingConfig{})
+	rh := world.NewEntity(ridingEntityType{}, ridingConfig{})
+	w.Do(func(tx *world.Tx) {
+		vehicle, rider := tx.AddEntity(vh), tx.AddEntity(rh)
+		if !tx.Mount(rider, vehicle, 0) {
+			t.Fatal("mount failed")
+		}
+		before := rider.Rotation()
+		pk := &packet.PlayerAuthInput{MoveVector: mgl32.Vec2{1, 1}, Yaw: 90, Pitch: 20, Tick: 42}
+		s := ridingSession()
+		if err := (PlayerAuthInputHandler{}).Handle(pk, s, tx, inputRider{entity: rider.(ridingEntity), dead: true}); err != nil {
+			t.Fatal(err)
+		}
+		if len(input) != 0 || rider.Rotation() != before {
+			t.Fatal("dead controller input reached vehicle or changed rider rotation")
+		}
+		if s.inputTick.Load() != 42 {
+			t.Fatal("dead input lost its packet tick")
 		}
 	})
 }

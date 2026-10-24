@@ -185,6 +185,7 @@ func (tx *Tx) UpdateRiders(vehicle Entity) {
 			delta -= 180
 			d.Rot[0] = vehicle.Rotation().Yaw() + max(-*limit, min(*limit, delta))
 		}
+		tx.MarkEntityModified(rider)
 		for _, v := range tx.ridingViewers(rider, vehicle) {
 			v.ViewEntityMovement(rider, d.Pos, d.Rot, false)
 		}

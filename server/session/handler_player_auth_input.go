@@ -18,6 +18,9 @@ type PlayerAuthInputHandler struct{}
 func (h PlayerAuthInputHandler) Handle(p packet.Packet, s *Session, tx *world.Tx, c Controllable) error {
 	pk := p.(*packet.PlayerAuthInput)
 	s.inputTick.Store(pk.Tick)
+	if c.Dead() {
+		return nil
+	}
 	riding := tx.HandleRiderInput(c, world.RiderInput{
 		Move: mgl64.Vec2{float64(pk.MoveVector.X()), float64(pk.MoveVector.Y())},
 		Yaw:  float64(pk.Yaw), Pitch: float64(pk.Pitch),
