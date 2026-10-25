@@ -225,3 +225,80 @@ func TestDeadControllerInputDoesNotSteer(t *testing.T) {
 		}
 	})
 }
+
+// teleportRiderType supplies the rider's session to the world's link notifications.
+type teleportRiderType struct {
+	ridingEntityType
+	session *Session
+}
+
+// Open opens a rider that forwards link changes to its controlling session.
+func (t teleportRiderType) Open(_ *world.Tx, h *world.EntityHandle, d *world.EntityData) world.Entity {
+	return teleportRider{ridingEntity{h, d}, t.session}
+}
+
+// teleportRider exposes a controlling viewer without a live connection.
+type teleportRider struct {
+	ridingEntity
+	session *Session
+}
+
+// ControllingViewer includes the session in authoritative riding updates.
+func (r teleportRider) ControllingViewer() world.Viewer { return r.session }
+
+// Move applies accepted on-foot input to the test rider's transaction-owned data.
+func (r inputRider) Move(delta mgl64.Vec3, yaw, pitch float64) {
+	r.entity.d.Pos = r.entity.d.Pos.Add(delta)
+	r.entity.d.Rot = r.entity.d.Rot.Add(cube.Rotation{yaw, pitch})
+}
+
+func TestTeleportMountRideDismountAllowsMovement(t *testing.T) {
+	for _, knownVehicle := range []bool{true, false} {
+		t.Run(map[bool]string{true: "visible vehicle", false: "unseen vehicle"}[knownVehicle], func(t *testing.T) {
+			w := world.Config{Synchronous: true}.New()
+			defer w.Close()
+			s := ridingSession()
+			var input []world.RiderInput
+			vh := world.NewEntity(inputVehicleType{input: &input}, ridingConfig{})
+			rh := world.NewEntity(teleportRiderType{session: s}, ridingConfig{})
+			s.ent = rh
+			s.entityRuntimeIDs[rh] = selfEntityRuntimeID
+			if knownVehicle {
+				s.entityRuntimeIDs[vh] = 2
+			}
+			w.Do(func(tx *world.Tx) {
+				vehicle := tx.AddEntity(vh).(inputVehicle)
+				rider := tx.AddEntity(rh).(teleportRider)
+				c := inputRider{entity: rider.ridingEntity}
+				destination := mgl64.Vec3{100, 64, 100}
+				rider.d.Pos = destination
+				s.ViewEntityTeleport(c, destination)
+				vehicle.d.Pos = destination
+				if !tx.Mount(rider, vehicle, 0) {
+					t.Fatal("mount failed")
+				}
+				vehicle.d.Pos = destination.Add(mgl64.Vec3{10, 0, 0})
+				if err := (PlayerAuthInputHandler{}).Handle(&packet.PlayerAuthInput{Position: mgl32.Vec3{999, 999, 999}}, s, tx, c); err != nil {
+					t.Fatal(err)
+				}
+				if len(input) != 1 {
+					t.Fatal("riding input not delivered")
+				}
+				if rider.Position() != vehicle.Position().Add(mgl64.Vec3{0, 1, 0}) {
+					t.Fatal("rider left authoritative seat position")
+				}
+				if !tx.Dismount(rider) {
+					t.Fatal("dismount failed")
+				}
+				target := rider.Position().Add(mgl64.Vec3{0.5, 0, 0})
+				pk := &packet.PlayerAuthInput{Position: vec64To32(entityNetworkPosition(c, target))}
+				if err := (PlayerAuthInputHandler{}).Handle(pk, s, tx, c); err != nil {
+					t.Fatal(err)
+				}
+				if rider.Position().Sub(target).Len() > 0.0001 {
+					t.Fatalf("movement after dismount rejected: got %v, want %v", rider.Position(), target)
+				}
+			})
+		})
+	}
+}

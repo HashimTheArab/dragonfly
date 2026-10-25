@@ -18,6 +18,10 @@ func (s *Session) viewRidingLinks(e world.Entity) {
 
 // viewEntityLink encodes vehicle first and rider second, using this viewer's actor IDs.
 func (s *Session) viewEntityLink(vehicle *world.EntityHandle, action world.EntityLinkAction) {
+	if action.Remove && action.Rider == s.ent {
+		// The server-owned seat position supersedes any pending teleport destination.
+		s.teleportPos.Store(nil)
+	}
 	s.entityMutex.RLock()
 	vehicleID, vehicleKnown := s.entityRuntimeIDs[vehicle]
 	riderID, riderKnown := s.entityRuntimeIDs[action.Rider]
