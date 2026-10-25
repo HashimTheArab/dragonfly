@@ -90,7 +90,10 @@ func componentsFromProperties(identifier string, props customblock.Properties) m
 	if props.CollisionBox != (cube.BBox{}) {
 		components["minecraft:collision_box"] = collisionBoxComponent(props.CollisionBox)
 	}
-	if props.SelectionBox != (cube.BBox{}) {
+	switch {
+	case props.SelectionDisabled:
+		components["minecraft:selection_box"] = map[string]any{"enabled": false}
+	case props.SelectionBox != (cube.BBox{}):
 		components["minecraft:selection_box"] = selectionBoxComponent(props.SelectionBox)
 	}
 	geometry := props.Geometry
