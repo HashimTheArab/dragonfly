@@ -68,12 +68,22 @@ func (w *World) closeUnusedChunks() {
 // chunkFromPendingSave revives a detached snapshot without reading stale provider
 // data or waiting for an in-flight write. The caller must be on the world owner.
 func (w *World) chunkFromPendingSave(pos ChunkPos) (*Column, bool) {
-	if pending := w.unloading; pending != nil && pending.pos == pos {
-		column := cloneSaveColumn(pending.column)
+	if pending, ok := w.pendingColumn(pos); ok {
+		column := cloneSaveColumn(pending)
 		// Save revived terrain again, including edits made while the older
 		// snapshot is still being written or after that write failed.
 		column.Generated = true
 		return w.addChunk(pos, column), true
+	}
+	return nil, false
+}
+
+// pendingColumn returns retained terrain for a position with no resident column.
+// Callers must check resident terrain first and run on the world owner. The
+// returned snapshot is immutable; revival requires an independent copy.
+func (w *World) pendingColumn(pos ChunkPos) (*chunk.Column, bool) {
+	if pending := w.unloading; pending != nil && pending.pos == pos {
+		return pending.column, true
 	}
 	return nil, false
 }

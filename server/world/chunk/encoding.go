@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/df-mc/worldupgrader/blockupgrader"
@@ -111,10 +112,11 @@ func (bpe BlockPaletteEncoding) DecodeBlockState(m map[string]any) (uint32, erro
 		return 0, fmt.Errorf("invalid state in block entry")
 	}
 
-	// Upgrade the block state if necessary.
+	// The upgrader mutates properties. Keep legacy mappings and caller input
+	// immutable by giving this decode its own property map.
 	upgraded := blockupgrader.Upgrade(blockupgrader.BlockState{
 		Name:       name,
-		Properties: state,
+		Properties: maps.Clone(state),
 		Version:    version,
 	})
 
