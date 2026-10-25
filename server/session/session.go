@@ -387,6 +387,10 @@ func (s *Session) ClientData() login.ClientData {
 // handlePackets continuously handles incoming packets from the connection. It processes them accordingly.
 // Once the connection is closed, handlePackets will return.
 func (s *Session) handlePackets() {
+	packets := make(chan packet.Packet, maxPacketsPerTransaction)
+	go readPackets(s.conn.ReadPacket, s.closeBackground, packets)
+	defer s.CloseConnection()
+
 	defer func() {
 		// First close the Controllable. This might lead to a world change
 		// (player might be dead while disconnecting, in which case it will
@@ -406,19 +410,27 @@ func (s *Session) handlePackets() {
 			s.conf.Log.Debug("close session: " + err.Error())
 		}
 	}()
-	for {
-		pk, err := s.conn.ReadPacket()
-		if err != nil {
-			return
-		}
-		err = s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
-			return s.handlePacket(pk, tx, c)
+	for first := range packets {
+		var closed bool
+		err := s.withControllable(context.Background(), func(tx *world.Tx, c Controllable) error {
+			binding := s.ent.BindingVersion()
+			var handleErr error
+			closed, handleErr = handlePendingPackets(first, packets, func(pk packet.Packet) (bool, error) {
+				if err := s.handlePacket(pk, tx, c); err != nil {
+					return false, err
+				}
+				return s.ent.BindingVersion() == binding, nil
+			})
+			return handleErr
 		})
 		if err != nil {
 			if sessionOwnerStopped(err) {
 				return
 			}
 			s.conf.Log.Debug("process packet: " + err.Error())
+			return
+		}
+		if closed {
 			return
 		}
 	}
