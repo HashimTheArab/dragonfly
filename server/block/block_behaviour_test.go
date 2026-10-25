@@ -25,7 +25,7 @@ func TestTorchBreaksWithoutSupport(t *testing.T) {
 	})
 	w.AdvanceTick()
 
-	b, err := world.Call(context.Background(), w, func(tx *world.Tx) (world.Block, error) {
+	b, err := w.Call(context.Background(), func(tx *world.Tx) (world.Block, error) {
 		return tx.Block(torch), nil
 	})
 	if err != nil {

@@ -42,12 +42,12 @@ func typed[T Entity](f func(tx *Tx, e T)) func(*Tx, Entity) error {
 	}
 }
 
-// CallRef runs f with the ref's entity on its current world owner and waits
-// for the typed result. Off-owner code only, like Call. If f panics, CallRef
+// Call runs f with the ref's entity on its current world owner and waits
+// for the typed result. Off-owner code only, like World.Call. If f panics, Call
 // re-panics with the original value on the waiting goroutine. Context
-// cancellation stops pending work, but CallRef waits for a callback that has
+// cancellation stops pending work, but Call waits for a callback that has
 // already started.
-func CallRef[T any, E Entity](ctx context.Context, ref EntityRef[E], f func(tx *Tx, e E) (T, error)) (T, error) {
+func (ref EntityRef[E]) Call[T any](ctx context.Context, f func(tx *Tx, e E) (T, error)) (T, error) {
 	var zero T
 	ctx, err := callContext(ctx)
 	if err != nil {

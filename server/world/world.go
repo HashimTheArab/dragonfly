@@ -282,7 +282,7 @@ func (tx *Tx) biome(pos cube.Pos) Biome {
 // block at the x and z values passed in the World. It must not be called from
 // within a transaction; use Tx.HighestLightBlocker instead.
 func (w *World) HighestLightBlocker(x, z int) int {
-	y, _ := Call(context.Background(), w, func(tx *Tx) (int, error) {
+	y, _ := w.Call(context.Background(), func(tx *Tx) (int, error) {
 		return tx.highestLightBlocker(x, z), nil
 	})
 	return y

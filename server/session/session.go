@@ -367,7 +367,7 @@ func (s *Session) Latency() time.Duration {
 // It is for off-owner session goroutines; callbacks that already have a
 // *world.Tx should use it directly instead.
 func (s *Session) withControllable(ctx context.Context, f func(tx *world.Tx, c Controllable) error) error {
-	_, err := world.CallRef(ctx, world.NewEntityRef[Controllable](s.ent), func(tx *world.Tx, c Controllable) (struct{}, error) {
+	_, err := world.NewEntityRef[Controllable](s.ent).Call(ctx, func(tx *world.Tx, c Controllable) (struct{}, error) {
 		return struct{}{}, f(tx, c)
 	})
 	return err

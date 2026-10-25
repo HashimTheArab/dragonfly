@@ -523,7 +523,7 @@ func waitForEntityWorld(t *testing.T, handle *world.EntityHandle, w *world.World
 func entityInWorld(handle *world.EntityHandle, w *world.World) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	inWorld, err := world.CallEntity(ctx, handle, func(tx *world.Tx, _ world.Entity) (bool, error) {
+	inWorld, err := handle.Call(ctx, func(tx *world.Tx, _ world.Entity) (bool, error) {
 		return tx.World() == w, nil
 	})
 	return err == nil && inWorld
