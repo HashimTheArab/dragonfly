@@ -1823,7 +1823,9 @@ func (p *Player) UseItemOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.Vec
 		if block.CanAttemptActivation(i, p.Sneaking()) {
 			// The block was activated: Blocks such as doors must always have precedence over the item being
 			// used.
-			if useCtx := p.useContext(); act.Activate(pos, face, p.tx, p, useCtx) {
+			useCtx := p.useContext()
+			useCtx.ClickPos = &clickPos
+			if act.Activate(pos, face, p.tx, p, useCtx) {
 				p.SwingArm()
 				p.SetHeldItems(p.subtractItem(p.damageItem(i, useCtx.Damage), useCtx.CountSub), left)
 				p.addNewItem(useCtx)

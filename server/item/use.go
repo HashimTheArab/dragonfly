@@ -1,6 +1,9 @@
 package item
 
-import "github.com/df-mc/dragonfly/server/world"
+import (
+	"github.com/df-mc/dragonfly/server/world"
+	"github.com/go-gl/mathgl/mgl64"
+)
 
 // UseContinuation classifies whether an item's use may continue until a later
 // release. It describes item semantics only, not runtime eligibility such as
@@ -71,6 +74,9 @@ type UseContext struct {
 	ConsumedItems []Stack
 	// NewItemSurvivalOnly will add any new items only in survival mode.
 	NewItemSurvivalOnly bool
+	// ClickPos is where the user's click met the block it activates, relative to the block's corner, in
+	// blocks; nil when the use is not a click on a block.
+	ClickPos *mgl64.Vec3
 
 	// FirstFunc returns the first item in the context holder's inventory if found. The second return value describes
 	// whether the item was found. The comparable function is used to compare the item to the given item.
