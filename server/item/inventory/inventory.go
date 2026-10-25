@@ -105,6 +105,16 @@ func (inv *Inventory) SetItem(slot int, item item.Stack) error {
 	return nil
 }
 
+// ValidItem reports whether stack may be stored in slot according to the
+// inventory's slot bounds and validator. It does not mutate the inventory.
+func (inv *Inventory) ValidItem(slot int, stack item.Stack) bool {
+	inv.mu.RLock()
+	defer inv.mu.RUnlock()
+
+	inv.check()
+	return inv.validSlot(slot) && inv.validator(stack, slot)
+}
+
 // Slots returns the all slots in the inventory as a slice. The index in the slice is the slot of the inventory that a
 // specific item.Stack is in. Note that this item.Stack might be empty.
 func (inv *Inventory) Slots() []item.Stack {

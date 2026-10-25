@@ -121,7 +121,9 @@ func (h *ItemStackRequestHandler) handleCraftRecipeOptional(a *protocol.CraftRec
 	if level < cost && !c {
 		return fmt.Errorf("not enough experience")
 	} else if !c {
-		co.SetExperienceLevel(level - cost)
+		h.plan.Defer(stackRequestEffect(func() {
+			co.SetExperienceLevel(level - cost)
+		}))
 	}
 
 	// If we had a result item, we need to calculate the new anvil cost and update it on the item.
@@ -138,17 +140,19 @@ func (h *ItemStackRequestHandler) handleCraftRecipeOptional(a *protocol.CraftRec
 
 	// If we're not in creative mode, we have a 12% chance of the anvil degrading down one state. If that is the case, we
 	// need to play the related sound and update the block state. Otherwise, we play a regular anvil use sound.
-	if !c && rand.Float64() < 0.12 {
-		damaged := anvil.Break()
-		if _, ok := damaged.(block.Air); ok {
-			tx.PlaySound(pos.Vec3Centre(), sound.AnvilBreak{})
-		} else {
-			tx.PlaySound(pos.Vec3Centre(), sound.AnvilUse{})
+	h.plan.Defer(stackRequestEffect(func() {
+		if !c && rand.Float64() < 0.12 {
+			damaged := anvil.Break()
+			if _, ok := damaged.(block.Air); ok {
+				tx.PlaySound(pos.Vec3Centre(), sound.AnvilBreak{})
+			} else {
+				tx.PlaySound(pos.Vec3Centre(), sound.AnvilUse{})
+			}
+			tx.SetBlock(pos, damaged, nil)
+			return
 		}
-		defer tx.SetBlock(pos, damaged, nil)
-	} else {
 		tx.PlaySound(pos.Vec3Centre(), sound.AnvilUse{})
-	}
+	}))
 
 	h.setItemInSlot(protocol.StackRequestSlotInfo{
 		Container: protocol.FullContainerName{ContainerID: protocol.ContainerAnvilInput},

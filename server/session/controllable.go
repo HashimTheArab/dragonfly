@@ -61,6 +61,8 @@ type Controllable interface {
 	BreakBlock(pos cube.Pos)
 	PickBlock(pos cube.Pos)
 	AttackEntity(e world.Entity) bool
+	PrepareItemDrop(s item.Stack) bool
+	SpawnItemDrop(s item.Stack)
 	Drop(s item.Stack) (n int)
 	SwingArm()
 	PunchAir()

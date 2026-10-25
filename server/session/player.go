@@ -280,7 +280,6 @@ const (
 	craftingGridSizeLarge   = 9
 	craftingGridSmallOffset = 28
 	craftingGridLargeOffset = 32
-	craftingResult          = 50
 )
 
 // smelter is an interface representing a block used to smelt items.
