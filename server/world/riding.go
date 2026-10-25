@@ -238,13 +238,13 @@ func (tx *Tx) HandleRiderInput(rider Entity, input RiderInput) bool {
 
 // ridingViewers includes the controlling viewer and deduplicates chunk viewers.
 func (tx *Tx) ridingViewers(rider, vehicle Entity) []Viewer {
-	out := slices.Clone(tx.Viewers(vehicle.Position()))
+	out := slices.Clone(tx.EntityViewers(vehicle))
 	if controlled, ok := rider.(interface{ ControllingViewer() Viewer }); ok {
 		if v := controlled.ControllingViewer(); v != nil && !slices.Contains(out, v) {
 			out = append(out, v)
 		}
 	}
-	for _, v := range tx.Viewers(rider.Position()) {
+	for _, v := range tx.EntityViewers(rider) {
 		if !slices.Contains(out, v) {
 			out = append(out, v)
 		}

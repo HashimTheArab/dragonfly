@@ -304,3 +304,37 @@ func TestUpdatedRiderPositionAndRotationAreSaved(t *testing.T) {
 	}
 	t.Fatalf("saved entities lost rider position or rotation: %v", saved.Entities)
 }
+
+// TestRidingNotifiesPublishedChunkViewers covers several moves before chunk membership advances.
+func TestRidingNotifiesPublishedChunkViewers(t *testing.T) {
+	w := Config{Synchronous: true}.New()
+	defer w.Close()
+	viewer := &ridingViewer{}
+	var inputs []RiderInput
+	var changes []bool
+	start := mgl64.Vec3{8, 70, 8}
+	vehicle := EntitySpawnOpts{Position: start}.New(ridingTestType{seats: []Seat{{}}, inputs: &inputs, changes: &changes}, testEntityConfig{})
+	rider := EntitySpawnOpts{Position: start}.New(testEntityType{}, testEntityConfig{})
+	w.Do(func(tx *Tx) {
+		v, r := tx.AddEntity(vehicle), tx.AddEntity(rider)
+		loader := NewLoader(0, w, viewer)
+		defer loader.Close(tx)
+		loader.Move(tx, start)
+		loader.Load(tx, 1)
+		viewer.moves, viewer.states, viewer.links = 0, 0, nil
+		vehicle.data.Pos[0] = 40
+		if !tx.Mount(r, v, 0) {
+			t.Fatal("mount failed")
+		}
+		vehicle.data.Pos = start
+		tx.UpdateRiders(v)
+		vehicle.data.Pos[0] = 40
+		tx.UpdateRiders(v)
+		if !tx.Dismount(r) {
+			t.Fatal("dismount failed")
+		}
+		if viewer.moves != 3 || viewer.states != 2 || len(viewer.links) != 2 || viewer.links[0].Remove || !viewer.links[1].Remove {
+			t.Fatalf("published chunk viewer missed riding updates: %+v", viewer)
+		}
+	})
+}

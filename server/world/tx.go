@@ -365,6 +365,24 @@ func (tx *Tx) Viewers(pos mgl64.Vec3) []Viewer {
 	return tx.World().viewersOf(pos)
 }
 
+// EntityViewers returns viewers of the entity's published chunk in this transaction.
+// Chunk membership advances with world ticks, so several moves before a tick keep
+// reaching the same observers until visibility is reconciled.
+func (tx *Tx) EntityViewers(e Entity) []Viewer {
+	tx.rejectDetached()
+	if e == nil || e.H().w != tx.World() {
+		return nil
+	}
+	pos, ok := tx.World().entities[e.H()]
+	if !ok {
+		return nil
+	}
+	if column := tx.World().chunks[pos]; column != nil {
+		return column.viewers
+	}
+	return nil
+}
+
 // Sleepers returns an iterator that yields all sleeping entities currently added to the World.
 func (tx *Tx) Sleepers() iter.Seq[Sleeper] {
 	ent := tx.Entities()
