@@ -384,6 +384,9 @@ func redstoneWireCanTransmitDown(src world.BlockSource, pos cube.Pos) bool {
 // connect to dust.
 func redstoneWireDirectConnection(src world.BlockSource, pos cube.Pos, face cube.Face) bool {
 	b := src.Block(pos)
+	if !world.RedstoneComponent(b) {
+		return false
+	}
 	switch b.(type) {
 	case RedstoneWire, world.RedstonePowerSource, world.RedstoneStrongPowerSource, world.RedstonePowerRelayer:
 		return true
@@ -423,6 +426,9 @@ func redstoneWireRelevantLoaded(tx *world.Tx, pos cube.Pos) bool {
 
 // redstoneWireRelevant reports whether b participates in redstone propagation.
 func redstoneWireRelevant(b world.Block) bool {
+	if !world.RedstoneComponent(b) {
+		return false
+	}
 	switch b.(type) {
 	case world.RedstonePowerSource,
 		world.RedstoneStrongPowerSource,
