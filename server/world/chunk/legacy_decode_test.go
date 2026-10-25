@@ -46,14 +46,15 @@ func TestLegacyDiskDecodePreservesMappings(t *testing.T) {
 
 func TestBlockStateDecodePreservesInputProperties(t *testing.T) {
 	properties := map[string]any{"facing_direction": int32(2)}
-	before := maps.Clone(properties)
-	rid, err := (BlockPaletteEncoding{Blocks: upgradedChestRegistry{}}).DecodeBlockState(map[string]any{
+	input := map[string]any{
 		"name": "minecraft:chest", "version": int32(18040335), "states": properties,
-	})
+	}
+	before := CloneBlockEntityData(input)
+	rid, err := (BlockPaletteEncoding{Blocks: upgradedChestRegistry{}}).DecodeBlockState(input)
 	if err != nil || rid != 1 {
 		t.Fatalf("chest decode = %d, %v", rid, err)
 	}
-	if !maps.Equal(properties, before) {
-		t.Fatalf("decoding mutated caller properties: %v, want %v", properties, before)
+	if !reflect.DeepEqual(input, before) {
+		t.Fatalf("decoding mutated caller input: %v, want %v", input, before)
 	}
 }
