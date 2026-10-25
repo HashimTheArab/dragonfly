@@ -37,6 +37,9 @@ type Properties struct {
 	// SelectionBox represents the bounding box of the block that the player can interact with. This cannot exceed the
 	// position of the current block in the world, otherwise it will be cut off at the edge.
 	SelectionBox cube.BBox
+	// SelectionDisabled makes the block impossible to select, unless a permutation that holds sets a SelectionBox.
+	// SelectionBox is then ignored.
+	SelectionDisabled bool
 	// Textures define the textures that should be used for the block. The key is the target of the texture, such as
 	// "*" for all sides, or one of "up", "down", "north", "south", "east", "west" for a specific side.
 	Textures map[string]Material
