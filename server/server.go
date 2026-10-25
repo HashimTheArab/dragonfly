@@ -379,7 +379,8 @@ func (srv *Server) startListening() {
 
 // makeBlockEntries initialises the server's block components map using the
 // registered custom blocks. It allows block components to be created only once
-// at startup.
+// at startup. A block the registry salted for unique network block hashes
+// declares its salt, so that clients hash its states as the registry does.
 func (srv *Server) makeBlockEntries() {
 	custom, dataDriven := slices.Collect(maps.Values(srv.conf.Blocks.CustomBlocks())), world.DataDrivenBlocks()
 	srv.customBlocks = make([]protocol.BlockEntry, 0, len(dataDriven)+len(custom))
@@ -387,8 +388,17 @@ func (srv *Server) makeBlockEntries() {
 		srv.customBlocks = append(srv.customBlocks, protocol.BlockEntry{Name: b.Name, Properties: b.Components})
 	}
 
+	salts, _ := srv.conf.Blocks.(interface {
+		NetworkHashSalt(name string) (int32, bool)
+	})
 	for i, b := range custom {
-		srv.customBlocks = append(srv.customBlocks, customentry.Block(b, 10000+int32(i)))
+		entry := customentry.Block(b, 10000+int32(i))
+		if salts != nil {
+			if salt, ok := salts.NetworkHashSalt(entry.Name); ok {
+				customentry.DeclareNetworkHashSalt(&entry, salt)
+			}
+		}
+		srv.customBlocks = append(srv.customBlocks, entry)
 	}
 }
 
