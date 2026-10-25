@@ -11,12 +11,16 @@ import (
 type pendingChunkSave struct {
 	pos    ChunkPos
 	column *chunk.Column
-	done   chan struct{}
 }
 
 // closeUnusedChunks saves unused columns from the autosave goroutine. Each owner
 // transaction only captures or retires a column; provider I/O runs between transactions.
 func (w *World) closeUnusedChunks() {
+	w.saveMu.Lock()
+	defer w.saveMu.Unlock()
+	if w.closed.Load() {
+		return
+	}
 	var positions []ChunkPos
 	<-w.exec(func(tx *Tx) {
 		for pos, c := range w.chunks {
@@ -38,7 +42,7 @@ func (w *World) closeUnusedChunks() {
 			if !w.conf.ReadOnly && c.modified {
 				c.Compact()
 				snapshot := cloneSaveColumn(w.columnTo(c, pos))
-				w.unloading = &pendingChunkSave{pos: pos, column: snapshot, done: make(chan struct{})}
+				w.unloading = &pendingChunkSave{pos: pos, column: snapshot}
 				column = cloneSaveColumn(snapshot)
 			}
 			w.unloadChunk(tx, pos, c)
@@ -56,7 +60,6 @@ func (w *World) closeUnusedChunks() {
 					w.chunkFromPendingSave(pos)
 				}
 			}
-			close(w.unloading.done)
 			w.unloading = nil
 		})
 	}

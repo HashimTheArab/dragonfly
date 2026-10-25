@@ -61,6 +61,9 @@ type World struct {
 	closing      chan struct{}
 	running      sync.WaitGroup
 	autoSaveDone chan struct{}
+	// saveMu serializes persistence operations before any owner-side snapshot.
+	// It is only acquired by callers outside the world transaction owner.
+	saveMu sync.Mutex
 
 	// chunks holds a cache of chunks currently loaded. These chunks are cleared
 	// from this map after some time of not being used.
@@ -1183,17 +1186,21 @@ func (w *World) PortalDestination(dim Dimension) *World {
 	return w
 }
 
-// Save saves the World to the provider.
+// Save saves the World to the provider. Call it outside a world transaction.
 func (w *World) Save() {
-	var pending <-chan struct{}
-	<-w.exec(func(tx *Tx) {
-		if w.unloading != nil {
-			pending = w.unloading.done
-		}
-		w.save(w.saveChunk)(tx)
-	})
-	if pending != nil {
-		<-pending
+	w.saveAll()
+	if w.closed.Load() {
+		<-w.closing
+	}
+}
+
+// saveAll serializes an explicit or automatic save against unload snapshots.
+// The autosave goroutine must return on close rather than waiting for itself.
+func (w *World) saveAll() {
+	w.saveMu.Lock()
+	defer w.saveMu.Unlock()
+	if !w.closed.Load() {
+		<-w.exec(w.save(w.saveChunk))
 	}
 }
 
@@ -1264,6 +1271,8 @@ func (w *World) close() {
 		<-w.autoSaveDone
 	}
 	w.scheduling.Wait()
+	w.saveMu.Lock()
+	defer w.saveMu.Unlock()
 	w.scheduleMu.Lock()
 	w.closeAcceptingEntityTasks.Store(true)
 	w.scheduleMu.Unlock()
@@ -1539,7 +1548,7 @@ func (w *World) autoSave() {
 		case <-closeUnused.C:
 			w.closeUnusedChunks()
 		case <-save.C:
-			w.Save()
+			w.saveAll()
 		case <-w.closeStarted:
 			return
 		}
