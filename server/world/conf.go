@@ -155,6 +155,7 @@ func (conf Config) New() *World {
 		queueClosing:     make(chan struct{}),
 		closeStarted:     make(chan struct{}),
 		closing:          make(chan struct{}),
+		autoSaveDone:     make(chan struct{}),
 		queue:            make(chan transaction, 128),
 		r:                rand.New(conf.RandSource),
 		advance:          s.ref.Add(1) == 1,

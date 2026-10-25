@@ -60,12 +60,14 @@ type World struct {
 	closeStarted chan struct{}
 	closing      chan struct{}
 	running      sync.WaitGroup
+	autoSaveDone chan struct{}
 
 	// chunks holds a cache of chunks currently loaded. These chunks are cleared
 	// from this map after some time of not being used.
 	chunks        map[ChunkPos]*Column
 	chunkRequests map[ChunkPos]*chunkRequest
 	chunkWorkers  *chunkWorkerPool
+	unloading     *pendingChunkSave
 
 	// entities holds a map of entities currently loaded and the last ChunkPos
 	// that the Entity was in. These are tracked so that a call to RemoveEntity
@@ -1183,7 +1185,16 @@ func (w *World) PortalDestination(dim Dimension) *World {
 
 // Save saves the World to the provider.
 func (w *World) Save() {
-	<-w.exec(w.save(w.saveChunk))
+	var pending <-chan struct{}
+	<-w.exec(func(tx *Tx) {
+		if w.unloading != nil {
+			pending = w.unloading.done
+		}
+		w.save(w.saveChunk)(tx)
+	})
+	if pending != nil {
+		<-pending
+	}
 }
 
 // save saves all loaded chunks to the World's provider.
@@ -1216,6 +1227,11 @@ func (w *World) saveChunk(_ *Tx, pos ChunkPos, c *Column) {
 // in it are closed.
 func (w *World) closeChunk(tx *Tx, pos ChunkPos, c *Column) {
 	w.saveChunk(tx, pos, c)
+	w.unloadChunk(tx, pos, c)
+}
+
+// unloadChunk detaches a column after its persistence data has been captured.
+func (w *World) unloadChunk(tx *Tx, pos ChunkPos, c *Column) {
 	w.scheduledUpdates.removeChunk(pos)
 	w.redstone.removeChunk(pos)
 	// Note: We close c.Entities here because some entities may remove
@@ -1242,6 +1258,11 @@ func (w *World) close() {
 	close(w.closeStarted)
 	w.scheduleMu.Unlock()
 
+	if !w.conf.Synchronous {
+		// Finish the one detached save, including restoring a failed save,
+		// before the final owner transaction saves and closes the remaining chunks.
+		<-w.autoSaveDone
+	}
 	w.scheduling.Wait()
 	w.scheduleMu.Lock()
 	w.closeAcceptingEntityTasks.Store(true)
@@ -1371,6 +1392,9 @@ func (tx *Tx) chunk(pos ChunkPos) *Column {
 	if ok {
 		return c
 	}
+	if c, ok := w.chunkFromPendingSave(pos); ok {
+		return c
+	}
 	c, ok = w.chunkFromAsyncPool(tx, pos)
 	if ok {
 		return c
@@ -1411,6 +1435,10 @@ func (w *World) emptyColumn() *Column {
 // calling callback once ready. It returns false if it could not be scheduled.
 func (w *World) loadChunkAsync(tx *Tx, pos ChunkPos, callback chunkCallback, queued *atomic.Int32, batchSize int) bool {
 	if c, ok := w.chunks[pos]; ok {
+		callback.receive(tx, c)
+		return true
+	}
+	if c, ok := w.chunkFromPendingSave(pos); ok {
 		callback.receive(tx, c)
 		return true
 	}
@@ -1496,6 +1524,8 @@ func (w *World) spreadLight(pos ChunkPos) {
 // autoSave runs until the world is running, saving and removing chunks that
 // are no longer in use.
 func (w *World) autoSave() {
+	defer w.running.Done()
+	defer close(w.autoSaveDone)
 	save := &time.Ticker{C: make(<-chan time.Time)}
 	if w.conf.SaveInterval > 0 {
 		save = time.NewTicker(w.conf.SaveInterval)
@@ -1507,21 +1537,11 @@ func (w *World) autoSave() {
 	for {
 		select {
 		case <-closeUnused.C:
-			<-w.exec(w.closeUnusedChunks)
+			w.closeUnusedChunks()
 		case <-save.C:
 			w.Save()
-		case <-w.closing:
-			w.running.Done()
+		case <-w.closeStarted:
 			return
-		}
-	}
-}
-
-// closeUnusedChunk closes all chunks currently not in use by any viewer.
-func (w *World) closeUnusedChunks(tx *Tx) {
-	for pos, c := range w.chunks {
-		if len(c.viewers) == 0 {
-			w.closeChunk(tx, pos, c)
 		}
 	}
 }
