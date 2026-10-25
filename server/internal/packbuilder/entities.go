@@ -11,6 +11,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/sandertv/gophertunnel/minecraft/resource"
+	"github.com/tailscale/hujson"
 	"golang.org/x/mod/sumdb/dirhash"
 )
 
@@ -77,8 +78,12 @@ func BuildBehaviourPack(registry world.EntityRegistry) (*resource.Pack, bool) {
 
 // checkEntityDefinition refuses an invalid or mismatched entity identity.
 func checkEntityDefinition(data []byte, key, id string) {
+	standard, err := hujson.Standardize(bytes.Clone(data))
+	if err != nil {
+		panic(fmt.Errorf("entity %s: %w", id, err))
+	}
 	var document map[string]json.RawMessage
-	if err := json.Unmarshal(data, &document); err != nil {
+	if err := json.Unmarshal(standard, &document); err != nil {
 		panic(fmt.Errorf("entity %s: %w", id, err))
 	}
 	var entity struct {
@@ -97,7 +102,8 @@ func checkEntityDefinition(data []byte, key, id string) {
 // entityResourceName preserves the namespace without allowing path traversal.
 func entityResourceName(id string) string {
 	namespace, name, ok := strings.Cut(id, ":")
-	if !ok || namespace == "" || name == "" || strings.ContainsAny(namespace+name, "/\\.") {
+	if !ok || namespace == "" || name == "" || strings.ContainsAny(namespace+name, "/\\") ||
+		namespace == "." || namespace == ".." || name == "." || name == ".." {
 		panic("invalid entity resource identifier: " + id)
 	}
 	return namespace + "/" + name

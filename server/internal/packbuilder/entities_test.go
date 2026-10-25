@@ -1,6 +1,7 @@
 package packbuilder
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,6 +95,53 @@ func TestEntityLanguageAssetsMergeWithGeneratedEntries(t *testing.T) {
 			if err != nil || !strings.Contains(string(data), "tile.test:block.name=Block") {
 				t.Fatalf("generated translations = %q, %v", data, err)
 			}
+		})
+	}
+}
+
+func TestBuildEntityPacksPreserveJSONC(t *testing.T) {
+	client := []byte(`{
+ // Client resources may include comments and trailing commas.
+ "minecraft:client_entity": {"description": {"identifier": "test:ship",},},
+ }`)
+	definition := []byte(`{
+ "minecraft:entity": {/* Keep the supplied formatting. */ "description": {"identifier": "test:ship",},},
+ }`)
+	wantClient, wantDefinition := bytes.Clone(client), bytes.Clone(definition)
+	reg := world.EntityRegistryConfig{}.New([]world.EntityType{resourceEntityType{resources: world.EntityResources{ClientEntity: client, Definition: definition}}})
+	dir := t.TempDir()
+	buildEntities(dir, []world.EntityRegistry{reg})
+	data, err := os.ReadFile(filepath.Join(dir, "entity/test/ship.entity.json"))
+	if err != nil || !bytes.Equal(data, wantClient) {
+		t.Fatalf("client definition changed: %q, %v", data, err)
+	}
+	pack, ok := BuildBehaviourPack(reg)
+	if !ok {
+		t.Fatal("no behaviour pack")
+	}
+	data, err = pack.ReadFile("entities/test/ship.json")
+	if err != nil || !bytes.Equal(data, wantDefinition) {
+		t.Fatalf("behaviour definition changed: %q, %v", data, err)
+	}
+}
+
+func TestEntityResourceNameAllowsDots(t *testing.T) {
+	for _, id := range []string{"example:car.sport", "example.vehicles:car.sport", "example:..."} {
+		if got, want := entityResourceName(id), strings.Replace(id, ":", "/", 1); got != want {
+			t.Fatalf("resource name = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestEntityResourceNameRejectsTraversal(t *testing.T) {
+	for _, id := range []string{"example:.", "example:..", ".:car", "..:car", "example:../car", "example:car/../../escape", "../example:car", `example:car\sport`, `example\vehicles:car`, "example:", ":car", "car"} {
+		t.Run(id, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("unsafe identifier accepted")
+				}
+			}()
+			entityResourceName(id)
 		})
 	}
 }
