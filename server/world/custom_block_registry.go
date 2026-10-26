@@ -199,7 +199,8 @@ func networkListValues(value any) ([]any, bool) {
 // forEachNetworkBlockState yields the state properties of a block in the client's runtime ID order.
 // Each state takes a bit field of the packed data value, in the order the states were added, wide
 // enough for its values; the client walks every data value of at most 16 bits in ascending order
-// and skips those naming a value a state does not have.
+// and skips those naming a value a state does not have. A state whose field does not fit in those
+// bits always takes its first value, so data values differing only in unused bits repeat a state.
 func forEachNetworkBlockState(states []customblock.TraitState, yield func(map[string]any) bool) {
 	starts := make([]int, len(states))
 	widths := make([]int, len(states))
@@ -214,9 +215,9 @@ func forEachNetworkBlockState(states []customblock.TraitState, yield func(map[st
 		valid := true
 		for i, state := range states {
 			value := 0
-			if widths[i] != 0 && starts[i] < maxBlockStateBits {
-				mask := (1<<widths[i] - 1) << starts[i] & (1<<maxBlockStateBits - 1)
-				value = (data & mask) >> starts[i]
+			// The client gives a state whose field does not fit below bit 16 an empty mask.
+			if widths[i] != 0 && starts[i]+widths[i] <= maxBlockStateBits {
+				value = data >> starts[i] & (1<<widths[i] - 1)
 			}
 			if value >= max(len(state.Values), 1) {
 				valid = false

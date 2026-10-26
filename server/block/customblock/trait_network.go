@@ -6,6 +6,7 @@ var (
 	connectionValues     = []any{uint8(0), uint8(1)}
 	sixteenWayRotations  = indexValues(16)
 	connectionDirections = []string{"north", "east", "south", "west"}
+	connectionVertical   = []string{"up", "down"}
 )
 
 // NetworkTraitStates returns the states a trait entry of a StartGame block definition adds, in the
@@ -48,14 +49,19 @@ func NetworkTraitStates(name string, trait map[string]any) []TraitState {
 		}
 		return states
 	case "minecraft:connection":
-		// enabled_states is an int, of which the client only tests the lowest bit.
+		// enabled_states is an int: its lowest bit enables the horizontal connections and the next
+		// bit the vertical ones.
 		enabled, _ := trait["enabled_states"].(int32)
-		if enabled&1 == 0 {
-			return nil
+		var states []TraitState
+		if enabled&1 != 0 {
+			for _, direction := range connectionDirections {
+				states = append(states, TraitState{Name: "minecraft:connection_" + direction, Values: connectionValues})
+			}
 		}
-		states := make([]TraitState, 0, len(connectionDirections))
-		for _, direction := range connectionDirections {
-			states = append(states, TraitState{Name: "minecraft:connection_" + direction, Values: connectionValues})
+		if enabled&2 != 0 {
+			for _, direction := range connectionVertical {
+				states = append(states, TraitState{Name: "minecraft:connection_" + direction, Values: connectionValues})
+			}
 		}
 		return states
 	case "minecraft:multi_block":

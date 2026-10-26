@@ -120,9 +120,9 @@ func TestDigestNetworkBlocks_TraitRules(t *testing.T) {
 			map[string]any{"name": "minecraft:placement_direction", "enabled_states": map[string]any{"facing_direction": uint8(1)}},
 			map[string]any{"name": "minecraft:placement_position", "enabled_states": map[string]any{"block_face": uint8(1)}},
 		}, []string{"minecraft:facing_direction", "minecraft:block_face"}},
-		{"connection tests only the lowest bit", []any{
+		{"connection's second bit adds up and down", []any{
 			map[string]any{"name": "minecraft:connection", "enabled_states": int32(2)},
-		}, nil},
+		}, []string{"minecraft:connection_up", "minecraft:connection_down"}},
 		{"connection adds north, east, south and west", []any{
 			map[string]any{"name": "minecraft:connection", "enabled_states": int32(1)},
 		}, []string{"minecraft:connection_north", "minecraft:connection_east", "minecraft:connection_south", "minecraft:connection_west"}},
@@ -236,13 +236,16 @@ func TestDigestNetworkBlocks_RepeatedStatesKeepRuntimeIDs(t *testing.T) {
 			if got := registry.BlockCount() - baseline.BlockCount(); got != states {
 				t.Fatalf("states = %d, want %d", got, states)
 			}
-			hashes := make(map[uint32]struct{})
+			// States of one block that serialize the same share a network hash; all others differ.
+			hashes, distinct := make(map[uint32]struct{}), make(map[string]struct{})
 			for rid := range registry.BlockCount() {
 				hash, _ := registry.RuntimeIDToHash(uint32(rid))
 				hashes[hash] = struct{}{}
+				name, properties, _ := registry.RuntimeIDToState(uint32(rid))
+				distinct[name+hashProperties(properties)] = struct{}{}
 			}
-			if len(hashes) != registry.BlockCount() {
-				t.Fatal("network hashes are not unique")
+			if len(hashes) != len(distinct) {
+				t.Fatalf("%d network hashes for %d distinct states", len(hashes), len(distinct))
 			}
 		})
 	}
@@ -320,5 +323,27 @@ func TestNetworkStatesEqual_TagTypesAndBits(t *testing.T) {
 	}
 	if networkStatesEqual(wide, wide) {
 		t.Fatal("states past 16 bits match")
+	}
+}
+
+// A state whose bit field does not fit below bit 16 always takes its first value, and the data
+// values that differ only in its bits repeat the other states.
+func TestDigestNetworkBlocks_StateCrossingBit16(t *testing.T) {
+	properties := make([]any, 0, 16)
+	for i := range 15 {
+		properties = append(properties, map[string]any{"name": "test:p" + string(rune('a'+i)), "enum": []uint8{0, 1}})
+	}
+	properties = append(properties, map[string]any{"name": "test:q", "enum": []uint8{0, 1, 2, 3}})
+	states := testDigestStates(t, testDefinition("test:block", map[string]any{"properties": properties}))
+	if len(states) != 1<<16 {
+		t.Fatalf("states = %d, want %d", len(states), 1<<16)
+	}
+	for i, state := range states {
+		if state["test:q"] != uint8(0) {
+			t.Fatalf("state %d sets test:q to %v", i, state["test:q"])
+		}
+	}
+	if !reflect.DeepEqual(states[0], states[1<<15]) {
+		t.Fatal("data values differing only in bit 15 give different states")
 	}
 }

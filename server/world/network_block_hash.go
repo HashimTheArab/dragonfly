@@ -28,6 +28,8 @@ func networkBlockHash(name string, properties map[string]any, scratch []byte) (u
 
 	data := scratch[:0]
 	writeString := func(str string) {
+		// The client writes at most 32767 bytes of a string, with that length.
+		str = str[:len(str)&0x7fff]
 		data = binary.LittleEndian.AppendUint16(data, uint16(len(str)))
 		data = append(data, []byte(str)...)
 	}

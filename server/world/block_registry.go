@@ -356,7 +356,7 @@ func (br *BasicBlockRegistry) appendBlockState(s BlockState, scratch []byte, dup
 	var netHash uint32
 	if br.finalized {
 		netHash, scratch = networkBlockHash(s.Name, s.Properties, scratch)
-		netHash = br.freeNetworkHashLocked(netHash)
+		netHash = br.networkHashLocked(netHash, s.Name)
 	}
 	if _, ok := br.blockProperties[s.Name]; !ok {
 		br.blockProperties[s.Name] = s.Properties
@@ -377,7 +377,9 @@ func (br *BasicBlockRegistry) appendBlockState(s BlockState, scratch []byte, dup
 	}
 	br.blockInfos = append(br.blockInfos, defaultUnknownBlockInfo())
 
-	br.networkhashToRids[netHash] = rid
+	if _, taken := br.networkhashToRids[netHash]; !taken {
+		br.networkhashToRids[netHash] = rid
+	}
 	br.ridsToNetworkhash = append(br.ridsToNetworkhash, netHash)
 	return scratch, nil
 }
@@ -587,8 +589,10 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 		}
 		var netHash uint32
 		netHash, networkHashScratch = networkBlockHash(name, properties, networkHashScratch)
-		netHash = br.freeNetworkHashLocked(netHash)
-		br.networkhashToRids[netHash] = rid
+		netHash = br.networkHashLocked(netHash, name)
+		if _, taken := br.networkhashToRids[netHash]; !taken {
+			br.networkhashToRids[netHash] = rid
+		}
 		br.ridsToNetworkhash[rid] = netHash
 	}
 	if !foundAir {
@@ -597,11 +601,16 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 	br.finalized = true
 }
 
-// freeNetworkHashLocked returns hash, or the first unassigned value above it, as a client assigns
-// network hashes in palette order and moves a colliding block to the next free value.
-func (br *BasicBlockRegistry) freeNetworkHashLocked(hash uint32) uint32 {
+// networkHashLocked returns the network hash a client assigns a state of the block name, in
+// palette order: its own hash, unless a state of another block already holds it, in which case the
+// next value not held by another block. States of one block that serialize the same share a hash.
+func (br *BasicBlockRegistry) networkHashLocked(hash uint32, name string) uint32 {
 	for {
-		if _, taken := br.networkhashToRids[hash]; !taken {
+		other, taken := br.networkhashToRids[hash]
+		if !taken {
+			return hash
+		}
+		if otherName, _ := br.blocks[other].EncodeBlock(); otherName == name {
 			return hash
 		}
 		hash++
