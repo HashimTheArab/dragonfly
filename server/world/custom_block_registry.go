@@ -2,7 +2,9 @@ package world
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/df-mc/dragonfly/server/block/customblock"
@@ -23,6 +25,11 @@ const maxBlockStateBits = 16
 type networkBlockDefinition struct {
 	name   string
 	states []customblock.TraitState
+	// traits holds the names of the states the block's traits added.
+	traits map[string]struct{}
+	// vanilla reports whether the entry named the block in the minecraft namespace, which lets it
+	// add states to a block an earlier definition registered.
+	vanilla bool
 }
 
 // NewCustomBlockRegistry returns an independent registry with default block runtime IDs preserved and custom block
@@ -53,40 +60,64 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 	return addNetworkBlocks(basicRegistry, definitions)
 }
 
-// addNetworkBlocks appends the states of every definition whose name the registry does not hold
-// yet, ignoring case as the client keys block types by lowercased name. It checks the state limit
-// before changing the registry.
+// addNetworkBlocks appends the states of the blocks the definitions register, keyed by lowercased
+// name as the client keys block types. A later definition of a block an earlier one registered is
+// ignored, unless it names the block in the minecraft namespace: the client then adds its trait
+// states the block lacks and its properties after the block's states. A block the registry already
+// holds keeps its own states. The state limit is checked before the registry changes.
 func addNetworkBlocks(registry *BasicBlockRegistry, definitions []networkBlockDefinition) error {
-	held := make(map[string]struct{}, len(registry.blockProperties)+len(definitions))
+	held := make(map[string]struct{}, len(registry.blockProperties))
 	for name := range registry.blockProperties {
 		held[asciiLower(name)] = struct{}{}
 	}
-	added := make([]networkBlockDefinition, 0, len(definitions))
-	total := 0
+	blocks := make([]networkBlockDefinition, 0, len(definitions))
+	index := make(map[string]int, len(definitions))
 	for _, definition := range definitions {
 		key := asciiLower(definition.name)
 		if _, ok := held[key]; ok {
 			continue
 		}
-		held[key] = struct{}{}
-		forEachNetworkBlockState(definition.states, func(map[string]any) bool {
+		at, registered := index[key]
+		if !registered {
+			index[key] = len(blocks)
+			definition.traits = maps.Clone(definition.traits)
+			blocks = append(blocks, definition)
+			continue
+		}
+		if !definition.vanilla {
+			continue
+		}
+		block := &blocks[at]
+		block.states = slices.Clone(block.states)
+		for _, state := range definition.states {
+			if _, trait := definition.traits[state.Name]; trait {
+				if _, has := block.traits[state.Name]; has {
+					continue
+				}
+				block.traits[state.Name] = struct{}{}
+			}
+			block.states = append(block.states, state)
+		}
+	}
+	total := 0
+	for _, block := range blocks {
+		forEachNetworkBlockState(block.states, func(map[string]any) bool {
 			total++
 			return total <= maxNetworkBlockStates
 		})
 		if total > maxNetworkBlockStates {
 			return fmt.Errorf("block palette states exceed limit of %d", maxNetworkBlockStates)
 		}
-		added = append(added, definition)
 	}
 	scratch := make([]byte, 0, 0xff)
-	for _, definition := range added {
+	for _, block := range blocks {
 		var stateErr error
-		forEachNetworkBlockState(definition.states, func(properties map[string]any) bool {
-			scratch, stateErr = registry.appendBlockState(BlockState{Name: definition.name, Properties: properties}, scratch, true)
+		forEachNetworkBlockState(block.states, func(properties map[string]any) bool {
+			scratch, stateErr = registry.appendBlockState(BlockState{Name: block.name, Properties: properties}, scratch, true)
 			return stateErr == nil
 		})
 		if stateErr != nil {
-			return fmt.Errorf("block %s: %w", definition.name, stateErr)
+			return fmt.Errorf("block %s: %w", block.name, stateErr)
 		}
 	}
 	return nil
@@ -123,11 +154,13 @@ func digestNetworkBlocks(entries []protocol.BlockEntry) ([]networkBlockDefinitio
 	kept := NetworkBlockEntries(entries)
 	definitions := make([]networkBlockDefinition, 0, len(kept))
 	for _, entry := range kept {
-		states, err := networkBlockStates(entry.Properties)
+		states, traits, err := networkBlockStates(entry.Properties)
 		if err != nil {
 			return nil, fmt.Errorf("block %s: %w", entry.Name, err)
 		}
-		definitions = append(definitions, networkBlockDefinition{name: networkBlockName(entry.Name), states: states})
+		definitions = append(definitions, networkBlockDefinition{
+			name: networkBlockName(entry.Name), states: states, traits: traits, vanilla: networkVanillaName(entry.Name),
+		})
 	}
 	return definitions, nil
 }
@@ -135,7 +168,7 @@ func digestNetworkBlocks(entries []protocol.BlockEntry) ([]networkBlockDefinitio
 // networkBlockStates returns the states of one block definition: the states of its known traits in
 // the order the traits are listed, then its properties in list order. Every property is its own
 // state, even one named like another; the later one then names the value in the state.
-func networkBlockStates(definition map[string]any) ([]customblock.TraitState, error) {
+func networkBlockStates(definition map[string]any) ([]customblock.TraitState, map[string]struct{}, error) {
 	var states []customblock.TraitState
 	traitStates := make(map[string]struct{})
 	seenTraits := make(map[string]struct{})
@@ -163,11 +196,11 @@ func networkBlockStates(definition map[string]any) ([]customblock.TraitState, er
 			continue
 		}
 		if len(values) == 0 {
-			return nil, fmt.Errorf("property %q has no values, which the client cannot load", name)
+			return nil, nil, fmt.Errorf("property %q has no values, which the client cannot load", name)
 		}
 		states = append(states, customblock.TraitState{Name: name, Values: values})
 	}
-	return states, nil
+	return states, traitStates, nil
 }
 
 // networkCompounds returns the compound elements of an NBT list, skipping every other element as
@@ -296,4 +329,15 @@ func networkBlockName(name string) string {
 		return "minecraft:" + name
 	}
 	return name
+}
+
+// networkVanillaName reports whether the client reads an entry name as an identifier in the
+// minecraft namespace: one namespace and one name, neither empty, without whitespace, and a
+// namespace of minecraft in any case.
+func networkVanillaName(name string) bool {
+	namespace, path, ok := strings.Cut(asciiLower(name), ":")
+	if !ok || namespace == "" || path == "" || strings.Contains(path, ":") || strings.ContainsAny(name, " \t\r\n") {
+		return false
+	}
+	return namespace == "minecraft"
 }

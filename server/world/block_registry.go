@@ -356,7 +356,9 @@ func (br *BasicBlockRegistry) appendBlockState(s BlockState, scratch []byte, dup
 	var netHash uint32
 	if br.finalized {
 		netHash, scratch = networkBlockHash(s.Name, s.Properties, scratch)
-		netHash = br.networkHashLocked(netHash, s.Name)
+		if s.Name != "minecraft:unknown" {
+			netHash = br.networkHashLocked(netHash, s.Name)
+		}
 	}
 	if _, ok := br.blockProperties[s.Name]; !ok {
 		br.blockProperties[s.Name] = s.Properties
@@ -587,7 +589,10 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 		}
 		var netHash uint32
 		netHash, networkHashScratch = networkBlockHash(name, properties, networkHashScratch)
-		netHash = br.networkHashLocked(netHash, name)
+		if name != "minecraft:unknown" {
+			// The client gives the unknown block its reserved hash after probing, so it never moves.
+			netHash = br.networkHashLocked(netHash, name)
+		}
 		// The client's lookup resolves a hash shared by states of one block to the last of them.
 		br.networkhashToRids[netHash] = rid
 		br.ridsToNetworkhash[rid] = netHash
@@ -610,7 +615,8 @@ func (br *BasicBlockRegistry) networkHashLocked(hash uint32, name string) uint32
 		if hash > maxProbedNetworkHash {
 			hash = 0
 		}
-		// The client compares owners even when the wrapped hash is free, and finds none.
+		// When the wrapped hash is free, the client compares against storage it never set; this
+		// treats it as another block's.
 		if other, taken := br.networkhashToRids[hash]; taken {
 			if otherName, _ := br.blocks[other].EncodeBlock(); otherName == name {
 				return hash

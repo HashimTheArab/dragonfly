@@ -128,7 +128,7 @@ func TestDigestNetworkBlocks_TraitRules(t *testing.T) {
 		}, []string{"minecraft:connection_north", "minecraft:connection_east", "minecraft:connection_south", "minecraft:connection_west"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			states, err := networkBlockStates(map[string]any{"traits": test.traits})
+			states, _, err := networkBlockStates(map[string]any{"traits": test.traits})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -461,5 +461,59 @@ func TestNewNetworkBlockRegistry_UnqualifiedNameIsVanillaNamespace(t *testing.T)
 func TestNetworkBlockHash_EmptyNameIsZero(t *testing.T) {
 	if NetworkBlockHash("") != 0 || NetworkBlockHash("\x00:test") != 0 {
 		t.Fatal("a name starting with NUL does not hash to zero")
+	}
+}
+
+// The unknown block keeps its reserved hash, and the hash resolves to it, even when a block before
+// it already took the same value.
+func TestNetworkHash_UnknownBlockKeepsReservedHash(t *testing.T) {
+	registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{testDefinition("test:reserved0", map[string]any{
+		"properties": []any{map[string]any{"name": "test:p", "enum": []int32{1002028478}}},
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown, ok := registry.StateToRuntimeID("minecraft:unknown", nil)
+	if !ok {
+		t.Skip("registry has no minecraft:unknown")
+	}
+	if hash, _ := registry.RuntimeIDToHash(unknown); hash != 0xfffffffe {
+		t.Fatalf("unknown block hash = %#x, want 0xfffffffe", hash)
+	}
+	if rid, _ := registry.HashToRuntimeID(0xfffffffe); rid != unknown {
+		t.Fatalf("0xfffffffe resolves to %d, want the unknown block %d", rid, unknown)
+	}
+}
+
+// A later definition naming a block in the minecraft namespace adds its states to the block an
+// earlier definition registered under the same name; without the namespace it is ignored.
+func TestDigestNetworkBlocks_NamespaceAliasAddsStates(t *testing.T) {
+	property := func(name string) map[string]any {
+		return map[string]any{"properties": []any{map[string]any{"name": name, "enum": []uint8{0, 1}}}}
+	}
+	for _, test := range []struct {
+		name    string
+		entries []protocol.BlockEntry
+		want    int
+	}{
+		{"qualified alias adds states", []protocol.BlockEntry{
+			testDefinition("parity_alias", property("test:p")),
+			testDefinition("minecraft:parity_alias", property("test:q")),
+		}, 4},
+		{"unqualified alias is ignored", []protocol.BlockEntry{
+			testDefinition("minecraft:parity_alias", property("test:p")),
+			testDefinition("parity_alias", property("test:q")),
+		}, 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			registry, err := NewNetworkBlockRegistry(test.entries)
+			if err != nil {
+				t.Fatal(err)
+			}
+			baseline, _ := NewNetworkBlockRegistry(nil)
+			if got := registry.BlockCount() - baseline.BlockCount(); got != test.want {
+				t.Fatalf("states = %d, want %d", got, test.want)
+			}
+		})
 	}
 }
