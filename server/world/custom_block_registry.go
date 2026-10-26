@@ -67,8 +67,10 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 // registry changes.
 func addNetworkBlocks(registry *BasicBlockRegistry, definitions []networkBlockDefinition) error {
 	type networkBlock struct {
-		name       string
-		states     []customblock.TraitState
+		name   string
+		states []customblock.TraitState
+		// trait reports, for each state, whether a trait added it rather than a property.
+		trait      []bool
 		traits     map[string]struct{}
 		properties int
 	}
@@ -96,17 +98,19 @@ func addNetworkBlocks(registry *BasicBlockRegistry, definitions []networkBlockDe
 			if _, has := block.traits[state.Name]; !has {
 				block.traits[state.Name] = struct{}{}
 				block.states = append(block.states, state)
+				block.trait = append(block.trait, true)
 			}
 		}
 		properties := definition.states[definition.traits:]
-		if len(properties) > block.properties {
-			block.states = append(block.states, properties[block.properties:]...)
-			block.properties = len(properties)
+		for _, property := range properties[min(block.properties, len(properties)):] {
+			block.states = append(block.states, property)
+			block.trait = append(block.trait, false)
 		}
+		block.properties = max(block.properties, len(properties))
 	}
 	total := 0
 	for _, block := range blocks {
-		forEachNetworkBlockState(block.states, func(map[string]any) bool {
+		forEachNetworkBlockState(block.states, block.trait, func(map[string]any) bool {
 			total++
 			return total <= maxNetworkBlockStates
 		})
@@ -117,7 +121,7 @@ func addNetworkBlocks(registry *BasicBlockRegistry, definitions []networkBlockDe
 	scratch := make([]byte, 0, 0xff)
 	for _, block := range blocks {
 		var stateErr error
-		forEachNetworkBlockState(block.states, func(properties map[string]any) bool {
+		forEachNetworkBlockState(block.states, block.trait, func(properties map[string]any) bool {
 			scratch, stateErr = registry.appendBlockState(BlockState{Name: block.name, Properties: properties}, scratch, true)
 			return stateErr == nil
 		})
@@ -247,8 +251,10 @@ func networkListValues(value any) ([]any, bool) {
 // enough for its values. The client walks every data value of at most 16 bits in ascending order
 // and skips those a state's mask marks out of range, then reads each state's value from the data
 // value. Both use the client's 16-bit masks with shift counts taken modulo 32, so a field that does
-// not fit below bit 16 is never out of range and reads only the bits it has, or none.
-func forEachNetworkBlockState(states []customblock.TraitState, yield func(map[string]any) bool) {
+// not fit below bit 16 is never out of range and reads only the bits it has, or none. The client
+// writes a state's values by state ID, trait states before properties, so of two states sharing a
+// name the property names the value; trait marks which states traits added.
+func forEachNetworkBlockState(states []customblock.TraitState, trait []bool, yield func(map[string]any) bool) {
 	type field struct{ start, width, mask, read uint32 }
 	fields := make([]field, len(states))
 	var offset, bits uint32
@@ -260,6 +266,15 @@ func forEachNetworkBlockState(states []customblock.TraitState, yield func(map[st
 		bits += width
 	}
 	bits = min(bits, maxBlockStateBits)
+	order := make([]int, 0, len(states))
+	for _, traits := range []bool{true, false} {
+		for i := range states {
+			if (i < len(trait) && trait[i]) == traits {
+				order = append(order, i)
+			}
+		}
+	}
+	values := make([]uint32, len(states))
 	properties := make(map[string]any, len(states))
 	for data := uint32(0); data < 1<<bits; data++ {
 		valid := true
@@ -269,18 +284,21 @@ func forEachNetworkBlockState(states []customblock.TraitState, yield func(map[st
 				valid = false
 				break
 			}
-			if len(state.Values) == 0 {
-				// The client counts a state without values as having one; it has nothing to name.
-				continue
-			}
 			value := data >> fields[i].start & fields[i].read
 			if value >= count {
 				value = 0
 			}
-			properties[state.Name] = state.Values[value]
+			values[i] = value
 		}
 		if !valid {
 			continue
+		}
+		clear(properties)
+		for _, i := range order {
+			// The client counts a state without values as having one; it has nothing to name.
+			if len(states[i].Values) != 0 {
+				properties[states[i].Name] = states[i].Values[values[i]]
+			}
 		}
 		state := make(map[string]any, len(properties))
 		for name, value := range properties {

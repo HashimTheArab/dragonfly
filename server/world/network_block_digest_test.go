@@ -564,3 +564,31 @@ func TestDigestNetworkBlocks_ExtendingDefinitionStateIDs(t *testing.T) {
 		})
 	}
 }
+
+// Of a trait state and a property sharing a name, the property names the value, as the client
+// writes states by state ID and trait states have the lower ones.
+func TestDigestNetworkBlocks_PropertyNamesValueOverSameNamedTraitState(t *testing.T) {
+	registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{
+		testDefinition("minecraft:parity_r6", map[string]any{"properties": []any{
+			map[string]any{"name": "minecraft:vertical_half", "enum": []int32{0, 1}},
+		}}),
+		testDefinition("Minecraft:parity_r6", map[string]any{"traits": []any{map[string]any{
+			"name": "minecraft:placement_position", "enabled_states": map[string]any{"vertical_half": uint8(1)},
+		}}}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, ok := registry.StateToRuntimeID("minecraft:parity_r6", map[string]any{"minecraft:vertical_half": int32(0)})
+	if !ok {
+		t.Fatal("state missing")
+	}
+	var got []any
+	for rid := first; rid < first+4; rid++ {
+		_, properties, _ := registry.RuntimeIDToState(rid)
+		got = append(got, properties["minecraft:vertical_half"])
+	}
+	if want := []any{int32(0), int32(1), int32(0), int32(1)}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("values = %v, want %v", got, want)
+	}
+}
