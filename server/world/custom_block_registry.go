@@ -3,6 +3,7 @@ package world
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/df-mc/dragonfly/server/block/customblock"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
@@ -126,7 +127,7 @@ func digestNetworkBlocks(entries []protocol.BlockEntry) ([]networkBlockDefinitio
 		if err != nil {
 			return nil, fmt.Errorf("block %s: %w", entry.Name, err)
 		}
-		definitions = append(definitions, networkBlockDefinition{name: entry.Name, states: states})
+		definitions = append(definitions, networkBlockDefinition{name: networkBlockName(entry.Name), states: states})
 	}
 	return definitions, nil
 }
@@ -204,37 +205,38 @@ func networkListValues(value any) ([]any, bool) {
 
 // forEachNetworkBlockState yields the state properties of a block in the client's runtime ID order.
 // Each state takes a bit field of the packed data value, in the order the states were added, wide
-// enough for its values; the client walks every data value of at most 16 bits in ascending order
-// and skips those naming a value a state does not have. A state whose field does not fit in those
-// bits is never out of range and takes the value of the data bits it has.
+// enough for its values. The client walks every data value of at most 16 bits in ascending order
+// and skips those a state's mask marks out of range, then reads each state's value from the data
+// value. Both use the client's 16-bit masks with shift counts taken modulo 32, so a field that does
+// not fit below bit 16 is never out of range and reads only the bits it has, or none.
 func forEachNetworkBlockState(states []customblock.TraitState, yield func(map[string]any) bool) {
-	starts := make([]int, len(states))
-	widths := make([]int, len(states))
-	bits := 0
+	type field struct{ start, width, mask, read uint32 }
+	fields := make([]field, len(states))
+	var offset, bits uint32
 	for i, state := range states {
-		starts[i], widths[i] = bits, networkStateBitWidth(len(state.Values))
-		bits += widths[i]
+		width := uint32(networkStateBitWidth(len(state.Values)))
+		mask := (uint32(0xffff) << ((16 - width) & 31) & 0xffff) >> ((16 - (offset + width)) & 31)
+		fields[i] = field{start: offset & 31, width: width, mask: mask, read: uint32(0xffff) >> ((16 - width) & 31)}
+		offset += width
+		bits += width
 	}
 	bits = min(bits, maxBlockStateBits)
 	properties := make(map[string]any, len(states))
-	for data := 0; data < 1<<bits; data++ {
+	for data := uint32(0); data < 1<<bits; data++ {
 		valid := true
 		for i, state := range states {
-			value := 0
-			if widths[i] != 0 {
-				value = data >> starts[i] & (1<<widths[i] - 1)
-			}
-			// The client validates a state through a mask that is empty for a field not fitting below
-			// bit 16, so such a state is never out of range, while its value still comes from the
-			// data bits it does have.
-			fits := starts[i]+widths[i] <= maxBlockStateBits
-			if fits && value >= max(len(state.Values), 1) {
+			count := uint32(max(len(state.Values), 1))
+			if (fields[i].mask&data)>>fields[i].start >= count {
 				valid = false
 				break
 			}
 			if len(state.Values) == 0 {
 				// The client counts a state without values as having one; it has nothing to name.
 				continue
+			}
+			value := data >> fields[i].start & fields[i].read
+			if value >= count {
+				value = 0
 			}
 			properties[state.Name] = state.Values[value]
 		}
@@ -285,4 +287,13 @@ func containsLongArray(v reflect.Value) bool {
 		}
 	}
 	return false
+}
+
+// networkBlockName returns the name the client gives the block of a definition: a name without a
+// namespace is in the minecraft namespace.
+func networkBlockName(name string) string {
+	if !strings.Contains(name, ":") {
+		return "minecraft:" + name
+	}
+	return name
 }

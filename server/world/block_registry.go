@@ -599,21 +599,24 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 }
 
 // networkHashLocked returns the network hash a client assigns a state of the block name, in
-// palette order: its own hash, unless a state of another block already holds it, in which case the
-// next value not held by another block, wrapping to zero past the values the client reserves.
-// States of one block that serialize the same share a hash.
+// palette order. A free hash is taken as is. On a held one, the client first moves a hash past the
+// values it reserves to zero, then takes the hash if a state of the same block holds it, and
+// otherwise tries the next value. States of one block that serialize the same thus share a hash.
 func (br *BasicBlockRegistry) networkHashLocked(hash uint32, name string) uint32 {
 	for {
-		other, taken := br.networkhashToRids[hash]
-		if !taken {
+		if _, taken := br.networkhashToRids[hash]; !taken {
 			return hash
 		}
-		if otherName, _ := br.blocks[other].EncodeBlock(); otherName == name {
-			return hash
-		}
-		if hash++; hash > maxProbedNetworkHash {
+		if hash > maxProbedNetworkHash {
 			hash = 0
 		}
+		// The client compares owners even when the wrapped hash is free, and finds none.
+		if other, taken := br.networkhashToRids[hash]; taken {
+			if otherName, _ := br.blocks[other].EncodeBlock(); otherName == name {
+				return hash
+			}
+		}
+		hash++
 	}
 }
 
@@ -975,9 +978,12 @@ func (br *BasicBlockRegistry) Air() Block {
 // runtime ID its index in that ordering: the FNV-1 hash of the lowercased name. Finalize sorts by
 // it too, so the two agree.
 func NetworkBlockHash(name string) uint64 {
-	// The client hashes a C string: it stops at the first NUL byte.
+	// The client hashes a C string: it stops at the first NUL byte, and an empty one hashes to zero.
 	if i := strings.IndexByte(name, 0); i >= 0 {
 		name = name[:i]
+	}
+	if name == "" {
+		return 0
 	}
 	return fnv1.HashString64(asciiLower(name))
 }

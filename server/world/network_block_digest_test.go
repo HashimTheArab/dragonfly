@@ -393,3 +393,73 @@ func TestNetworkHash_ProbeWrapsPastReservedValues(t *testing.T) {
 		t.Fatalf("hash = %#x, want 1", got)
 	}
 }
+
+// A held hash moves up from where it is; only a held hash past the reserved values wraps to zero.
+func TestNetworkHash_ProbeFromHeldHashBelowReservedValues(t *testing.T) {
+	registry := &BasicBlockRegistry{networkhashToRids: map[uint32]uint32{0xfffffffc: 0}}
+	registry.blocks = []Block{unknownBlock{BlockState: BlockState{Name: "test:a"}}}
+	if got := registry.networkHashLocked(0xfffffffc, "test:b"); got != 0xfffffffd {
+		t.Fatalf("hash = %#x, want 0xfffffffd", got)
+	}
+	if got := registry.networkHashLocked(0xfffffffe, "test:b"); got != 0xfffffffe {
+		t.Fatalf("free reserved hash = %#x, want it taken as is", got)
+	}
+}
+
+// A 17-bit field reads no bits, so all of its 65536 permutations take its first value.
+func TestDigestNetworkBlocks_WideFieldReadsNoBits(t *testing.T) {
+	values := make([]int32, 1<<16+1)
+	for i := range values {
+		values[i] = int32(i)
+	}
+	states := testDigestStates(t, testDefinition("test:block", map[string]any{
+		"properties": []any{map[string]any{"name": "test:p", "enum": values}},
+	}))
+	if len(states) != 1<<16 {
+		t.Fatalf("states = %d, want %d", len(states), 1<<16)
+	}
+	for i, state := range states {
+		if state["test:p"] != int32(0) {
+			t.Fatalf("state %d sets test:p to %v", i, state["test:p"])
+		}
+	}
+}
+
+// A field starting at bit 32 wraps its shift and reads the lowest data bit.
+func TestDigestNetworkBlocks_FieldAtBit32ReusesLowBits(t *testing.T) {
+	values := make([]int32, 256)
+	for i := range values {
+		values[i] = int32(i)
+	}
+	var properties []any
+	for i := range 4 {
+		properties = append(properties, map[string]any{"name": "test:p" + string(rune('a'+i)), "enum": values})
+	}
+	properties = append(properties, map[string]any{"name": "test:last", "enum": []uint8{0, 1}})
+	states := testDigestStates(t, testDefinition("test:block", map[string]any{"properties": properties}))
+	if len(states) != 1<<16 {
+		t.Fatalf("states = %d, want %d", len(states), 1<<16)
+	}
+	if states[0]["test:last"] != uint8(0) || states[1]["test:last"] != uint8(1) {
+		t.Fatalf("test:last = %v and %v, want 0 and 1", states[0]["test:last"], states[1]["test:last"])
+	}
+	if states[1<<8]["test:pc"] != int32(0) {
+		t.Fatalf("field at bit 16 reads %v, want 0", states[1<<8]["test:pc"])
+	}
+}
+
+func TestNewNetworkBlockRegistry_UnqualifiedNameIsVanillaNamespace(t *testing.T) {
+	registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{testDefinition("parity_unqualified", nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := registry.StateToRuntimeID("minecraft:parity_unqualified", map[string]any{}); !ok {
+		t.Fatal("unqualified block is not in the minecraft namespace")
+	}
+}
+
+func TestNetworkBlockHash_EmptyNameIsZero(t *testing.T) {
+	if NetworkBlockHash("") != 0 || NetworkBlockHash("\x00:test") != 0 {
+		t.Fatal("a name starting with NUL does not hash to zero")
+	}
+}
