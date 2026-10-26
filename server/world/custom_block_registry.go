@@ -2,9 +2,7 @@ package world
 
 import (
 	"fmt"
-	"maps"
 	"reflect"
-	"slices"
 	"strings"
 
 	"github.com/df-mc/dragonfly/server/block/customblock"
@@ -25,8 +23,8 @@ const maxBlockStateBits = 16
 type networkBlockDefinition struct {
 	name   string
 	states []customblock.TraitState
-	// traits holds the names of the states the block's traits added.
-	traits map[string]struct{}
+	// traits is the number of leading states the block's traits added; the rest are properties.
+	traits int
 	// vanilla reports whether the entry named the block in the minecraft namespace, which lets it
 	// add states to a block an earlier definition registered.
 	vanilla bool
@@ -62,15 +60,23 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 
 // addNetworkBlocks appends the states of the blocks the definitions register, keyed by lowercased
 // name as the client keys block types. A later definition of a block an earlier one registered is
-// ignored, unless it names the block in the minecraft namespace: the client then adds its trait
-// states the block lacks and its properties after the block's states. A block the registry already
-// holds keeps its own states. The state limit is checked before the registry changes.
+// ignored, unless it names the block in the minecraft namespace. The client then adds the trait
+// states the block lacks, and the properties past the block's own count: it numbers each
+// definition's properties from the same first state ID and ignores a state ID a block already has.
+// A block the registry already holds keeps its own states. The state limit is checked before the
+// registry changes.
 func addNetworkBlocks(registry *BasicBlockRegistry, definitions []networkBlockDefinition) error {
+	type networkBlock struct {
+		name       string
+		states     []customblock.TraitState
+		traits     map[string]struct{}
+		properties int
+	}
 	held := make(map[string]struct{}, len(registry.blockProperties))
 	for name := range registry.blockProperties {
 		held[asciiLower(name)] = struct{}{}
 	}
-	blocks := make([]networkBlockDefinition, 0, len(definitions))
+	blocks := make([]networkBlock, 0, len(definitions))
 	index := make(map[string]int, len(definitions))
 	for _, definition := range definitions {
 		key := asciiLower(definition.name)
@@ -79,24 +85,23 @@ func addNetworkBlocks(registry *BasicBlockRegistry, definitions []networkBlockDe
 		}
 		at, registered := index[key]
 		if !registered {
-			index[key] = len(blocks)
-			definition.traits = maps.Clone(definition.traits)
-			blocks = append(blocks, definition)
-			continue
-		}
-		if !definition.vanilla {
+			at = len(blocks)
+			index[key] = at
+			blocks = append(blocks, networkBlock{name: definition.name, traits: make(map[string]struct{})})
+		} else if !definition.vanilla {
 			continue
 		}
 		block := &blocks[at]
-		block.states = slices.Clone(block.states)
-		for _, state := range definition.states {
-			if _, trait := definition.traits[state.Name]; trait {
-				if _, has := block.traits[state.Name]; has {
-					continue
-				}
+		for _, state := range definition.states[:definition.traits] {
+			if _, has := block.traits[state.Name]; !has {
 				block.traits[state.Name] = struct{}{}
+				block.states = append(block.states, state)
 			}
-			block.states = append(block.states, state)
+		}
+		properties := definition.states[definition.traits:]
+		if len(properties) > block.properties {
+			block.states = append(block.states, properties[block.properties:]...)
+			block.properties = len(properties)
 		}
 	}
 	total := 0
@@ -168,7 +173,7 @@ func digestNetworkBlocks(entries []protocol.BlockEntry) ([]networkBlockDefinitio
 // networkBlockStates returns the states of one block definition: the states of its known traits in
 // the order the traits are listed, then its properties in list order. Every property is its own
 // state, even one named like another; the later one then names the value in the state.
-func networkBlockStates(definition map[string]any) ([]customblock.TraitState, map[string]struct{}, error) {
+func networkBlockStates(definition map[string]any) ([]customblock.TraitState, int, error) {
 	var states []customblock.TraitState
 	traitStates := make(map[string]struct{})
 	seenTraits := make(map[string]struct{})
@@ -189,6 +194,7 @@ func networkBlockStates(definition map[string]any) ([]customblock.TraitState, ma
 		}
 	}
 
+	traits := len(states)
 	for _, property := range networkCompounds(definition["properties"]) {
 		name, _ := property["name"].(string)
 		values, ok := networkListValues(property["enum"])
@@ -196,11 +202,11 @@ func networkBlockStates(definition map[string]any) ([]customblock.TraitState, ma
 			continue
 		}
 		if len(values) == 0 {
-			return nil, nil, fmt.Errorf("property %q has no values, which the client cannot load", name)
+			return nil, 0, fmt.Errorf("property %q has no values, which the client cannot load", name)
 		}
 		states = append(states, customblock.TraitState{Name: name, Values: values})
 	}
-	return states, traitStates, nil
+	return states, traits, nil
 }
 
 // networkCompounds returns the compound elements of an NBT list, skipping every other element as

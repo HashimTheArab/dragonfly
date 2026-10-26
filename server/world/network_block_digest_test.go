@@ -486,7 +486,8 @@ func TestNetworkHash_UnknownBlockKeepsReservedHash(t *testing.T) {
 }
 
 // A later definition naming a block in the minecraft namespace adds its states to the block an
-// earlier definition registered under the same name; without the namespace it is ignored.
+// earlier definition registered under the same name, past the block's own properties; without the
+// namespace it is ignored.
 func TestDigestNetworkBlocks_NamespaceAliasAddsStates(t *testing.T) {
 	property := func(name string) map[string]any {
 		return map[string]any{"properties": []any{map[string]any{"name": name, "enum": []uint8{0, 1}}}}
@@ -496,14 +497,60 @@ func TestDigestNetworkBlocks_NamespaceAliasAddsStates(t *testing.T) {
 		entries []protocol.BlockEntry
 		want    int
 	}{
-		{"qualified alias adds states", []protocol.BlockEntry{
+		{"qualified alias adds states past the block's own", []protocol.BlockEntry{
 			testDefinition("parity_alias", property("test:p")),
-			testDefinition("minecraft:parity_alias", property("test:q")),
+			testDefinition("minecraft:parity_alias", map[string]any{"properties": []any{
+				map[string]any{"name": "test:q", "enum": []uint8{0, 1}},
+				map[string]any{"name": "test:r", "enum": []uint8{0, 1}},
+			}}),
 		}, 4},
 		{"unqualified alias is ignored", []protocol.BlockEntry{
 			testDefinition("minecraft:parity_alias", property("test:p")),
 			testDefinition("parity_alias", property("test:q")),
 		}, 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			registry, err := NewNetworkBlockRegistry(test.entries)
+			if err != nil {
+				t.Fatal(err)
+			}
+			baseline, _ := NewNetworkBlockRegistry(nil)
+			if got := registry.BlockCount() - baseline.BlockCount(); got != test.want {
+				t.Fatalf("states = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
+// An extending definition numbers its properties from the same first state ID as the block's own,
+// so a property at a position the block already has is ignored, and only later ones are added.
+// Its trait states are matched by trait, never against a property of the same name.
+func TestDigestNetworkBlocks_ExtendingDefinitionStateIDs(t *testing.T) {
+	property := func(name string) map[string]any {
+		return map[string]any{"name": name, "enum": []uint8{0, 1}}
+	}
+	for _, test := range []struct {
+		name    string
+		entries []protocol.BlockEntry
+		want    int
+	}{
+		{"property at a taken position", []protocol.BlockEntry{
+			testDefinition("minecraft:parity_r5", map[string]any{"properties": []any{property("test:p")}}),
+			testDefinition("Minecraft:parity_r5", map[string]any{"properties": []any{property("test:q")}}),
+		}, 2},
+		{"property past the block's count", []protocol.BlockEntry{
+			testDefinition("minecraft:parity_r5", map[string]any{"properties": []any{property("test:p")}}),
+			testDefinition("Minecraft:parity_r5", map[string]any{"properties": []any{property("test:q"), property("test:r")}}),
+		}, 4},
+		{"property named like a trait state", []protocol.BlockEntry{
+			testDefinition("minecraft:parity_r5", nil),
+			testDefinition("Minecraft:parity_r5", map[string]any{
+				"traits": []any{map[string]any{
+					"name": "minecraft:placement_position", "enabled_states": map[string]any{"vertical_half": uint8(1)},
+				}},
+				"properties": []any{property("minecraft:vertical_half")},
+			}),
+		}, 4},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			registry, err := NewNetworkBlockRegistry(test.entries)
