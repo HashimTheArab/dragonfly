@@ -32,7 +32,7 @@ func NewNetworkBlockRegistry(entries []protocol.BlockEntry) (BlockRegistry, erro
 	}
 	for _, block := range registry.blocks {
 		name, _ := block.EncodeBlock()
-		if !strings.HasPrefix(name, "minecraft:") {
+		if !vanillaNamespace(name) {
 			omitted[name] = struct{}{}
 		}
 	}
@@ -43,7 +43,7 @@ func NewNetworkBlockRegistry(entries []protocol.BlockEntry) (BlockRegistry, erro
 			}
 			continue
 		}
-		if strings.HasPrefix(name, "minecraft:") {
+		if vanillaNamespace(name) {
 			delete(omitted, name)
 		}
 	}
@@ -69,12 +69,32 @@ func NewNetworkBlockRegistry(entries []protocol.BlockEntry) (BlockRegistry, erro
 	return registry, nil
 }
 
-// networkStatesEqual reports whether two blocks have the same states with the same values, in the
-// same order.
-func networkStatesEqual(a, b []customblock.TraitState) bool {
-	return slices.EqualFunc(a, b, func(x, y customblock.TraitState) bool {
+// networkStatesEqual reports whether an implementation's states are a definition's: the same states
+// with values of the same tag types, in the same order, within the client's 16-bit state data.
+func networkStatesEqual(implementation, definition []customblock.TraitState) bool {
+	bits := 0
+	for _, state := range implementation {
+		bits += networkStateBitWidth(len(state.Values))
+	}
+	return bits <= maxBlockStateBits && slices.EqualFunc(implementation, definition, func(x, y customblock.TraitState) bool {
 		return x.Name == y.Name && slices.EqualFunc(x.Values, y.Values, func(v, w any) bool {
-			return reflect.DeepEqual(stateValueKey(v), stateValueKey(w))
+			return reflect.DeepEqual(networkTagValue(v), networkTagValue(w))
 		})
 	})
+}
+
+// networkTagValue returns v as the value of its network tag: a bool is a byte.
+func networkTagValue(v any) any {
+	if b, ok := v.(bool); ok {
+		if b {
+			return uint8(1)
+		}
+		return uint8(0)
+	}
+	return v
+}
+
+// vanillaNamespace reports whether name is in the minecraft namespace, ignoring case as the client does.
+func vanillaNamespace(name string) bool {
+	return strings.HasPrefix(asciiLower(name), "minecraft:")
 }

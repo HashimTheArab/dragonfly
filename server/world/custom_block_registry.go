@@ -3,7 +3,6 @@ package world
 import (
 	"fmt"
 	"reflect"
-	"strings"
 
 	"github.com/df-mc/dragonfly/server/block/customblock"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
@@ -53,21 +52,36 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 	return addNetworkBlocks(basicRegistry, definitions)
 }
 
-// addNetworkBlocks appends the states of every definition whose name registry does not hold yet.
+// addNetworkBlocks appends the states of every definition whose name the registry does not hold
+// yet, ignoring case as the client keys block types by lowercased name. It checks the state limit
+// before changing the registry.
 func addNetworkBlocks(registry *BasicBlockRegistry, definitions []networkBlockDefinition) error {
+	held := make(map[string]struct{}, len(registry.blockProperties)+len(definitions))
+	for name := range registry.blockProperties {
+		held[asciiLower(name)] = struct{}{}
+	}
+	added := make([]networkBlockDefinition, 0, len(definitions))
 	total := 0
-	scratch := make([]byte, 0, 0xff)
 	for _, definition := range definitions {
-		if _, registered := registry.blockProperties[definition.name]; registered {
+		key := asciiLower(definition.name)
+		if _, ok := held[key]; ok {
 			continue
 		}
+		held[key] = struct{}{}
+		forEachNetworkBlockState(definition.states, func(map[string]any) bool {
+			total++
+			return total <= maxNetworkBlockStates
+		})
+		if total > maxNetworkBlockStates {
+			return fmt.Errorf("block palette states exceed limit of %d", maxNetworkBlockStates)
+		}
+		added = append(added, definition)
+	}
+	scratch := make([]byte, 0, 0xff)
+	for _, definition := range added {
 		var stateErr error
 		forEachNetworkBlockState(definition.states, func(properties map[string]any) bool {
-			if total++; total > maxNetworkBlockStates {
-				stateErr = fmt.Errorf("block palette states exceed limit of %d", maxNetworkBlockStates)
-				return false
-			}
-			scratch, stateErr = registry.addCustomBlockState(BlockState{Name: definition.name, Properties: properties}, scratch)
+			scratch, stateErr = registry.appendBlockState(BlockState{Name: definition.name, Properties: properties}, scratch, true)
 			return stateErr == nil
 		})
 		if stateErr != nil {
@@ -77,44 +91,46 @@ func addNetworkBlocks(registry *BasicBlockRegistry, definitions []networkBlockDe
 	return nil
 }
 
-// digestNetworkBlocks returns the definitions of a StartGame palette the client keeps, each under
-// the last entry with its name, in the order their names first appear.
-func digestNetworkBlocks(entries []protocol.BlockEntry) ([]networkBlockDefinition, error) {
-	definitions := make([]networkBlockDefinition, 0, len(entries))
+// NetworkBlockEntries returns the entries of a StartGame block palette the client keeps, in the
+// order their names first appear: an entry needs a vanilla_block_data compound, and a later entry
+// replaces an earlier one with the same name.
+func NetworkBlockEntries(entries []protocol.BlockEntry) []protocol.BlockEntry {
+	kept := make([]protocol.BlockEntry, 0, len(entries))
 	index := make(map[string]int, len(entries))
 	for _, entry := range entries {
 		if _, ok := entry.Properties["vanilla_block_data"].(map[string]any); !ok {
 			continue
 		}
+		if at, ok := index[entry.Name]; ok {
+			kept[at] = entry
+			continue
+		}
+		index[entry.Name] = len(kept)
+		kept = append(kept, entry)
+	}
+	return kept
+}
+
+// digestNetworkBlocks returns the definitions of the entries of a StartGame palette the client keeps.
+func digestNetworkBlocks(entries []protocol.BlockEntry) ([]networkBlockDefinition, error) {
+	kept := NetworkBlockEntries(entries)
+	definitions := make([]networkBlockDefinition, 0, len(kept))
+	for _, entry := range kept {
 		states, err := networkBlockStates(entry.Properties)
 		if err != nil {
 			return nil, fmt.Errorf("block %s: %w", entry.Name, err)
 		}
-		definition := networkBlockDefinition{name: entry.Name, states: states}
-		if at, ok := index[entry.Name]; ok {
-			definitions[at] = definition
-			continue
-		}
-		index[entry.Name] = len(definitions)
-		definitions = append(definitions, definition)
+		definitions = append(definitions, networkBlockDefinition{name: entry.Name, states: states})
 	}
 	return definitions, nil
 }
 
 // networkBlockStates returns the states of one block definition: the states of its known traits in
-// the order the traits are listed, then its properties in list order.
+// the order the traits are listed, then its properties in list order. Every property is its own
+// state, even one named like another; the later one then names the value in the state.
 func networkBlockStates(definition map[string]any) ([]customblock.TraitState, error) {
 	var states []customblock.TraitState
-	added := make(map[string]struct{})
-	addState := func(state customblock.TraitState) {
-		// The client ignores a state a block already has.
-		if _, ok := added[state.Name]; ok {
-			return
-		}
-		added[state.Name] = struct{}{}
-		states = append(states, state)
-	}
-
+	traitStates := make(map[string]struct{})
 	seenTraits := make(map[string]struct{})
 	for _, trait := range networkCompounds(definition["traits"]) {
 		name, _ := trait["name"].(string)
@@ -123,8 +139,13 @@ func networkBlockStates(definition map[string]any) ([]customblock.TraitState, er
 			continue
 		}
 		seenTraits[name] = struct{}{}
-		for _, state := range customblock.NetworkTraitStates(strings.ToLower(name), trait) {
-			addState(state)
+		for _, state := range customblock.NetworkTraitStates(asciiLower(name), trait) {
+			// The client ignores a trait state a block already has.
+			if _, ok := traitStates[state.Name]; ok {
+				continue
+			}
+			traitStates[state.Name] = struct{}{}
+			states = append(states, state)
 		}
 	}
 
@@ -137,10 +158,7 @@ func networkBlockStates(definition map[string]any) ([]customblock.TraitState, er
 		if len(values) == 0 {
 			return nil, fmt.Errorf("property %q has no values, which the client cannot load", name)
 		}
-		if _, ok := added[name]; ok {
-			return nil, fmt.Errorf("state %q is declared twice", name)
-		}
-		addState(customblock.TraitState{Name: name, Values: values})
+		states = append(states, customblock.TraitState{Name: name, Values: values})
 	}
 	return states, nil
 }

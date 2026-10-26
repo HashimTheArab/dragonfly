@@ -3,12 +3,12 @@ package world
 import (
 	"bytes"
 	_ "embed"
+	"encoding/binary"
 	"fmt"
 	"maps"
 	"math"
 	"slices"
 	"strings"
-	"unsafe"
 
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
 )
@@ -174,33 +174,32 @@ func hashProperties(properties map[string]any) string {
 	}
 	slices.Sort(keys)
 
-	var b strings.Builder
+	// Each property is written as its name and a tagged value, so distinct states never share a key.
+	// A bool and a byte are the same tag on the network and share an encoding.
+	var b []byte
 	for _, k := range keys {
+		b = binary.LittleEndian.AppendUint32(b, uint32(len(k)))
+		b = append(b, k...)
 		switch v := properties[k].(type) {
 		case bool:
 			if v {
-				b.WriteByte(1)
+				b = append(b, 1, 1)
 			} else {
-				b.WriteByte(0)
+				b = append(b, 1, 0)
 			}
 		case uint8:
-			b.WriteByte(v)
+			b = append(b, 1, v)
 		case int32:
-			a := *(*[4]byte)(unsafe.Pointer(&v))
-			b.Write(a[:])
+			b = binary.LittleEndian.AppendUint32(append(b, 3), uint32(v))
 		case string:
-			b.WriteString(v)
-		case int16, int64, float32, float64, []any, []uint8, []int16, []int32, []int64, []float32, []float64,
-			[]string, map[string]any:
-			// A StartGame palette may declare state values of any NBT tag type. A type marker keeps
-			// them apart from the encodings above.
-			fmt.Fprintf(&b, "\x00%T%v", v, v)
+			b = binary.LittleEndian.AppendUint32(append(b, 8), uint32(len(v)))
+			b = append(b, v...)
 		default:
-			// If block encoding is broken, we want to find out as soon as possible. This saves a lot of time
-			// debugging in-game.
-			panic(fmt.Sprintf("invalid block property type %T for property %v", v, k))
+			// Any other NBT value is written as its full NBT entry, which carries its tag type.
+			entry := appendNBTEntry(nil, "", v)
+			b = binary.LittleEndian.AppendUint32(append(b, 0xff), uint32(len(entry)))
+			b = append(b, entry...)
 		}
 	}
-
-	return b.String()
+	return string(b)
 }

@@ -62,12 +62,29 @@ func UnmarshalBlockRegistry(data []byte) (registry BlockRegistry, err error) {
 		customBlocks:    make(map[string]CustomBlock),
 		blockActorIDs:   maps.Clone(DefaultBlockRegistry.blockActorIDs),
 	}
+	builtInStates := make(map[stateHash]struct{}, len(snapshot.States))
 	for i, state := range snapshot.States {
-		if !ValidBlockPropertyValues(state.Properties) {
+		if !networkBlockPropertyValues(state.Properties) {
 			return nil, fmt.Errorf("invalid properties for %s", state.Name)
+		}
+		// A built-in block only ever has its own states, each once. A palette may define other
+		// blocks, custom implementations included, with repeated states.
+		_, builtIn := DefaultBlockRegistry.blockProperties[state.Name]
+		if _, custom := DefaultBlockRegistry.customBlocks[state.Name]; custom {
+			builtIn = false
+		}
+		if builtIn {
+			h := stateHash{name: state.Name, properties: hashProperties(state.Properties)}
+			if _, repeated := builtInStates[h]; repeated {
+				return nil, fmt.Errorf("block state registered twice: %s", state.Name)
+			}
+			builtInStates[h] = struct{}{}
 		}
 		b, known := DefaultBlockRegistry.BlockByName(state.Name, state.Properties)
 		if !known {
+			if builtIn {
+				return nil, fmt.Errorf("block state does not match registered properties: %s", state.Name)
+			}
 			b = unknownBlock{BlockState: state}
 		} else if name, properties := b.EncodeBlock(); name != state.Name || !maps.EqualFunc(properties, state.Properties, snapshotPropertyEqual) {
 			return nil, fmt.Errorf("block state does not match registered properties: %s", state.Name)

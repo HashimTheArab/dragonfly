@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/df-mc/dragonfly/server/block/customblock"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
@@ -175,5 +176,149 @@ func TestNewNetworkBlockRegistry_OptionalBlockNeedsVanillaBlockData(t *testing.T
 func TestNetworkBlockHash_LowercasesName(t *testing.T) {
 	if NetworkBlockHash("Test:Block") != NetworkBlockHash("test:block") {
 		t.Fatal("palette hash depends on the case of a name")
+	}
+}
+
+func TestDigestNetworkBlocks_AnyTagTypeStateValues(t *testing.T) {
+	for name, values := range map[string]any{
+		"long":       []int64{1, 2},
+		"float":      []float32{1, 2},
+		"double":     []float64{1, 2},
+		"list":       []any{[]any{int32(1)}, []any{"1"}},
+		"compound":   []any{map[string]any{"a": int32(1)}, map[string]any{"a": int16(1)}},
+		"byte array": []any{[2]uint8{1, 2}, [2]uint8{2, 1}},
+		"int array":  []any{[1]int32{1}, [1]int32{2}},
+		"long array": []any{[1]int64{1}, [1]int64{2}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{testDefinition("test:block", map[string]any{
+				"properties": []any{map[string]any{"name": "test:v", "enum": values}},
+			})})
+			if err != nil {
+				t.Fatal(err)
+			}
+			hashes := make(map[uint32]struct{})
+			for _, value := range []any{reflect.ValueOf(values).Index(0).Interface(), reflect.ValueOf(values).Index(1).Interface()} {
+				rid, ok := registry.StateToRuntimeID("test:block", map[string]any{"test:v": value})
+				if !ok {
+					t.Fatalf("state %v has no runtime ID", value)
+				}
+				if b, ok := registry.BlockByName("test:block", map[string]any{"test:v": value}); !ok || !IsUnknownBlock(b) {
+					t.Fatalf("BlockByName(%v) = %v, %v", value, b, ok)
+				}
+				hash, _ := registry.RuntimeIDToHash(rid)
+				hashes[hash] = struct{}{}
+			}
+			if len(hashes) != 2 {
+				t.Fatal("distinct states share a network hash")
+			}
+		})
+	}
+}
+
+// The client gives every permutation its own runtime ID, even when two serialize the same.
+func TestDigestNetworkBlocks_RepeatedStatesKeepRuntimeIDs(t *testing.T) {
+	for name, properties := range map[string][]any{
+		"repeated enum value": {map[string]any{"name": "test:v", "enum": []string{"a", "a"}}},
+		"repeated property":   {map[string]any{"name": "test:v", "enum": []uint8{0, 1}}, map[string]any{"name": "test:v", "enum": []uint8{0, 1}}},
+		"concatenated values": {map[string]any{"name": "test:a", "enum": []string{"x", "xy"}}, map[string]any{"name": "test:b", "enum": []string{"yz", "z"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			states := 1
+			for _, property := range properties {
+				states *= reflect.ValueOf(property.(map[string]any)["enum"]).Len()
+			}
+			registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{testDefinition("test:block", map[string]any{"properties": properties})})
+			if err != nil {
+				t.Fatal(err)
+			}
+			baseline, _ := NewNetworkBlockRegistry(nil)
+			if got := registry.BlockCount() - baseline.BlockCount(); got != states {
+				t.Fatalf("states = %d, want %d", got, states)
+			}
+			hashes := make(map[uint32]struct{})
+			for rid := range registry.BlockCount() {
+				hash, _ := registry.RuntimeIDToHash(uint32(rid))
+				hashes[hash] = struct{}{}
+			}
+			if len(hashes) != registry.BlockCount() {
+				t.Fatal("network hashes are not unique")
+			}
+		})
+	}
+}
+
+func TestDigestNetworkBlocks_CaseVariantsRegisterOnce(t *testing.T) {
+	variant := func(n int) map[string]any {
+		values := make([]int32, n)
+		return map[string]any{"properties": []any{map[string]any{"name": "test:v", "enum": values}}}
+	}
+	registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{
+		testDefinition("Test:Block", variant(2)),
+		testDefinition("test:block", variant(3)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline, _ := NewNetworkBlockRegistry(nil)
+	if got := registry.BlockCount() - baseline.BlockCount(); got != 2 {
+		t.Fatalf("states = %d, want the first name's 2", got)
+	}
+}
+
+func TestNetworkBlockHash_ClientNameRules(t *testing.T) {
+	if NetworkBlockHash("test:block\x00ignored") != NetworkBlockHash("test:block") {
+		t.Fatal("hash continues past a NUL byte")
+	}
+	if NetworkBlockHash("test:É") == NetworkBlockHash("test:é") {
+		t.Fatal("non-ASCII letters were lowercased")
+	}
+}
+
+func TestDigestNetworkBlocks_ZeroPartMultiBlock(t *testing.T) {
+	states := testDigestStates(t, testDefinition("test:block", map[string]any{"traits": []any{map[string]any{
+		"name": "minecraft:multi_block", "enabled_states": map[string]any{"multi_block": uint8(1)}, "part_count": uint8(0),
+	}}}))
+	if want := []map[string]any{{"minecraft:multi_block_part": int32(0)}}; !reflect.DeepEqual(states, want) {
+		t.Fatalf("states = %v, want %v", states, want)
+	}
+}
+
+func TestAddCustomBlocks_StateLimitLeavesRegistryUnchanged(t *testing.T) {
+	properties := make([]any, 16)
+	for i := range properties {
+		properties[i] = map[string]any{"name": "test:p" + string(rune('a'+i)), "enum": []uint8{0, 1}}
+	}
+	DefaultBlockRegistry.Finalize()
+	registry := DefaultBlockRegistry.Clone()
+	before := registry.BlockCount()
+	err := AddCustomBlocks(registry, []protocol.BlockEntry{
+		testDefinition("test:first", map[string]any{"properties": properties}),
+		testDefinition("test:second", map[string]any{"properties": properties}),
+	})
+	if err == nil {
+		t.Fatal("palette past the state limit loaded")
+	}
+	if registry.BlockCount() != before {
+		t.Fatal("registry changed before the state limit error")
+	}
+}
+
+func TestNetworkStatesEqual_TagTypesAndBits(t *testing.T) {
+	bools := []customblock.TraitState{{Name: "test:v", Values: []any{false, true}}}
+	bytesValues := []customblock.TraitState{{Name: "test:v", Values: []any{uint8(0), uint8(1)}}}
+	ints := []customblock.TraitState{{Name: "test:v", Values: []any{int32(0), int32(1)}}}
+	if !networkStatesEqual(bools, bytesValues) {
+		t.Fatal("bool and byte values differ")
+	}
+	if networkStatesEqual(bools, ints) {
+		t.Fatal("bool and int values match")
+	}
+	wide := make([]customblock.TraitState, 17)
+	for i := range wide {
+		wide[i] = customblock.TraitState{Name: "test:p" + string(rune('a'+i)), Values: []any{false, true}}
+	}
+	if networkStatesEqual(wide, wide) {
+		t.Fatal("states past 16 bits match")
 	}
 }
