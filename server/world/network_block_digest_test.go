@@ -188,7 +188,6 @@ func TestDigestNetworkBlocks_AnyTagTypeStateValues(t *testing.T) {
 		"compound":   []any{map[string]any{"a": int32(1)}, map[string]any{"a": int16(1)}},
 		"byte array": []any{[2]uint8{1, 2}, [2]uint8{2, 1}},
 		"int array":  []any{[1]int32{1}, [1]int32{2}},
-		"long array": []any{[1]int64{1}, [1]int64{2}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{testDefinition("test:block", map[string]any{
@@ -326,9 +325,18 @@ func TestNetworkStatesEqual_TagTypesAndBits(t *testing.T) {
 	}
 }
 
-// A state whose bit field does not fit below bit 16 always takes its first value, and the data
-// values that differ only in its bits repeat the other states.
-func TestDigestNetworkBlocks_StateCrossingBit16(t *testing.T) {
+func TestDigestNetworkBlocks_LongArrayIsRejected(t *testing.T) {
+	_, err := NewNetworkBlockRegistry([]protocol.BlockEntry{testDefinition("test:block", map[string]any{
+		"properties": []any{map[string]any{"name": "test:v", "enum": []any{[1]int64{1}, [1]int64{2}}}},
+	})})
+	if err == nil {
+		t.Fatal("palette with a long array loaded")
+	}
+}
+
+// A field crossing bit 16 never invalidates a permutation, but its value comes from the data bits
+// it has: data value 1<<15 sets the second value.
+func TestDigestNetworkBlocks_CrossingFieldTakesItsDataBits(t *testing.T) {
 	properties := make([]any, 0, 16)
 	for i := range 15 {
 		properties = append(properties, map[string]any{"name": "test:p" + string(rune('a'+i)), "enum": []uint8{0, 1}})
@@ -338,12 +346,50 @@ func TestDigestNetworkBlocks_StateCrossingBit16(t *testing.T) {
 	if len(states) != 1<<16 {
 		t.Fatalf("states = %d, want %d", len(states), 1<<16)
 	}
-	for i, state := range states {
-		if state["test:q"] != uint8(0) {
-			t.Fatalf("state %d sets test:q to %v", i, state["test:q"])
-		}
+	if states[0]["test:q"] != uint8(0) || states[1<<15]["test:q"] != uint8(1) {
+		t.Fatalf("test:q = %v and %v, want 0 and 1", states[0]["test:q"], states[1<<15]["test:q"])
 	}
-	if !reflect.DeepEqual(states[0], states[1<<15]) {
-		t.Fatal("data values differing only in bit 15 give different states")
+}
+
+func TestDigestNetworkBlocks_MultiBlockPartsPastFourAreZero(t *testing.T) {
+	states := testDigestStates(t, testDefinition("test:block", map[string]any{"traits": []any{map[string]any{
+		"name": "minecraft:multi_block", "enabled_states": map[string]any{"multi_block": uint8(1)}, "part_count": uint8(5),
+	}}}))
+	var got []any
+	for _, state := range states {
+		got = append(got, state["minecraft:multi_block_part"])
+	}
+	if want := []any{int32(0), int32(1), int32(2), int32(3), int32(0)}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("parts = %v, want %v", got, want)
+	}
+}
+
+// States of one block sharing a network hash resolve to the last of them.
+func TestNetworkHash_SharedHashResolvesToLastState(t *testing.T) {
+	registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{testDefinition("test:dup", map[string]any{
+		"properties": []any{map[string]any{"name": "test:p", "enum": []uint8{0, 0}}},
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, ok := registry.StateToRuntimeID("test:dup", map[string]any{"test:p": uint8(0)})
+	if !ok {
+		t.Fatal("state missing")
+	}
+	hash, _ := registry.RuntimeIDToHash(first)
+	if second, _ := registry.RuntimeIDToHash(first + 1); second != hash {
+		t.Fatal("repeated states of one block have different hashes")
+	}
+	if rid, _ := registry.HashToRuntimeID(hash); rid != first+1 {
+		t.Fatalf("hash resolves to %d, want the last state %d", rid, first+1)
+	}
+}
+
+// Probing for a free network hash wraps to zero past the reserved values.
+func TestNetworkHash_ProbeWrapsPastReservedValues(t *testing.T) {
+	registry := &BasicBlockRegistry{networkhashToRids: map[uint32]uint32{0: 0, 0xfffffffd: 1}}
+	registry.blocks = []Block{unknownBlock{BlockState: BlockState{Name: "test:a"}}, unknownBlock{BlockState: BlockState{Name: "test:b"}}}
+	if got := registry.networkHashLocked(0xfffffffd, "test:c"); got != 1 {
+		t.Fatalf("hash = %#x, want 1", got)
 	}
 }

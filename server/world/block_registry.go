@@ -377,9 +377,7 @@ func (br *BasicBlockRegistry) appendBlockState(s BlockState, scratch []byte, dup
 	}
 	br.blockInfos = append(br.blockInfos, defaultUnknownBlockInfo())
 
-	if _, taken := br.networkhashToRids[netHash]; !taken {
-		br.networkhashToRids[netHash] = rid
-	}
+	br.networkhashToRids[netHash] = rid
 	br.ridsToNetworkhash = append(br.ridsToNetworkhash, netHash)
 	return scratch, nil
 }
@@ -590,9 +588,8 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 		var netHash uint32
 		netHash, networkHashScratch = networkBlockHash(name, properties, networkHashScratch)
 		netHash = br.networkHashLocked(netHash, name)
-		if _, taken := br.networkhashToRids[netHash]; !taken {
-			br.networkhashToRids[netHash] = rid
-		}
+		// The client's lookup resolves a hash shared by states of one block to the last of them.
+		br.networkhashToRids[netHash] = rid
 		br.ridsToNetworkhash[rid] = netHash
 	}
 	if !foundAir {
@@ -603,7 +600,8 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 
 // networkHashLocked returns the network hash a client assigns a state of the block name, in
 // palette order: its own hash, unless a state of another block already holds it, in which case the
-// next value not held by another block. States of one block that serialize the same share a hash.
+// next value not held by another block, wrapping to zero past the values the client reserves.
+// States of one block that serialize the same share a hash.
 func (br *BasicBlockRegistry) networkHashLocked(hash uint32, name string) uint32 {
 	for {
 		other, taken := br.networkhashToRids[hash]
@@ -613,9 +611,15 @@ func (br *BasicBlockRegistry) networkHashLocked(hash uint32, name string) uint32
 		if otherName, _ := br.blocks[other].EncodeBlock(); otherName == name {
 			return hash
 		}
-		hash++
+		if hash++; hash > maxProbedNetworkHash {
+			hash = 0
+		}
 	}
 }
+
+// maxProbedNetworkHash is the largest network hash the client moves a colliding block to; values
+// above it are reserved, the unknown block's among them.
+const maxProbedNetworkHash = 0xfffffffc
 
 // AirRuntimeID returns the runtime ID of the air block.
 func (br *BasicBlockRegistry) AirRuntimeID() uint32 {

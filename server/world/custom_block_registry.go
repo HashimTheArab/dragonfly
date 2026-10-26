@@ -113,6 +113,12 @@ func NetworkBlockEntries(entries []protocol.BlockEntry) []protocol.BlockEntry {
 
 // digestNetworkBlocks returns the definitions of the entries of a StartGame palette the client keeps.
 func digestNetworkBlocks(entries []protocol.BlockEntry) ([]networkBlockDefinition, error) {
+	for _, entry := range entries {
+		// The client's NBT reader has no long array tag, so it cannot read such a palette at all.
+		if containsLongArray(reflect.ValueOf(entry.Properties)) {
+			return nil, fmt.Errorf("block %s holds a long array, which the client cannot load", entry.Name)
+		}
+	}
 	kept := NetworkBlockEntries(entries)
 	definitions := make([]networkBlockDefinition, 0, len(kept))
 	for _, entry := range kept {
@@ -200,7 +206,7 @@ func networkListValues(value any) ([]any, bool) {
 // Each state takes a bit field of the packed data value, in the order the states were added, wide
 // enough for its values; the client walks every data value of at most 16 bits in ascending order
 // and skips those naming a value a state does not have. A state whose field does not fit in those
-// bits always takes its first value, so data values differing only in unused bits repeat a state.
+// bits is never out of range and takes the value of the data bits it has.
 func forEachNetworkBlockState(states []customblock.TraitState, yield func(map[string]any) bool) {
 	starts := make([]int, len(states))
 	widths := make([]int, len(states))
@@ -215,11 +221,14 @@ func forEachNetworkBlockState(states []customblock.TraitState, yield func(map[st
 		valid := true
 		for i, state := range states {
 			value := 0
-			// The client gives a state whose field does not fit below bit 16 an empty mask.
-			if widths[i] != 0 && starts[i]+widths[i] <= maxBlockStateBits {
+			if widths[i] != 0 {
 				value = data >> starts[i] & (1<<widths[i] - 1)
 			}
-			if value >= max(len(state.Values), 1) {
+			// The client validates a state through a mask that is empty for a field not fitting below
+			// bit 16, so such a state is never out of range, while its value still comes from the
+			// data bits it does have.
+			fits := starts[i]+widths[i] <= maxBlockStateBits
+			if fits && value >= max(len(state.Values), 1) {
 				valid = false
 				break
 			}
@@ -250,4 +259,30 @@ func networkStateBitWidth(count int) int {
 		width++
 	}
 	return width
+}
+
+// containsLongArray reports whether a decoded NBT value holds a long array anywhere.
+func containsLongArray(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Interface:
+		return !v.IsNil() && containsLongArray(v.Elem())
+	case reflect.Array:
+		if v.Type().Elem().Kind() == reflect.Int64 {
+			return true
+		}
+		fallthrough
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			if containsLongArray(v.Index(i)) {
+				return true
+			}
+		}
+	case reflect.Map:
+		for it := v.MapRange(); it.Next(); {
+			if containsLongArray(it.Value()) {
+				return true
+			}
+		}
+	}
+	return false
 }

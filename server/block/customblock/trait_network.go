@@ -70,8 +70,12 @@ func NetworkTraitStates(name string, trait map[string]any) []TraitState {
 			return nil
 		}
 		parts, _ := trait["part_count"].(uint8)
-		// The client counts a part count of zero as one part.
-		return []TraitState{{Name: "minecraft:multi_block_part", Values: indexValues(max(int(parts), 1))}}
+		// The client counts a part count of zero as one part, and writes parts past the fourth as 0.
+		values := indexValues(max(int(parts), 1))
+		for i := 4; i < len(values); i++ {
+			values[i] = int32(0)
+		}
+		return []TraitState{{Name: "minecraft:multi_block_part", Values: values}}
 	}
 	return nil
 }
