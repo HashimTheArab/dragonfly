@@ -2,38 +2,27 @@ package world
 
 import (
 	"fmt"
-	"sort"
+	"reflect"
 	"strings"
 
+	"github.com/df-mc/dragonfly/server/block/customblock"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
-// traitLookup holds the values of each trait state in the order the client enumerates them: the
-// order of its Direction and Facing enums, which vanilla's own block states share.
-var traitLookup = map[string][]any{
-	"minecraft:facing_direction": {
-		"down", "up", "north", "south", "west", "east",
-	},
-	"minecraft:cardinal_direction": {
-		"south", "west", "north", "east",
-	},
-	"minecraft:vertical_half": {
-		"bottom", "top",
-	},
-	"minecraft:block_face": {
-		"down", "up", "north", "south", "west", "east",
-	},
-	"minecraft:corner_and_cardinal_direction": {
-		"none", "inner_left", "inner_right", "outer_left", "outer_right",
-	},
-}
+// maxNetworkBlockStates bounds the states a palette may add. The client itself only logs past
+// 65536 permutations; this limit keeps a hostile palette from exhausting memory, at the cost of
+// rejecting a palette the client would load past it.
+const maxNetworkBlockStates = 1 << 16
 
-const maxCustomBlockStates = 1 << 16
+// maxBlockStateBits is the width of a block's packed state data value on the client. States whose
+// bits lie past it can only take the values their bits below it encode.
+const maxBlockStateBits = 16
 
-type customBlockStateSpace struct {
-	name       string
-	properties []string
-	values     [][]any
+// networkBlockDefinition is one StartGame block definition as the client digests it: its name and
+// its states in the order the client adds them, trait states before properties.
+type networkBlockDefinition struct {
+	name   string
+	states []customblock.TraitState
 }
 
 // NewCustomBlockRegistry returns an independent registry with default block runtime IDs preserved and custom block
@@ -47,227 +36,199 @@ func NewCustomBlockRegistry(entries []protocol.BlockEntry) (BlockRegistry, error
 	return registry, nil
 }
 
-// AddCustomBlocks appends custom block states to registry while preserving its existing runtime IDs.
+// AddCustomBlocks appends the states of a StartGame block palette to registry while preserving its
+// existing runtime IDs. Entries are read as the client reads them: an entry without
+// vanilla_block_data is ignored, a later entry replaces an earlier one with the same name, and
+// malformed properties and traits are skipped one element at a time. A block registry already
+// holds keeps its own states. It returns an error only for a palette the client cannot load.
 func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) error {
 	basicRegistry, ok := registry.(*BasicBlockRegistry)
 	if !ok {
 		return fmt.Errorf("unsupported block registry type %T", registry)
 	}
-	spaces := make([]customBlockStateSpace, 0, len(entries))
+	definitions, err := digestNetworkBlocks(entries)
+	if err != nil {
+		return err
+	}
+	return addNetworkBlocks(basicRegistry, definitions)
+}
+
+// addNetworkBlocks appends the states of every definition whose name registry does not hold yet.
+func addNetworkBlocks(registry *BasicBlockRegistry, definitions []networkBlockDefinition) error {
 	total := 0
-	for _, entry := range entries {
-		if namespace, _, _ := strings.Cut(entry.Name, ":"); namespace == "minecraft" {
+	scratch := make([]byte, 0, 0xff)
+	for _, definition := range definitions {
+		if _, registered := registry.blockProperties[definition.name]; registered {
 			continue
 		}
-
-		propertyNames, propertyValues, err := customBlockPropertySpace(entry)
-		if err != nil {
-			return fmt.Errorf("custom block %s: %w", entry.Name, err)
-		}
-		count := 1
-		for _, values := range propertyValues {
-			if count > (maxCustomBlockStates-total)/len(values) {
-				return fmt.Errorf("custom block %s: states exceed limit of %d", entry.Name, maxCustomBlockStates)
+		var stateErr error
+		forEachNetworkBlockState(definition.states, func(properties map[string]any) bool {
+			if total++; total > maxNetworkBlockStates {
+				stateErr = fmt.Errorf("block palette states exceed limit of %d", maxNetworkBlockStates)
+				return false
 			}
-			count *= len(values)
-		}
-		if count > maxCustomBlockStates-total {
-			return fmt.Errorf("custom block %s: states exceed limit of %d", entry.Name, maxCustomBlockStates)
-		}
-		total += count
-		spaces = append(spaces, customBlockStateSpace{entry.Name, propertyNames, propertyValues})
-	}
-
-	scratch := make([]byte, 0, 0xff)
-	for _, space := range spaces {
-		err := forEachCustomBlockState(space.properties, space.values, func(properties map[string]any) error {
-			state := BlockState{Name: space.name, Properties: properties}
-			var stateErr error
-			scratch, stateErr = basicRegistry.addCustomBlockState(state, scratch)
-			return stateErr
+			scratch, stateErr = registry.addCustomBlockState(BlockState{Name: definition.name, Properties: properties}, scratch)
+			return stateErr == nil
 		})
-		if err != nil {
-			return err
+		if stateErr != nil {
+			return fmt.Errorf("block %s: %w", definition.name, stateErr)
 		}
 	}
 	return nil
 }
 
-func customBlockPropertySpace(entry protocol.BlockEntry) ([]string, [][]any, error) {
-	var propertyNames []string
-	var propertyValues [][]any
-
-	props, err := customBlockMaps(entry.Properties["properties"], "properties")
-	if err != nil {
-		return nil, nil, err
+// digestNetworkBlocks returns the definitions of a StartGame palette the client keeps, each under
+// the last entry with its name, in the order their names first appear.
+func digestNetworkBlocks(entries []protocol.BlockEntry) ([]networkBlockDefinition, error) {
+	definitions := make([]networkBlockDefinition, 0, len(entries))
+	index := make(map[string]int, len(entries))
+	for _, entry := range entries {
+		if _, ok := entry.Properties["vanilla_block_data"].(map[string]any); !ok {
+			continue
+		}
+		states, err := networkBlockStates(entry.Properties)
+		if err != nil {
+			return nil, fmt.Errorf("block %s: %w", entry.Name, err)
+		}
+		definition := networkBlockDefinition{name: entry.Name, states: states}
+		if at, ok := index[entry.Name]; ok {
+			definitions[at] = definition
+			continue
+		}
+		index[entry.Name] = len(definitions)
+		definitions = append(definitions, definition)
 	}
-	for _, v := range props {
-		name, ok := v["name"].(string)
+	return definitions, nil
+}
+
+// networkBlockStates returns the states of one block definition: the states of its known traits in
+// the order the traits are listed, then its properties in list order.
+func networkBlockStates(definition map[string]any) ([]customblock.TraitState, error) {
+	var states []customblock.TraitState
+	added := make(map[string]struct{})
+	addState := func(state customblock.TraitState) {
+		// The client ignores a state a block already has.
+		if _, ok := added[state.Name]; ok {
+			return
+		}
+		added[state.Name] = struct{}{}
+		states = append(states, state)
+	}
+
+	seenTraits := make(map[string]struct{})
+	for _, trait := range networkCompounds(definition["traits"]) {
+		name, _ := trait["name"].(string)
+		// The first trait listed under a name wins.
+		if _, seen := seenTraits[name]; seen {
+			continue
+		}
+		seenTraits[name] = struct{}{}
+		for _, state := range customblock.NetworkTraitStates(strings.ToLower(name), trait) {
+			addState(state)
+		}
+	}
+
+	for _, property := range networkCompounds(definition["properties"]) {
+		name, _ := property["name"].(string)
+		values, ok := networkListValues(property["enum"])
 		if !ok {
-			return nil, nil, fmt.Errorf("expected property name to be string, got %T", v["name"])
+			continue
 		}
-		enum, ok := customBlockEnumValues(v["enum"])
-		if !ok {
-			return nil, nil, fmt.Errorf("expected property %s enum to be a list, got %T", name, v["enum"])
+		if len(values) == 0 {
+			return nil, fmt.Errorf("property %q has no values, which the client cannot load", name)
 		}
-		if len(enum) == 0 {
-			return nil, nil, fmt.Errorf("expected property %s enum to contain at least one value", name)
+		if _, ok := added[name]; ok {
+			return nil, fmt.Errorf("state %q is declared twice", name)
 		}
-		propertyNames = append(propertyNames, name)
-		propertyValues = append(propertyValues, enum)
+		addState(customblock.TraitState{Name: name, Values: values})
 	}
-
-	// The client adds trait states to the block before its properties.
-	var traitNames []string
-	var traitValues [][]any
-	traits, err := customBlockMaps(entry.Properties["traits"], "traits")
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, trait := range traits {
-		enabledStates, ok := trait["enabled_states"].(map[string]any)
-		if !ok {
-			// minecraft:connection is the one trait whose enabled_states arrives as a
-			// TAG_Int bitmask instead of a map; it declares the four directional
-			// booleans. Byte values, so chunk-palette lookups match.
-			if _, isMask := trait["enabled_states"].(int32); isMask {
-				name, nameOK := trait["name"].(string)
-				if !nameOK {
-					return nil, nil, fmt.Errorf("expected trait name to be string, got %T", trait["name"])
-				}
-				if name != "minecraft:connection" {
-					return nil, nil, fmt.Errorf("unresolved bitmask trait %s", name)
-				}
-				for _, state := range []string{
-					"minecraft:connection_north",
-					"minecraft:connection_south",
-					"minecraft:connection_west",
-					"minecraft:connection_east",
-				} {
-					traitNames = append(traitNames, state)
-					traitValues = append(traitValues, []any{uint8(0), uint8(1)})
-				}
-				continue
-			}
-			return nil, nil, fmt.Errorf("expected enabled_states to be map[string]any or int32, got %T", trait["enabled_states"])
-		}
-		keys := make([]string, 0, len(enabledStates))
-		for k := range enabledStates {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			rawEnabled := enabledStates[k]
-			if !strings.ContainsRune(k, ':') {
-				k = "minecraft:" + k
-			}
-			enabled, err := customBlockTraitEnabled(rawEnabled)
-			if err != nil {
-				return nil, nil, fmt.Errorf("trait %s: %w", k, err)
-			}
-			if !enabled {
-				continue
-			}
-			v, ok := traitLookup[k]
-			if !ok {
-				return nil, nil, fmt.Errorf("unresolved trait %s", k)
-			}
-
-			traitNames = append(traitNames, k)
-			traitValues = append(traitValues, v)
-		}
-	}
-
-	return append(traitNames, propertyNames...), append(traitValues, propertyValues...), nil
+	return states, nil
 }
 
-// customBlockEnumValues coerces a property enum to []any. NBT decoders produce typed
-// slices for homogeneous lists (Geyser encodes boolean enums as []uint8), so scalar
-// slice types are widened element-wise; the element values keep their original type.
-func customBlockEnumValues(value any) ([]any, bool) {
-	switch value := value.(type) {
-	case []any:
-		return value, true
-	case []uint8:
-		return anySlice(value), true
-	case []int32:
-		return anySlice(value), true
-	case []int64:
-		return anySlice(value), true
-	case []string:
-		return anySlice(value), true
-	case []float32:
-		return anySlice(value), true
-	case []float64:
-		return anySlice(value), true
-	default:
-		return nil, false
-	}
-}
-
-// anySlice widens a typed slice to []any.
-func anySlice[T any](values []T) []any {
-	out := make([]any, len(values))
-	for i, v := range values {
-		out[i] = v
-	}
-	return out
-}
-
-func customBlockMaps(value any, field string) ([]map[string]any, error) {
-	switch value := value.(type) {
-	case nil:
-		return nil, nil
-	case []map[string]any:
-		return value, nil
-	case []any:
-		values := make([]map[string]any, len(value))
-		for i, entry := range value {
-			mapped, ok := entry.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("expected %s entry at index %d to be map[string]any, got %T", field, i, entry)
-			}
-			values[i] = mapped
-		}
-		return values, nil
-	default:
-		return nil, fmt.Errorf("expected %s to be a list of maps, got %T", field, value)
-	}
-}
-
-// forEachCustomBlockState yields every combination of the values passed in the order the client
-// gives them runtime IDs: by permutation index, in which the first state varies fastest.
-func forEachCustomBlockState(names []string, valueSets [][]any, yield func(map[string]any) error) error {
-	properties := make(map[string]any, len(names))
-	var visit func(int) error
-	visit = func(index int) error {
-		if index < 0 {
-			state := make(map[string]any, len(properties))
-			for name, value := range properties {
-				state[name] = value
-			}
-			return yield(state)
-		}
-		for _, value := range valueSets[index] {
-			properties[names[index]] = value
-			if err := visit(index - 1); err != nil {
-				return err
-			}
-		}
+// networkCompounds returns the compound elements of an NBT list, skipping every other element as
+// the client does. A value that is not a list has no elements.
+func networkCompounds(value any) []map[string]any {
+	elements, ok := networkListValues(value)
+	if !ok {
 		return nil
 	}
-	return visit(len(names) - 1)
+	compounds := make([]map[string]any, 0, len(elements))
+	for _, element := range elements {
+		if compound, ok := element.(map[string]any); ok {
+			compounds = append(compounds, compound)
+		}
+	}
+	return compounds
 }
 
-func customBlockTraitEnabled(v any) (bool, error) {
-	switch v := v.(type) {
-	case bool:
-		return v, nil
-	case uint8:
-		return v != 0, nil
-	case int32:
-		return v != 0, nil
-	default:
-		return false, fmt.Errorf("expected enabled flag to be bool, uint8, or int32, got %T", v)
+// networkListValues returns the elements of a decoded NBT list of any element type, keeping each
+// element's own type, or false if value is not a list.
+func networkListValues(value any) ([]any, bool) {
+	if value == nil {
+		return nil, false
 	}
+	list := reflect.ValueOf(value)
+	if list.Kind() != reflect.Slice {
+		return nil, false
+	}
+	values := make([]any, list.Len())
+	for i := range values {
+		values[i] = list.Index(i).Interface()
+	}
+	return values, true
+}
+
+// forEachNetworkBlockState yields the state properties of a block in the client's runtime ID order.
+// Each state takes a bit field of the packed data value, in the order the states were added, wide
+// enough for its values; the client walks every data value of at most 16 bits in ascending order
+// and skips those naming a value a state does not have.
+func forEachNetworkBlockState(states []customblock.TraitState, yield func(map[string]any) bool) {
+	starts := make([]int, len(states))
+	widths := make([]int, len(states))
+	bits := 0
+	for i, state := range states {
+		starts[i], widths[i] = bits, networkStateBitWidth(len(state.Values))
+		bits += widths[i]
+	}
+	bits = min(bits, maxBlockStateBits)
+	properties := make(map[string]any, len(states))
+	for data := 0; data < 1<<bits; data++ {
+		valid := true
+		for i, state := range states {
+			value := 0
+			if widths[i] != 0 && starts[i] < maxBlockStateBits {
+				mask := (1<<widths[i] - 1) << starts[i] & (1<<maxBlockStateBits - 1)
+				value = (data & mask) >> starts[i]
+			}
+			if value >= max(len(state.Values), 1) {
+				valid = false
+				break
+			}
+			if len(state.Values) == 0 {
+				// The client counts a state without values as having one; it has nothing to name.
+				continue
+			}
+			properties[state.Name] = state.Values[value]
+		}
+		if !valid {
+			continue
+		}
+		state := make(map[string]any, len(properties))
+		for name, value := range properties {
+			state[name] = value
+		}
+		if !yield(state) {
+			return
+		}
+	}
+}
+
+// networkStateBitWidth returns the bits a state with count values occupies: none for a single
+// value, otherwise enough to hold its largest index.
+func networkStateBitWidth(count int) int {
+	width := 0
+	for count--; count > 0; count >>= 1 {
+		width++
+	}
+	return width
 }

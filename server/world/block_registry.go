@@ -7,6 +7,7 @@ import (
 	"math/bits"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/brentp/intintmap"
@@ -898,7 +899,8 @@ func (br *BasicBlockRegistry) Air() Block {
 }
 
 // NetworkBlockHash returns the key a client sorts its block palette by, making a block's
-// runtime ID its index in that ordering. Finalize sorts by it too, so the two agree.
+// runtime ID its index in that ordering: the FNV-1 hash of the lowercased name. Finalize sorts by
+// it too, so the two agree.
 func NetworkBlockHash(name string) uint64 {
-	return fnv1.HashString64(name)
+	return fnv1.HashString64(strings.ToLower(name))
 }

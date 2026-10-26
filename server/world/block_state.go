@@ -190,6 +190,11 @@ func hashProperties(properties map[string]any) string {
 			b.Write(a[:])
 		case string:
 			b.WriteString(v)
+		case int16, int64, float32, float64, []any, []uint8, []int16, []int32, []int64, []float32, []float64,
+			[]string, map[string]any:
+			// A StartGame palette may declare state values of any NBT tag type. A type marker keeps
+			// them apart from the encodings above.
+			fmt.Fprintf(&b, "\x00%T%v", v, v)
 		default:
 			// If block encoding is broken, we want to find out as soon as possible. This saves a lot of time
 			// debugging in-game.

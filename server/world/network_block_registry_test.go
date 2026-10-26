@@ -47,7 +47,7 @@ func TestNewNetworkBlockRegistry_NegotiatedVanillaBlocks(t *testing.T) {
 }
 
 func TestNewNetworkBlockRegistry_BuiltInRuntimeIDsWithoutOptionalBlocks(t *testing.T) {
-	registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{{Name: "lunar:abgbzvnw0"}})
+	registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{{Name: "lunar:abgbzvnw0", Properties: map[string]any{"vanilla_block_data": testVanillaBlockData()}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestNewNetworkBlockRegistry_InheritedCustomBlocks(t *testing.T) {
 		registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{
 			{
 				Name: "test:ordered",
-				Properties: map[string]any{
+				Properties: map[string]any{"vanilla_block_data": testVanillaBlockData(),
 					"properties": []any{
 						map[string]any{"name": "test:a", "enum": []any{false, true}},
 						map[string]any{"name": "test:b", "enum": []any{"x", "y", "z"}},
@@ -124,7 +124,7 @@ func TestNewNetworkBlockRegistry_InheritedCustomBlocks(t *testing.T) {
 					},
 				},
 			},
-			{Name: "test:unregistered", Properties: map[string]any{
+			{Name: "test:unregistered", Properties: map[string]any{"vanilla_block_data": testVanillaBlockData(),
 				"properties": []any{map[string]any{"name": "test:variant", "enum": []any{int32(0), int32(1)}}},
 			}},
 		})

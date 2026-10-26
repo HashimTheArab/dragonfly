@@ -4,6 +4,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/df-mc/dragonfly/server/block/customblock"
 )
@@ -34,6 +35,10 @@ func (br *BasicBlockRegistry) sortForNetworkLocked() {
 	sort.SliceStable(entries, func(i, j int) bool {
 		if entries[i].hash != entries[j].hash {
 			return entries[i].hash < entries[j].hash
+		}
+		// The client keys its palette by lowercased name, so equal hashes order by that name.
+		if a, b := strings.ToLower(entries[i].name), strings.ToLower(entries[j].name); a != b {
+			return a < b
 		}
 		return entries[i].name == entries[j].name && entries[i].index < entries[j].index
 	})
