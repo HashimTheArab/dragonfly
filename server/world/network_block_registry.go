@@ -12,16 +12,15 @@ import (
 // The returned registry is independent of DefaultBlockRegistry.
 func NewNetworkBlockRegistry(entries []protocol.BlockEntry) (BlockRegistry, error) {
 	registry := NewBlockRegistry().(*BasicBlockRegistry)
-	advertised := make(map[string]struct{}, len(entries))
-	for _, entry := range entries {
-		advertised[entry.Name] = struct{}{}
-	}
-	omitted := make(map[string]struct{})
+	omitted := make(map[string]struct{}, len(DataDrivenBlocks()))
 	for _, block := range DataDrivenBlocks() {
-		if _, ok := advertised[block.Name]; !ok {
-			omitted[block.Name] = struct{}{}
-			delete(registry.blockProperties, block.Name)
-		}
+		omitted[block.Name] = struct{}{}
+	}
+	for _, entry := range entries {
+		delete(omitted, entry.Name)
+	}
+	for name := range omitted {
+		delete(registry.blockProperties, name)
 	}
 	registry.blocks = slices.DeleteFunc(registry.blocks, func(block Block) bool {
 		name, _ := block.EncodeBlock()
