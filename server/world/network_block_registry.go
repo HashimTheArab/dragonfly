@@ -2,13 +2,15 @@ package world
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
 // NewNetworkBlockRegistry builds a finalized registry for a StartGame block palette.
 // Vanilla data-driven blocks participate only when advertised, while built-in
-// vanilla blocks always participate. Custom states sort alongside those blocks.
+// vanilla blocks always participate. Advertised custom implementations are
+// retained; other custom states come from the advertised definitions.
 // The returned registry is independent of DefaultBlockRegistry.
 func NewNetworkBlockRegistry(entries []protocol.BlockEntry) (BlockRegistry, error) {
 	registry := NewBlockRegistry().(*BasicBlockRegistry)
@@ -16,11 +18,20 @@ func NewNetworkBlockRegistry(entries []protocol.BlockEntry) (BlockRegistry, erro
 	for _, block := range DataDrivenBlocks() {
 		omitted[block.Name] = struct{}{}
 	}
+	for _, block := range registry.blocks {
+		name, _ := block.EncodeBlock()
+		if !strings.HasPrefix(name, "minecraft:") {
+			omitted[name] = struct{}{}
+		}
+	}
 	for _, entry := range entries {
-		delete(omitted, entry.Name)
+		if _, registered := registry.customBlocks[entry.Name]; registered || strings.HasPrefix(entry.Name, "minecraft:") {
+			delete(omitted, entry.Name)
+		}
 	}
 	for name := range omitted {
 		delete(registry.blockProperties, name)
+		delete(registry.customBlocks, name)
 	}
 	registry.blocks = slices.DeleteFunc(registry.blocks, func(block Block) bool {
 		name, _ := block.EncodeBlock()

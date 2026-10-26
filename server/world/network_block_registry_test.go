@@ -74,3 +74,86 @@ func TestNewNetworkBlockRegistry_BuiltInRuntimeIDsWithoutOptionalBlocks(t *testi
 		t.Fatal("custom hash did not round-trip")
 	}
 }
+
+func TestNewNetworkBlockRegistry_InheritedCustomBlocks(t *testing.T) {
+	baseline, err := NewNetworkBlockRegistry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := NewBlockRegistry().(*BasicBlockRegistry)
+	const count = 4 * 2 * 2 * 3
+	for i := count - 1; i >= 0; i-- {
+		seed.RegisterBlock(orderedState(i))
+	}
+	seed.RegisterBlockState(BlockState{Name: "test:unregistered", Properties: map[string]any{"test:variant": int32(99)}})
+	seed.Finalize()
+	original := DefaultBlockRegistry
+	DefaultBlockRegistry = seed
+	t.Cleanup(func() { DefaultBlockRegistry = original })
+
+	t.Run("unadvertised", func(t *testing.T) {
+		registry, err := NewNetworkBlockRegistry(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if registry.BlockCount() != baseline.BlockCount() {
+			t.Fatalf("inherited custom states changed palette size: got %d, want %d", registry.BlockCount(), baseline.BlockCount())
+		}
+		if len(registry.CustomBlocks()) != 0 {
+			t.Fatal("unadvertised custom implementation retained")
+		}
+		for rid, block := range baseline.Blocks() {
+			name, properties := block.EncodeBlock()
+			if got, ok := registry.StateToRuntimeID(name, properties); !ok || got != uint32(rid) {
+				t.Fatalf("%s runtime ID = (%d, %t), want %d", name, got, ok, rid)
+			}
+		}
+	})
+	t.Run("advertised", func(t *testing.T) {
+		registry, err := NewNetworkBlockRegistry([]protocol.BlockEntry{
+			{
+				Name: "test:ordered",
+				Properties: map[string]any{
+					"properties": []any{
+						map[string]any{"name": "test:a", "enum": []any{false, true}},
+						map[string]any{"name": "test:b", "enum": []any{"x", "y", "z"}},
+					},
+					"traits": []any{
+						map[string]any{"name": "minecraft:placement_position", "enabled_states": map[string]any{"vertical_half": uint8(1)}},
+						map[string]any{"name": "minecraft:placement_direction", "enabled_states": map[string]any{"cardinal_direction": uint8(1)}},
+					},
+				},
+			},
+			{Name: "test:unregistered", Properties: map[string]any{
+				"properties": []any{map[string]any{"name": "test:variant", "enum": []any{int32(0), int32(1)}}},
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(registry.CustomBlocks()) != 1 || registry.CustomBlocks()["test:ordered"] == nil {
+			t.Fatal("advertised custom implementation missing")
+		}
+		first := registry.BlockRuntimeID(orderedState(0))
+		for i := range count {
+			if got, ok := registry.BlockByRuntimeID(first + uint32(i)); !ok || got != orderedState(i) {
+				t.Fatalf("custom implementation at offset %d = %#v, want %#v", i, got, orderedState(i))
+			}
+		}
+		if got, want := registry.BlockCount(), baseline.BlockCount()+count+2; got != want {
+			t.Fatalf("advertised palette has %d states, want %d without stale inherited states", got, want)
+		}
+		for _, variant := range []int32{0, 1} {
+			rid, ok := registry.StateToRuntimeID("test:unregistered", map[string]any{"test:variant": variant})
+			if !ok {
+				t.Fatalf("advertised state %d missing", variant)
+			}
+			if _, properties, _ := registry.RuntimeIDToState(rid); properties["test:variant"] != variant {
+				t.Fatalf("advertised state %d resolved to %v", variant, properties)
+			}
+		}
+	})
+	if _, ok := seed.StateToRuntimeID("test:unregistered", map[string]any{"test:variant": int32(99)}); !ok || len(seed.CustomBlocks()) != 1 {
+		t.Fatal("network registry construction mutated the default registry")
+	}
+}
