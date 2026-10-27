@@ -50,6 +50,8 @@ type Session struct {
 	emoteChatMuted bool
 
 	teleportPos atomic.Pointer[mgl64.Vec3]
+	// inputTick is the client tick of the latest PlayerAuthInput, which stamps movement effects.
+	inputTick atomic.Uint64
 
 	entityMutex sync.RWMutex
 	// currentEntityRuntimeID holds the runtime ID assigned to the last entity. It is incremented for every
@@ -159,6 +161,13 @@ type Config struct {
 	Log *slog.Logger
 
 	MaxChunkRadius int
+	// ChunkLoadsPerTick is the maximum number of chunks requested for the
+	// player each tick. Values of zero or less select the default of 4.
+	ChunkLoadsPerTick int
+	// MaxChunkTransactions stops new chunk requests for a client with the blob
+	// cache enabled while this many chunk transactions await its response.
+	// Values of zero or less select the default of 8.
+	MaxChunkTransactions int
 
 	EmoteChatMuted bool
 
@@ -181,11 +190,17 @@ func (conf Config) New(conn Conn) *Session {
 	if conf.Log == nil {
 		conf.Log = slog.Default()
 	}
+	if conf.ChunkLoadsPerTick <= 0 {
+		conf.ChunkLoadsPerTick = 4
+	}
+	if conf.MaxChunkTransactions <= 0 {
+		conf.MaxChunkTransactions = 8
+	}
 	conf.Log = conf.Log.With("name", conn.IdentityData().DisplayName, "uuid", conn.IdentityData().Identity, "raddr", conn.RemoteAddr().String())
 
 	s := &Session{}
 	*s = Session{
-		openChunkTransactions:  make([]map[uint64]struct{}, 0, 8),
+		openChunkTransactions:  make([]map[uint64]struct{}, 0, conf.MaxChunkTransactions),
 		closeBackground:        make(chan struct{}),
 		handlers:               map[uint32]packetHandler{},
 		packets:                make(chan packet.Packet, 256),
@@ -477,8 +492,8 @@ func (s *Session) background() {
 	}
 }
 
-// sendChunks sends the next up to 4 chunks to the connection. What chunks are loaded depends on the connection of
-// the chunk loader and the chunks that were previously loaded.
+// sendChunks sends the next up to Config.ChunkLoadsPerTick chunks to the connection. What chunks are loaded depends on
+// the connection of the chunk loader and the chunks that were previously loaded.
 func (s *Session) sendChunks(tx *world.Tx, c Controllable) {
 	var worldSwitched bool
 	if w := tx.World(); s.chunkLoader.World() != w && w != nil {
@@ -496,12 +511,11 @@ func (s *Session) sendChunks(tx *world.Tx, c Controllable) {
 		})
 	}
 
-	s.blobMu.Lock()
-	const maxChunkTransactions = 8
-	toLoad := maxChunkTransactions - len(s.openChunkTransactions)
-	s.blobMu.Unlock()
-	if toLoad > 4 {
-		toLoad = 4
+	toLoad := s.conf.ChunkLoadsPerTick
+	if s.conn.ClientCacheEnabled() {
+		s.blobMu.Lock()
+		toLoad = min(toLoad, s.conf.MaxChunkTransactions-len(s.openChunkTransactions))
+		s.blobMu.Unlock()
 	}
 	s.chunkLoader.Load(tx, toLoad)
 }

@@ -96,3 +96,24 @@ func TestResumeProjectileFlight_RejectsInvalidInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestResumeProjectileFlight_RejectsSimulationOverflow(t *testing.T) {
+	limit := float64(math.MaxFloat32)
+	for _, tt := range []struct {
+		name     string
+		start    mgl64.Vec3
+		velocity mgl64.Vec3
+		observed mgl64.Vec3
+		physics  ProjectilePhysics
+	}{
+		{"continuation velocity", mgl64.Vec3{}, mgl64.Vec3{0, -limit, 0}, mgl64.Vec3{0, -limit, 0}, ProjectilePhysics{Gravity: limit}},
+		{"position", mgl64.Vec3{limit, 0, 0}, mgl64.Vec3{limit, 0, 0}, mgl64.Vec3{limit, 0, 0}, ProjectilePhysics{}},
+		{"forces before move", mgl64.Vec3{}, mgl64.Vec3{0, -limit, 0}, mgl64.Vec3{0, -limit, 0}, ProjectilePhysics{Gravity: limit, ForcesBeforeMove: true}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if velocity, flown, ok := ResumeProjectileFlight(tt.start, tt.velocity, tt.observed, tt.physics, 1); ok {
+				t.Fatalf("overflowed simulation accepted: velocity %v after %d ticks", velocity, flown)
+			}
+		})
+	}
+}

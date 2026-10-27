@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -16,6 +17,7 @@ import (
 	"github.com/df-mc/dragonfly/server/world/chunk"
 	"github.com/df-mc/dragonfly/server/world/mcdb/leveldat"
 	"github.com/df-mc/goleveldb/leveldb"
+	"github.com/df-mc/goleveldb/leveldb/opt"
 	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
 )
@@ -23,11 +25,12 @@ import (
 // DB implements a world provider for the Minecraft world format, which
 // is based on a leveldb database.
 type DB struct {
-	conf Config
-	ldb  *leveldb.DB
-	dir  string
-	ldat *leveldat.Data
-	set  *world.Settings
+	storeMu sync.Mutex
+	conf    Config
+	ldb     *leveldb.DB
+	dir     string
+	ldat    *leveldat.Data
+	set     *world.Settings
 }
 
 // Open creates a new provider reading and writing from/to files under the path
@@ -140,33 +143,47 @@ func (db *DB) SavePlayerSpawnPosition(id uuid.UUID, pos cube.Pos) error {
 // leveldb.ErrNotFound) equals true.
 func (db *DB) LoadColumn(pos world.ChunkPos, dim world.Dimension) (*chunk.Column, error) {
 	k := dbKey{pos: pos, dim: dim}
-	col, err := db.column(k)
+	snapshot, err := db.ldb.GetSnapshot()
+	if err != nil {
+		return nil, fmt.Errorf("load column %v (%v): %w", pos, dim, err)
+	}
+	defer snapshot.Release()
+	col, err := db.column(k, snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("load column %v (%v): %w", pos, dim, err)
 	}
 	return col, nil
 }
 
+// ConcurrentColumnReads permits independent loads during a slow write. Every
+// column load uses one LevelDB snapshot, and its decoder owns all mutable state.
+func (*DB) ConcurrentColumnReads() bool { return true }
+
+// columnReader supplies key lookups for one column decode.
+type columnReader interface {
+	Get([]byte, *opt.ReadOptions) ([]byte, error)
+}
+
 const chunkVersion = 42
 
-func (db *DB) column(k dbKey) (*chunk.Column, error) {
+func (db *DB) column(k dbKey, reader columnReader) (*chunk.Column, error) {
 	var cdata chunk.SerialisedData
 	col := new(chunk.Column)
 
-	ver, err := db.version(k)
+	ver, err := db.version(k, reader)
 	if err != nil {
 		return nil, fmt.Errorf("read version: %w", err)
 	}
 	if ver != chunkVersion {
 		db.conf.Log.Debug("column: unsupported chunk version, trying to load anyway", "X", k.pos[0], "Z", k.pos[1], "dimension", fmt.Sprint(k.dim), "ver", ver)
 	}
-	cdata.Biomes, err = db.biomes(k)
+	cdata.Biomes, err = db.biomes(k, reader)
 	if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
 		// Some chunks still use 2D chunk data and might not have this field, in
 		// which case we can just move on.
 		return nil, fmt.Errorf("read biomes: %w", err)
 	}
-	cdata.SubChunks, err = db.subChunks(k)
+	cdata.SubChunks, err = db.subChunks(k, reader)
 	if err != nil {
 		return nil, fmt.Errorf("read sub chunks: %w", err)
 	}
@@ -174,24 +191,24 @@ func (db *DB) column(k dbKey) (*chunk.Column, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode chunk data: %w", err)
 	}
-	legacy, err := db.legacyStates(k)
+	legacy, err := db.legacyStates(k, reader)
 	if err != nil {
 		return nil, fmt.Errorf("read legacy states: %w", err)
 	}
 	if legacy {
 		col.Chunk.MarkLegacyStates()
 	}
-	col.Entities, err = db.entities(k)
+	col.Entities, err = db.entities(k, reader)
 	if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
 		// Not all chunks need to have entities, so an ErrNotFound is fine here.
 		return nil, fmt.Errorf("read entities: %w", err)
 	}
-	col.BlockEntities, err = db.blockEntities(k)
+	col.BlockEntities, err = db.blockEntities(k, reader)
 	if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
 		// Same as with entities, an ErrNotFound is fine here.
 		return nil, fmt.Errorf("read block entities: %w", err)
 	}
-	col.ScheduledBlocks, col.Tick, err = db.scheduledUpdates(k)
+	col.ScheduledBlocks, col.Tick, err = db.scheduledUpdates(k, reader)
 	if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
 		return nil, fmt.Errorf("read scheduled updates: %w", err)
 	}
@@ -199,8 +216,8 @@ func (db *DB) column(k dbKey) (*chunk.Column, error) {
 }
 
 // legacyStates reports whether the chunk was saved with keyLegacyStates present.
-func (db *DB) legacyStates(k dbKey) (bool, error) {
-	_, err := db.ldb.Get(k.Sum(keyLegacyStates), nil)
+func (db *DB) legacyStates(k dbKey, reader columnReader) (bool, error) {
+	_, err := reader.Get(k.Sum(keyLegacyStates), nil)
 	if errors.Is(err, leveldb.ErrNotFound) {
 		return false, nil
 	}
@@ -210,12 +227,12 @@ func (db *DB) legacyStates(k dbKey) (bool, error) {
 	return true, nil
 }
 
-func (db *DB) version(k dbKey) (byte, error) {
-	p, err := db.ldb.Get(k.Sum(keyVersion), nil)
+func (db *DB) version(k dbKey, reader columnReader) (byte, error) {
+	p, err := reader.Get(k.Sum(keyVersion), nil)
 	if errors.Is(err, leveldb.ErrNotFound) {
 		// Although the version at `keyVersion` may not be found, there is
 		// another `keyVersionOld` where the version may be found.
-		if p, err = db.ldb.Get(k.Sum(keyVersionOld), nil); err != nil {
+		if p, err = reader.Get(k.Sum(keyVersionOld), nil); err != nil {
 			return 0, err
 		}
 	}
@@ -228,8 +245,8 @@ func (db *DB) version(k dbKey) (byte, error) {
 	return p[0], nil
 }
 
-func (db *DB) biomes(k dbKey) ([]byte, error) {
-	biomes, err := db.ldb.Get(k.Sum(key3DData), nil)
+func (db *DB) biomes(k dbKey, reader columnReader) ([]byte, error) {
+	biomes, err := reader.Get(k.Sum(key3DData), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -241,14 +258,14 @@ func (db *DB) biomes(k dbKey) ([]byte, error) {
 	return biomes[512:], nil
 }
 
-func (db *DB) subChunks(k dbKey) ([][]byte, error) {
+func (db *DB) subChunks(k dbKey, reader columnReader) ([][]byte, error) {
 	r := k.dim.Range()
 	sub := make([][]byte, (r.Height()>>4)+1)
 
 	var err error
 	for i := range sub {
 		y := uint8(i + (r[0] >> 4))
-		sub[i], err = db.ldb.Get(k.Sum(keySubChunkData, y), nil)
+		sub[i], err = reader.Get(k.Sum(keySubChunkData, y), nil)
 		if errors.Is(err, leveldb.ErrNotFound) {
 			// No sub chunk present at this Y level. We skip this one and move
 			// to the next, which might still be present.
@@ -260,17 +277,17 @@ func (db *DB) subChunks(k dbKey) ([][]byte, error) {
 	return sub, nil
 }
 
-func (db *DB) entities(k dbKey) ([]chunk.Entity, error) {
+func (db *DB) entities(k dbKey, reader columnReader) ([]chunk.Entity, error) {
 	// https://learn.microsoft.com/en-us/minecraft/creator/documents/actorstorage
-	ids, err := db.ldb.Get(append([]byte(keyEntityIdentifiers), index(k.pos, k.dim)...), nil)
+	ids, err := reader.Get(append([]byte(keyEntityIdentifiers), index(k.pos, k.dim)...), nil)
 	if err != nil {
 		// Key not found, try old method of loading entities.
-		return db.entitiesOld(k)
+		return db.entitiesOld(k, reader)
 	}
 	entities := make([]chunk.Entity, 0, len(ids)/8)
 	for i := 0; i < len(ids); i += 8 {
 		id := int64(binary.LittleEndian.Uint64(ids[i : i+8]))
-		data, err := db.ldb.Get(entityIndex(id), nil)
+		data, err := reader.Get(entityIndex(id), nil)
 		if err != nil {
 			db.conf.Log.Error("read entity: "+err.Error(), "ID", id)
 			return nil, err
@@ -284,8 +301,8 @@ func (db *DB) entities(k dbKey) ([]chunk.Entity, error) {
 	return entities, nil
 }
 
-func (db *DB) entitiesOld(k dbKey) ([]chunk.Entity, error) {
-	data, err := db.ldb.Get(k.Sum(keyEntitiesOld), nil)
+func (db *DB) entitiesOld(k dbKey, reader columnReader) ([]chunk.Entity, error) {
+	data, err := reader.Get(k.Sum(keyEntitiesOld), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -309,10 +326,10 @@ func (db *DB) entitiesOld(k dbKey) ([]chunk.Entity, error) {
 	return entities, nil
 }
 
-func (db *DB) blockEntities(k dbKey) ([]chunk.BlockEntity, error) {
+func (db *DB) blockEntities(k dbKey, reader columnReader) ([]chunk.BlockEntity, error) {
 	var blockEntities []chunk.BlockEntity
 
-	data, err := db.ldb.Get(k.Sum(keyBlockEntities), nil)
+	data, err := reader.Get(k.Sum(keyBlockEntities), nil)
 	if err != nil {
 		return blockEntities, err
 	}
@@ -331,8 +348,8 @@ func (db *DB) blockEntities(k dbKey) ([]chunk.BlockEntity, error) {
 	return blockEntities, nil
 }
 
-func (db *DB) scheduledUpdates(k dbKey) ([]chunk.ScheduledBlockUpdate, int64, error) {
-	data, err := db.ldb.Get(k.Sum(keyPendingScheduledTicks), nil)
+func (db *DB) scheduledUpdates(k dbKey, reader columnReader) ([]chunk.ScheduledBlockUpdate, int64, error) {
+	data, err := reader.Get(k.Sum(keyPendingScheduledTicks), nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -358,6 +375,8 @@ func (db *DB) scheduledUpdates(k dbKey) ([]chunk.ScheduledBlockUpdate, int64, er
 // StoreColumn stores a world.Column at a position and dimension in the DB. An
 // error is returned if storing was unsuccessful.
 func (db *DB) StoreColumn(pos world.ChunkPos, dim world.Dimension, col *chunk.Column) error {
+	db.storeMu.Lock()
+	defer db.storeMu.Unlock()
 	k := dbKey{pos: pos, dim: dim}
 	if err := db.storeColumn(k, col); err != nil {
 		return fmt.Errorf("store column %v (%v): %w", pos, dim, err)
@@ -439,13 +458,21 @@ func (db *DB) storeEntities(batch *leveldb.Batch, k dbKey, entities []chunk.Enti
 			continue
 		}
 		batch.Put(entityIndex(e.ID), b)
+		batch.Put(entityOwnerIndex(e.ID), idsKey)
 		newIDs = append(newIDs, e.ID)
 	}
 
 	// Remove entities that are no longer referenced.
 	for _, uniqueID := range previousIDs {
 		if !slices.Contains(newIDs, uniqueID) {
-			batch.Delete(entityIndex(uniqueID))
+			// Another column may already have saved this actor after movement.
+			// Legacy actors have no owner key until their next save; retain their
+			// payload rather than deleting data whose remaining references are unknown.
+			owner, err := db.ldb.Get(entityOwnerIndex(uniqueID), nil)
+			if err == nil && bytes.Equal(owner, idsKey) {
+				batch.Delete(entityIndex(uniqueID))
+				batch.Delete(entityOwnerIndex(uniqueID))
+			}
 		}
 	}
 	if len(entities) == 0 {
@@ -461,6 +488,12 @@ func (db *DB) storeEntities(batch *leveldb.Batch, k dbKey, entities []chunk.Enti
 
 	// Remove old entity data for this chunk.
 	batch.Delete(k.Sum(keyEntitiesOld))
+}
+
+// entityOwnerIndex stores the last authoritative saved column for an actor.
+// Keeping this separate preserves the standard actor NBT and index formats.
+func entityOwnerIndex(id int64) []byte {
+	return binary.LittleEndian.AppendUint64([]byte("dragonfly:actor_owner:"), uint64(id))
 }
 
 func entityIndex(id int64) []byte {

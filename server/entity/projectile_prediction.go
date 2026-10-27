@@ -166,7 +166,8 @@ func PredictProjectileLanding(src world.BlockSource, available func(cube.Pos) bo
 // nearest observed among the first maxTicks is chosen; collisions are ignored,
 // so observed must belong to the same uninterrupted flight. A flight that
 // revisits a point, such as a vertical throw, resolves to the earliest nearest
-// tick. It returns false only when the inputs are invalid.
+// tick. It returns false when the inputs are invalid or the simulation leaves
+// the finite float32 range.
 func ResumeProjectileFlight(start, velocity, observed mgl64.Vec3, physics ProjectilePhysics, maxTicks int) (mgl64.Vec3, int, bool) {
 	gravity, drag := physics.Gravity, physics.Drag
 	if maxTicks <= 0 || !projectileFinite32(gravity) || !projectileFinite32(drag) || gravity < 0 || drag < 0 || drag >= 1 {
@@ -192,6 +193,11 @@ func ResumeProjectileFlight(start, velocity, observed mgl64.Vec3, physics Projec
 		}
 		pos = pos.Add(motion)
 		declared = projectileNextVelocity(declared, inertia, gravity32)
+		for axis := range pos {
+			if !projectileFinite32(float64(pos[axis])) || !projectileFinite32(float64(declared[axis])) {
+				return mgl64.Vec3{}, 0, false
+			}
+		}
 		if distance := projectileVec64(pos).Sub(observed).LenSqr(); distance < bestDistance {
 			best, bestTick, bestDistance = declared, tick, distance
 		}

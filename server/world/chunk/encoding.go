@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/df-mc/worldupgrader/blockupgrader"
@@ -66,7 +67,7 @@ func (bpe BlockPaletteEncoding) decode(buf *bytes.Buffer) (uint32, error) {
 	if err := nbt.NewDecoderWithEncoding(buf, nbt.LittleEndian).Decode(&m); err != nil {
 		return 0, fmt.Errorf("error decoding block palette entry: %w", err)
 	}
-	return bpe.DecodeBlockState(m)
+	return bpe.decodeBlockState(m)
 }
 
 func (bpe BlockPaletteEncoding) EncodeBlockState(v uint32) blockEntry {
@@ -76,7 +77,18 @@ func (bpe BlockPaletteEncoding) EncodeBlockState(v uint32) blockEntry {
 	return blockEntry{Name: name, State: props, Version: CurrentBlockVersion}
 }
 
+// DecodeBlockState resolves a borrowed NBT block state without modifying it.
 func (bpe BlockPaletteEncoding) DecodeBlockState(m map[string]any) (uint32, error) {
+	m = maps.Clone(m)
+	if state, ok := m["states"].(map[string]any); ok {
+		m["states"] = maps.Clone(state)
+	}
+	return bpe.decodeBlockState(m)
+}
+
+// decodeBlockState takes ownership of m and its property map for upgrading.
+// Replacing those properties with a global legacy mapping requires a new copy.
+func (bpe BlockPaletteEncoding) decodeBlockState(m map[string]any) (uint32, error) {
 	// Decode the name and version of the block entry.
 	name, _ := m["name"].(string)
 	version, _ := m["version"].(int32)
@@ -99,7 +111,7 @@ func (bpe BlockPaletteEncoding) DecodeBlockState(m map[string]any) (uint32, erro
 
 		// Update the name, state, and version.
 		name = state.Name
-		stateI = state.State
+		stateI = maps.Clone(state.State)
 		version = state.Version
 	} else if !ok {
 		// The state is a post-1.13 block state, but the states field is missing, likely due to a broken world
@@ -111,7 +123,7 @@ func (bpe BlockPaletteEncoding) DecodeBlockState(m map[string]any) (uint32, erro
 		return 0, fmt.Errorf("invalid state in block entry")
 	}
 
-	// Upgrade the block state if necessary.
+	// The upgrader may mutate this call's owned properties.
 	upgraded := blockupgrader.Upgrade(blockupgrader.BlockState{
 		Name:       name,
 		Properties: state,
