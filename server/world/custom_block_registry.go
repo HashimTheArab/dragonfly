@@ -136,20 +136,32 @@ func addNetworkBlocks(registry *BasicBlockRegistry, definitions []networkBlockDe
 // order their names first appear: an entry needs a vanilla_block_data compound, and a later entry
 // replaces an earlier one with the same name.
 func NetworkBlockEntries(entries []protocol.BlockEntry) []protocol.BlockEntry {
-	kept := make([]protocol.BlockEntry, 0, len(entries))
+	kept, _ := readNetworkBlockEntries(entries, func(entry protocol.BlockEntry) (protocol.BlockEntry, error) {
+		return entry, nil
+	})
+	return kept
+}
+
+// readNetworkBlockEntries reads each accepted entry before replacing earlier entries with the same name.
+func readNetworkBlockEntries[T any](entries []protocol.BlockEntry, read func(protocol.BlockEntry) (T, error)) ([]T, error) {
+	kept := make([]T, 0, len(entries))
 	index := make(map[string]int, len(entries))
 	for _, entry := range entries {
 		if _, ok := entry.Properties["vanilla_block_data"].(map[string]any); !ok {
 			continue
 		}
+		value, err := read(entry)
+		if err != nil {
+			return nil, err
+		}
 		if at, ok := index[entry.Name]; ok {
-			kept[at] = entry
+			kept[at] = value
 			continue
 		}
 		index[entry.Name] = len(kept)
-		kept = append(kept, entry)
+		kept = append(kept, value)
 	}
-	return kept
+	return kept, nil
 }
 
 // digestNetworkBlocks returns the definitions of the entries of a StartGame palette the client keeps.
@@ -160,18 +172,15 @@ func digestNetworkBlocks(entries []protocol.BlockEntry) ([]networkBlockDefinitio
 			return nil, fmt.Errorf("block %s holds a long array, which the client cannot load", entry.Name)
 		}
 	}
-	kept := NetworkBlockEntries(entries)
-	definitions := make([]networkBlockDefinition, 0, len(kept))
-	for _, entry := range kept {
+	return readNetworkBlockEntries(entries, func(entry protocol.BlockEntry) (networkBlockDefinition, error) {
 		states, traits, err := networkBlockStates(entry.Properties)
 		if err != nil {
-			return nil, fmt.Errorf("block %s: %w", entry.Name, err)
+			return networkBlockDefinition{}, fmt.Errorf("block %s: %w", entry.Name, err)
 		}
-		definitions = append(definitions, networkBlockDefinition{
+		return networkBlockDefinition{
 			name: networkBlockName(entry.Name), states: states, traits: traits, vanilla: networkVanillaName(entry.Name),
-		})
-	}
-	return definitions, nil
+		}, nil
+	})
 }
 
 // networkBlockStates returns the states of one block definition: the states of its known traits in

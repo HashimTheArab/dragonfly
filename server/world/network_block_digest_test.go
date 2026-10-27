@@ -82,11 +82,44 @@ func TestDigestNetworkBlocks_MalformedPropertiesSkipOneElement(t *testing.T) {
 }
 
 func TestDigestNetworkBlocks_EmptyEnumIsRejected(t *testing.T) {
-	_, err := NewCustomBlockRegistry([]protocol.BlockEntry{testDefinition("test:block", map[string]any{
+	empty := testDefinition("test:block", map[string]any{
 		"properties": []any{map[string]any{"name": "test:empty", "enum": []any{}}},
-	})})
-	if err == nil {
-		t.Fatal("palette with an empty enum loaded")
+	})
+	valid := testDefinition("test:block", nil)
+	for _, test := range []struct {
+		name    string
+		entries []protocol.BlockEntry
+	}{
+		{"single", []protocol.BlockEntry{empty}},
+		{"before replacement", []protocol.BlockEntry{empty, valid}},
+		{"after replacement", []protocol.BlockEntry{valid, empty}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, build := range []func([]protocol.BlockEntry) (BlockRegistry, error){NewCustomBlockRegistry, NewNetworkBlockRegistry} {
+				if _, err := build(test.entries); err == nil {
+					t.Fatal("palette with an empty enum loaded")
+				}
+			}
+		})
+	}
+}
+
+func TestDigestNetworkBlocks_IgnoredEmptyEnumDoesNotReplaceDefinition(t *testing.T) {
+	valid := testDefinition("test:block", nil)
+	for _, vanillaData := range []any{nil, int32(1)} {
+		ignored := protocol.BlockEntry{Name: valid.Name, Properties: map[string]any{
+			"vanilla_block_data": vanillaData,
+			"properties":         []any{map[string]any{"name": "test:empty", "enum": []any{}}},
+		}}
+		for _, entries := range [][]protocol.BlockEntry{{ignored, valid}, {valid, ignored}} {
+			definitions, err := digestNetworkBlocks(entries)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(definitions) != 1 || definitions[0].name != valid.Name || len(definitions[0].states) != 0 {
+				t.Fatalf("definitions = %+v, want the valid definition", definitions)
+			}
+		}
 	}
 }
 
