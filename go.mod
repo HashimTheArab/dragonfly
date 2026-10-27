@@ -7,7 +7,7 @@ replace github.com/sandertv/gophertunnel => github.com/HashimTheArab/gophertunne
 require (
 	github.com/brentp/intintmap v0.0.0-20251106190759-56907b1f8479
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/cinnabar-mc/protocolgen/generated/data v0.0.0-20261027182715-e1d395e0d631
+	github.com/cinnabar-mc/protocolgen/generated/data v0.0.0-20261027185019-8b115a963de5
 	github.com/df-mc/go-nethernet v1.0.25
 	github.com/df-mc/goleveldb v1.1.9
 	github.com/df-mc/worldupgrader v1.0.22
