@@ -66,11 +66,12 @@ func air() world.Block {
 	return a
 }
 
-// fire returns a fire block.
+// fire returns new fire with the palette's default connection properties.
 func fire() world.Block {
-	f, ok := world.BlockByName("minecraft:fire", map[string]any{"age": int32(0)})
+	rid, ok := world.DefaultBlockRegistry.StateToRuntimeID("minecraft:fire", map[string]any{"age": int32(0)})
 	if !ok {
 		panic("could not find fire block")
 	}
+	f, _ := world.BlockByRuntimeID(rid)
 	return f
 }
