@@ -24,6 +24,10 @@ type Fire struct {
 	// Age affects how fire extinguishes. Newly placed fire starts at 0 and the value has a 1/3 chance of incrementing
 	// each block tick.
 	Age int
+	// Connections holds the horizontal attachment state sent to the client.
+	Connections Connections
+	// Up is the attachment state for the block above normal fire.
+	Up bool
 }
 
 // flammableBlock returns true if a block is flammable.
@@ -225,6 +229,7 @@ func (f Fire) NeighbourUpdateTick(pos, changedNeighbour cube.Pos, tx *world.Tx) 
 	switch below.(type) {
 	case SoulSand, SoulSoil:
 		f.Type = SoulFire()
+		f.Connections, f.Up = Connections{}, false
 		tx.SetBlock(pos, f, nil)
 	case Water:
 		if changedNeighbour == pos {
@@ -257,7 +262,10 @@ func (f Fire) LightEmissionLevel() uint8 {
 func (f Fire) EncodeBlock() (name string, properties map[string]any) {
 	switch f.Type {
 	case NormalFire():
-		return "minecraft:fire", map[string]any{"age": int32(f.Age)}
+		properties = f.Connections.properties()
+		properties["age"] = int32(f.Age)
+		properties["minecraft:connection_up"] = f.Up
+		return "minecraft:fire", properties
 	case SoulFire():
 		return "minecraft:soul_fire", map[string]any{"age": int32(f.Age)}
 	}
@@ -287,7 +295,9 @@ func (f Fire) Start(tx *world.Tx, pos cube.Pos) {
 // allFire ...
 func allFire() (b []world.Block) {
 	for i := 0; i < 16; i++ {
-		b = append(b, Fire{Age: i, Type: NormalFire()})
+		for _, c := range allConnections() {
+			b = append(b, Fire{Age: i, Connections: c}, Fire{Age: i, Connections: c, Up: true})
+		}
 		b = append(b, Fire{Age: i, Type: SoulFire()})
 	}
 	return

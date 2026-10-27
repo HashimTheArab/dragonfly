@@ -135,7 +135,6 @@ func skinToProtocol(s skin.Skin) protocol.Skin {
 		model = []byte("{}")
 	}
 	return protocol.Skin{
-		PlayFabID:                 s.PlayFabID,
 		SkinID:                    uuid.New().String(),
 		SkinResourcePatch:         s.ModelConfig.Encode(),
 		SkinImageWidth:            uint32(s.Bounds().Max.X),

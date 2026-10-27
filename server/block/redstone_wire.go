@@ -19,6 +19,14 @@ type RedstoneWire struct {
 
 	// Power is the current power level of the redstone wire. It ranges from 0 to 15.
 	Power int
+	// NorthConnection is the visible connection on the north side.
+	NorthConnection RedstoneConnectionType
+	// EastConnection is the visible connection on the east side.
+	EastConnection RedstoneConnectionType
+	// SouthConnection is the visible connection on the south side.
+	SouthConnection RedstoneConnectionType
+	// WestConnection is the visible connection on the west side.
+	WestConnection RedstoneConnectionType
 }
 
 func (r RedstoneWire) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx, user item.User, ctx *item.UseContext) bool {
@@ -102,7 +110,13 @@ func (RedstoneWire) SideClosed(cube.Pos, cube.Pos, *world.Tx) bool {
 }
 
 func (r RedstoneWire) EncodeBlock() (string, map[string]any) {
-	return "minecraft:redstone_wire", map[string]any{"redstone_signal": int32(world.ClampRedstonePower(r.Power))}
+	return "minecraft:redstone_wire", map[string]any{
+		"redstone_signal": int32(world.ClampRedstonePower(r.Power)),
+		"redstone_north":  r.NorthConnection.String(),
+		"redstone_east":   r.EastConnection.String(),
+		"redstone_south":  r.SouthConnection.String(),
+		"redstone_west":   r.WestConnection.String(),
+	}
 }
 
 func (RedstoneWire) EncodeItem() (name string, meta int16) {
@@ -121,7 +135,15 @@ func (RedstoneWire) MaterialColour() string {
 
 func allRedstoneWires() (all []world.Block) {
 	for i := range 16 {
-		all = append(all, RedstoneWire{Power: i})
+		for _, north := range RedstoneConnectionTypes() {
+			for _, east := range RedstoneConnectionTypes() {
+				for _, south := range RedstoneConnectionTypes() {
+					for _, west := range RedstoneConnectionTypes() {
+						all = append(all, RedstoneWire{Power: i, NorthConnection: north, EastConnection: east, SouthConnection: south, WestConnection: west})
+					}
+				}
+			}
+		}
 	}
 	return
 }

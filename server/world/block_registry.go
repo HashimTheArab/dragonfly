@@ -607,6 +607,7 @@ func (br *BasicBlockRegistry) RuntimeIDToState(runtimeID uint32) (name string, p
 }
 
 // StateToRuntimeID returns the runtime ID of a block by its name and state properties.
+// Missing properties are filled from registered defaults before falling back to the entire default state.
 func (br *BasicBlockRegistry) StateToRuntimeID(name string, properties map[string]any) (runtimeID uint32, found bool) {
 	if !br.finalized {
 		panic("BlockRegistry.StateToRuntimeID called on non finalized BlockRegistry")
@@ -614,7 +615,15 @@ func (br *BasicBlockRegistry) StateToRuntimeID(name string, properties map[strin
 	if rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]; ok {
 		return rid, true
 	}
-	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(br.blockProperties[name])}]
+	defaults := br.blockProperties[name]
+	if len(properties) > 0 && len(properties) < len(defaults) {
+		extended := maps.Clone(defaults)
+		maps.Copy(extended, properties)
+		if rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(extended)}]; ok {
+			return rid, true
+		}
+	}
+	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(defaults)}]
 	return rid, ok
 }
 
