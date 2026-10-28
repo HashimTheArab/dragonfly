@@ -1,11 +1,13 @@
 package world
 
 import (
+	"bytes"
 	"math"
 	"strings"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block/customblock"
+	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
@@ -236,6 +238,19 @@ func TestNetworkBlockRegistryReconcilesSaltedInstalledBlocks(t *testing.T) {
 			properties = append(properties, map[string]any{"name": NetworkHashSaltProperty, "enum": []any{salt}})
 		}
 		entries = append(entries, protocol.BlockEntry{Name: name, Properties: map[string]any{"properties": properties}})
+	}
+	// Send the entries through network NBT, which decodes the salt's enum as []int32.
+	var buf bytes.Buffer
+	for i, entry := range entries {
+		buf.Reset()
+		if err := nbt.NewEncoderWithEncoding(&buf, nbt.NetworkLittleEndian).Encode(entry.Properties); err != nil {
+			t.Fatal(err)
+		}
+		var decoded map[string]any
+		if err := nbt.NewDecoderWithEncoding(&buf, nbt.NetworkLittleEndian).Decode(&decoded); err != nil {
+			t.Fatal(err)
+		}
+		entries[i].Properties = decoded
 	}
 	client, err := NewNetworkBlockRegistry(entries)
 	if err != nil {

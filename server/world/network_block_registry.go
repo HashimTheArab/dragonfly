@@ -67,7 +67,7 @@ func unsaltedEntries(entries []protocol.BlockEntry) ([]protocol.BlockEntry, map[
 		if j < 0 {
 			continue
 		}
-		values, _ := properties[j]["enum"].([]any)
+		values, _ := customBlockEnumValues(properties[j]["enum"])
 		if len(values) != 1 {
 			continue
 		}
