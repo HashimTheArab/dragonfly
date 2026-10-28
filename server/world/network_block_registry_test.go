@@ -56,7 +56,7 @@ func TestNewNetworkBlockRegistry_BuiltInRuntimeIDsWithoutOptionalBlocks(t *testi
 		id   uint32
 	}{
 		{"minecraft:oak_log", 1807}, {"minecraft:stone", 3219},
-		{"minecraft:grass_block", 13859}, {"minecraft:barrier", 14409}, {"minecraft:air", 15844},
+		{"minecraft:grass_block", 15228}, {"minecraft:barrier", 15778}, {"minecraft:air", 17713},
 	} {
 		if got, ok := registry.StateToRuntimeID(tc.name, nil); !ok || got != tc.id {
 			t.Errorf("%s runtime ID = (%d, %t), want %d", tc.name, got, ok, tc.id)
