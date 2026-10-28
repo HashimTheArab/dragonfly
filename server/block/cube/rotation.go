@@ -7,7 +7,7 @@ import (
 
 // Rotation describes the rotation of an object in the world in degrees. It
 // holds a yaw (r[0]) and pitch value (r[1]). Yaw is in the range (-180, 180)
-// while pitch is in the range (-90, 90). A positive pitch implies an entity is
+// while pitch is in the range [-90, 90]. A positive pitch implies an entity is
 // looking downwards, while a negative pitch implies it is looking upwards.
 type Rotation [2]float64
 
@@ -91,11 +91,13 @@ func (r Rotation) Vec3() mgl64.Vec3 {
 }
 
 // fix 'overflows' the Rotation's values to make sure they are within the range
-// as described above.
+// as described above. A pitch of exactly ±90, looking straight down or up, is
+// kept rather than overflown to the opposite vertical.
 func (r Rotation) fix() Rotation {
 	signYaw, signPitch := math.Copysign(180, r[0]), math.Copysign(90, r[1])
-	return Rotation{
-		math.Mod(r[0]+signYaw, 360) - signYaw,
-		math.Mod(r[1]+signPitch, 180) - signPitch,
+	pitch := r[1]
+	if pitch < -90 || pitch > 90 {
+		pitch = math.Mod(pitch+signPitch, 180) - signPitch
 	}
+	return Rotation{math.Mod(r[0]+signYaw, 360) - signYaw, pitch}
 }
