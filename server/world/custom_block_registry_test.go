@@ -2,13 +2,14 @@ package world
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
-func TestAddCustomBlocksRejectsExcessStates(t *testing.T) {
+// The client packs a block's states into a 16-bit data value: a state whose bits lie past it only
+// takes the values its bits below it encode, so seventeen boolean properties give 65536 states.
+func TestAddCustomBlocksCapsStateDataAt16Bits(t *testing.T) {
 	properties := make([]any, 17)
 	for i := range properties {
 		properties[i] = map[string]any{
@@ -16,12 +17,22 @@ func TestAddCustomBlocksRejectsExcessStates(t *testing.T) {
 			"enum": []any{false, true},
 		}
 	}
-	_, err := NewCustomBlockRegistry([]protocol.BlockEntry{{
+	DefaultBlockRegistry.Finalize()
+	registry := DefaultBlockRegistry.Clone()
+	base := registry.BlockCount()
+	if err := AddCustomBlocks(registry, []protocol.BlockEntry{{
 		Name:       "test:block",
-		Properties: map[string]any{"properties": properties},
-	}})
-	if err == nil || !strings.Contains(err.Error(), "exceed limit") {
-		t.Fatalf("NewCustomBlockRegistry() error = %v, want state limit error", err)
+		Properties: map[string]any{"vanilla_block_data": testVanillaBlockData(), "properties": properties},
+	}}); err != nil {
+		t.Fatalf("AddCustomBlocks() error = %v", err)
+	}
+	if got := registry.BlockCount() - base; got != 1<<16 {
+		t.Fatalf("states = %d, want %d", got, 1<<16)
+	}
+	for rid := base; rid < registry.BlockCount(); rid++ {
+		if _, state, _ := registry.RuntimeIDToState(uint32(rid)); state["test:property_16"] != false {
+			t.Fatalf("state %d sets the property past the 16-bit data value: %v", rid, state)
+		}
 	}
 }
 
@@ -34,7 +45,7 @@ func TestAddCustomBlocksPreservesVanillaRuntimeIDs(t *testing.T) {
 
 	entry := protocol.BlockEntry{
 		Name: "dragonfly:test_block",
-		Properties: map[string]any{
+		Properties: map[string]any{"vanilla_block_data": testVanillaBlockData(),
 			"properties": []any{
 				map[string]any{
 					"name": "dragonfly:variant",
@@ -69,7 +80,7 @@ func TestAddCustomBlocksAcceptsTypedEnumSlices(t *testing.T) {
 	oldCount := registry.BlockCount()
 	entry := protocol.BlockEntry{
 		Name: "dragonfly:typed_enum_block",
-		Properties: map[string]any{
+		Properties: map[string]any{"vanilla_block_data": testVanillaBlockData(),
 			"properties": []any{
 				map[string]any{
 					"name": "dragonfly:toggled",
@@ -99,7 +110,7 @@ func TestAddCustomBlocksSkipsDuplicateStates(t *testing.T) {
 	DefaultBlockRegistry.Finalize()
 	registry := DefaultBlockRegistry.Clone()
 
-	entry := protocol.BlockEntry{Name: "dragonfly:plain_block", Properties: map[string]any{}}
+	entry := protocol.BlockEntry{Name: "dragonfly:plain_block", Properties: map[string]any{"vanilla_block_data": testVanillaBlockData()}}
 	if err := AddCustomBlocks(registry, []protocol.BlockEntry{entry}); err != nil {
 		t.Fatalf("first AddCustomBlocks() error = %v", err)
 	}
@@ -115,7 +126,7 @@ func TestAddCustomBlocksSkipsDuplicateStates(t *testing.T) {
 func TestNewCustomBlockRegistryPreservesVanillaRuntimeIDs(t *testing.T) {
 	DefaultBlockRegistry.Finalize()
 
-	registry, err := NewCustomBlockRegistry([]protocol.BlockEntry{{Name: "dragonfly:plain_block"}})
+	registry, err := NewCustomBlockRegistry([]protocol.BlockEntry{{Name: "dragonfly:plain_block", Properties: map[string]any{"vanilla_block_data": testVanillaBlockData()}}})
 	if err != nil {
 		t.Fatalf("NewCustomBlockRegistry() error = %v", err)
 	}
@@ -133,7 +144,7 @@ func TestNewCustomBlockRegistryPreservesVanillaRuntimeIDs(t *testing.T) {
 func TestAddCustomBlocks_ConnectionTraitBitmask(t *testing.T) {
 	registry, err := NewCustomBlockRegistry([]protocol.BlockEntry{{
 		Name: "test:connectable",
-		Properties: map[string]any{
+		Properties: map[string]any{"vanilla_block_data": testVanillaBlockData(),
 			"traits": []any{map[string]any{
 				"name":           "minecraft:connection",
 				"enabled_states": int32(15),
@@ -153,20 +164,23 @@ func TestAddCustomBlocks_ConnectionTraitBitmask(t *testing.T) {
 	}
 }
 
-// A bitmask on any other trait is unknown wire data and must fail, keeping the
-// fall-back-to-vanilla-palette safety property.
-func TestAddCustomBlocks_UnknownBitmaskTraitErrors(t *testing.T) {
-	_, err := NewCustomBlockRegistry([]protocol.BlockEntry{{
+// The client reads placement_direction's enabled_states only as a compound, so any other form
+// adds no states rather than rejecting the palette.
+func TestAddCustomBlocks_MalformedTraitAddsNoStates(t *testing.T) {
+	registry, err := NewCustomBlockRegistry([]protocol.BlockEntry{{
 		Name: "test:oddtrait",
-		Properties: map[string]any{
+		Properties: map[string]any{"vanilla_block_data": testVanillaBlockData(),
 			"traits": []any{map[string]any{
 				"name":           "minecraft:placement_direction",
 				"enabled_states": int32(3),
 			}},
 		},
 	}})
-	if err == nil {
-		t.Fatal("expected an unknown bitmask trait to error")
+	if err != nil {
+		t.Fatalf("NewCustomBlockRegistry() error = %v", err)
+	}
+	if _, ok := registry.StateToRuntimeID("test:oddtrait", map[string]any{}); !ok {
+		t.Fatal("block with a malformed trait was not registered without states")
 	}
 }
 
@@ -191,7 +205,7 @@ func TestAddCustomBlocksTraitStateOrder(t *testing.T) {
 			base := uint32(registry.BlockCount())
 			entry := protocol.BlockEntry{
 				Name: "dragonfly:test_block",
-				Properties: map[string]any{"traits": []any{map[string]any{
+				Properties: map[string]any{"vanilla_block_data": testVanillaBlockData(), "traits": []any{map[string]any{
 					"name":           test.trait,
 					"enabled_states": map[string]any{test.state: uint8(1)},
 				}}},

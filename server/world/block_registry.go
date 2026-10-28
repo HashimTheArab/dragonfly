@@ -7,6 +7,7 @@ import (
 	"math/bits"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/brentp/intintmap"
@@ -337,19 +338,26 @@ func (br *BasicBlockRegistry) Clone() *BasicBlockRegistry {
 }
 
 func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) ([]byte, error) {
+	return br.appendBlockState(s, scratch, false)
+}
+
+// appendBlockState appends a block state. A state equal to a registered one is skipped unless
+// duplicate is true: a client gives every permutation of a block its own runtime ID, even two
+// that serialize the same, and name lookups then resolve to the first.
+func (br *BasicBlockRegistry) appendBlockState(s BlockState, scratch []byte, duplicate bool) ([]byte, error) {
 	br.mu.Lock()
 	defer br.mu.Unlock()
 
 	h := stateHash{name: s.Name, properties: hashProperties(s.Properties)}
-	if _, ok := br.stateRuntimeIDs[h]; ok {
+	_, registered := br.stateRuntimeIDs[h]
+	if registered && !duplicate {
 		return scratch, nil
 	}
 	var netHash uint32
 	if br.finalized {
 		netHash, scratch = networkBlockHash(s.Name, s.Properties, scratch)
-		if other, ok := br.networkhashToRids[netHash]; ok {
-			otherName, otherProperties := br.blocks[other].EncodeBlock()
-			return scratch, fmt.Errorf("network block hash collision for (%s %+v) and (%s %+v)", s.Name, s.Properties, otherName, otherProperties)
+		if s.Name != "minecraft:unknown" {
+			netHash = br.networkHashLocked(netHash, s.Name)
 		}
 	}
 	if _, ok := br.blockProperties[s.Name]; !ok {
@@ -358,7 +366,9 @@ func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) 
 
 	rid := uint32(len(br.blocks))
 	br.blocks = append(br.blocks, unknownBlock{BlockState: s})
-	br.stateRuntimeIDs[h] = rid
+	if !registered {
+		br.stateRuntimeIDs[h] = rid
+	}
 	if !br.finalized {
 		return scratch, nil
 	}
@@ -538,9 +548,15 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 			foundAir = true
 		}
 		if _, ok := br.stateRuntimeIDs[h]; ok {
-			panic(fmt.Sprintf("cannot register the same state twice (%s %+v)", name, properties))
+			// A palette definition may give a block two permutations that serialize the same. Each
+			// keeps its runtime ID and lookups resolve to the first; an implemented block registered
+			// twice is a bug.
+			if !IsUnknownBlock(b) {
+				panic(fmt.Sprintf("cannot register the same state twice (%s %+v)", name, properties))
+			}
+		} else {
+			br.stateRuntimeIDs[h] = rid
 		}
-		br.stateRuntimeIDs[h] = rid
 
 		info := defaultUnknownBlockInfo()
 		// Default to fully opaque. Blocks that implement lightDiffuser may override this (e.g., air -> 0, leaves -> 1-14).
@@ -573,10 +589,11 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 		}
 		var netHash uint32
 		netHash, networkHashScratch = networkBlockHash(name, properties, networkHashScratch)
-		if other, ok := br.networkhashToRids[netHash]; ok {
-			otherName, otherProperties := br.blocks[other].EncodeBlock()
-			panic(fmt.Sprintf("network block hash collision for (%s %+v) and (%s %+v)", name, properties, otherName, otherProperties))
+		if name != "minecraft:unknown" {
+			// The client gives the unknown block its reserved hash after probing, so it never moves.
+			netHash = br.networkHashLocked(netHash, name)
 		}
+		// The client's lookup resolves a hash shared by states of one block to the last of them.
 		br.networkhashToRids[netHash] = rid
 		br.ridsToNetworkhash[rid] = netHash
 	}
@@ -585,6 +602,33 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 	}
 	br.finalized = true
 }
+
+// networkHashLocked returns the network hash a client assigns a state of the block name, in
+// palette order. A free hash is taken as is. On a held one, the client first moves a hash past the
+// values it reserves to zero, then takes the hash if a state of the same block holds it, and
+// otherwise tries the next value. States of one block that serialize the same thus share a hash.
+func (br *BasicBlockRegistry) networkHashLocked(hash uint32, name string) uint32 {
+	for {
+		if _, taken := br.networkhashToRids[hash]; !taken {
+			return hash
+		}
+		if hash > maxProbedNetworkHash {
+			hash = 0
+		}
+		// When the wrapped hash is free, the client compares against storage it never set; this
+		// treats it as another block's.
+		if other, taken := br.networkhashToRids[hash]; taken {
+			if otherName, _ := br.blocks[other].EncodeBlock(); otherName == name {
+				return hash
+			}
+		}
+		hash++
+	}
+}
+
+// maxProbedNetworkHash is the largest network hash the client moves a colliding block to; values
+// above it are reserved, the unknown block's among them.
+const maxProbedNetworkHash = 0xfffffffc
 
 // AirRuntimeID returns the runtime ID of the air block.
 func (br *BasicBlockRegistry) AirRuntimeID() uint32 {
@@ -693,7 +737,7 @@ func (br *BasicBlockRegistry) BlockByName(name string, properties map[string]any
 	if !br.finalized {
 		panic("BlockRegistry.BlockByName called on non finalized BlockRegistry")
 	}
-	if !ValidBlockPropertyValues(properties) {
+	if !networkBlockPropertyValues(properties) {
 		return nil, false
 	}
 	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]
@@ -716,6 +760,45 @@ func ValidBlockPropertyValues(properties map[string]any) bool {
 }
 
 // validBlockPropertyValue reports whether value is a scalar supported by Bedrock block palettes.
+// networkBlockPropertyValues reports whether properties hold only values a StartGame palette can
+// declare: the scalars above, or any other NBT value.
+func networkBlockPropertyValues(properties map[string]any) bool {
+	for _, value := range properties {
+		if !validBlockPropertyValue(value) && !nbtValue(reflect.ValueOf(value)) {
+			return false
+		}
+	}
+	return true
+}
+
+// nbtValue reports whether v is a value NBT can encode.
+func nbtValue(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Uint8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Float32, reflect.Float64, reflect.String, reflect.Bool:
+		return true
+	case reflect.Interface:
+		return !v.IsNil() && nbtValue(v.Elem())
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			if !nbtValue(v.Index(i)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Map:
+		if v.Type().Key().Kind() != reflect.String {
+			return false
+		}
+		for it := v.MapRange(); it.Next(); {
+			if !nbtValue(it.Value()) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func validBlockPropertyValue(value any) bool {
 	switch value.(type) {
 	case bool, uint8, int32, string:
@@ -911,7 +994,27 @@ func (br *BasicBlockRegistry) Air() Block {
 }
 
 // NetworkBlockHash returns the key a client sorts its block palette by, making a block's
-// runtime ID its index in that ordering. Finalize sorts by it too, so the two agree.
+// runtime ID its index in that ordering: the FNV-1 hash of the lowercased name. Finalize sorts by
+// it too, so the two agree.
 func NetworkBlockHash(name string) uint64 {
-	return fnv1.HashString64(name)
+	// The client hashes a C string: it stops at the first NUL byte, and an empty one hashes to zero.
+	if i := strings.IndexByte(name, 0); i >= 0 {
+		name = name[:i]
+	}
+	if name == "" {
+		return 0
+	}
+	return fnv1.HashString64(asciiLower(name))
+}
+
+// asciiLower lowercases the ASCII letters of s and leaves every other byte alone, as the client
+// lowercases block and trait names.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
 }

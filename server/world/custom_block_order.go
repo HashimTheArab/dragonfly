@@ -35,7 +35,14 @@ func (br *BasicBlockRegistry) sortForNetworkLocked() {
 		if entries[i].hash != entries[j].hash {
 			return entries[i].hash < entries[j].hash
 		}
-		return entries[i].name == entries[j].name && entries[i].index < entries[j].index
+		// The client keys its palette by lowercased name, so equal hashes order by that name.
+		if a, b := asciiLower(entries[i].name), asciiLower(entries[j].name); a != b {
+			return a < b
+		}
+		if entries[i].name != entries[j].name {
+			return entries[i].name < entries[j].name
+		}
+		return entries[i].index < entries[j].index
 	})
 	for i, e := range entries {
 		br.blocks[i] = e.block

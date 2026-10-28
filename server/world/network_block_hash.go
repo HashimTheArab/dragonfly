@@ -1,10 +1,12 @@
 package world
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"sort"
 
+	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"github.com/segmentio/fasthash/fnv1a"
 )
 
@@ -26,6 +28,8 @@ func networkBlockHash(name string, properties map[string]any, scratch []byte) (u
 
 	data := scratch[:0]
 	writeString := func(str string) {
+		// The client writes at most 32767 bytes of a string, with that length.
+		str = str[:len(str)&0x7fff]
 		data = binary.LittleEndian.AppendUint16(data, uint16(len(str)))
 		data = append(data, []byte(str)...)
 	}
@@ -83,11 +87,26 @@ func networkBlockHash(name string, properties map[string]any, scratch []byte) (u
 			writeString(k)
 			data = binary.LittleEndian.AppendUint32(data, uint32(v))
 		default:
-			panic(fmt.Sprintf("unhandled nbt type: %T", v))
+			data = appendNBTEntry(data, k, v)
 		}
 	}
 	data = append(data, 0) // end
 	data = append(data, 0) // end
 
 	return fnv1a.HashBytes32(data), data
+}
+
+// appendNBTEntry appends the little-endian NBT entry of a state value of any other tag type, as a
+// client writes it into the state compound: its tag type, its name and its payload, with compounds
+// in key order.
+func appendNBTEntry(data []byte, name string, value any) []byte {
+	var buf bytes.Buffer
+	encoder := nbt.NewEncoderWithEncoding(&buf, nbt.LittleEndian)
+	encoder.SortMaps = true
+	if err := encoder.Encode(map[string]any{name: value}); err != nil {
+		panic(fmt.Sprintf("unhandled nbt type: %T", value))
+	}
+	// Drop the wrapping compound's tag type and empty name, and its end tag.
+	encoded := buf.Bytes()
+	return append(data, encoded[3:len(encoded)-1]...)
 }

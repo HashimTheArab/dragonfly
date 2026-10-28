@@ -211,7 +211,7 @@ func TestAddCustomBlocksStateOrder(t *testing.T) {
 	base := uint32(registry.BlockCount())
 	entry := protocol.BlockEntry{
 		Name: "test:ordered",
-		Properties: map[string]any{
+		Properties: map[string]any{"vanilla_block_data": testVanillaBlockData(),
 			"properties": []any{
 				map[string]any{"name": "test:a", "enum": []any{uint8(0), uint8(1)}},
 				map[string]any{"name": "test:b", "enum": []any{"x", "y", "z"}},
