@@ -2168,10 +2168,10 @@ func (p *Player) placeBlock(pos cube.Pos, b world.Block, ignoreBBox bool) bool {
 // If the only entity preventing the block from being placed is the player
 // itself, the second bool returned is true too.
 func (p *Player) obstructedPos(pos cube.Pos, b world.Block) (obstructed, selfOnly bool) {
+	model := world.NewPlacementModel(p.tx, pos, b)
 	for e := range p.tx.EntitiesWithin(cube.Box(-3, -3, -3, 3, 3, 3).Translate(pos.Vec3())) {
 		t := e.H().Type()
-		actor := world.PlacementActor{Type: t.EncodeEntity(), Bounds: t.BBox(e).Translate(e.Position())}
-		if !world.PlacementObstructed(p.tx, pos, b, actor) {
+		if !model.Obstructed(world.PlacementActor{Type: t, Bounds: t.BBox(e).Translate(e.Position())}) {
 			continue
 		}
 		obstructed = true

@@ -42,21 +42,33 @@ type PlacementPlanOptions struct {
 // PlanPlacement finds a support click that places required at target using
 // material when the player at pose turns to face it. Placement is predicted with
 // that facing, so directional states match what the server receives. Every
-// primary write must match Expected, occupy known terrain and replace its
-// current block. Actor obstruction is checked at each canonical PlaceBlock call,
-// preserving the block's item.UseContext.IgnoreBBox behaviour.
+// primary write must match Expected and occupy known terrain. Writes may merge
+// into or update existing blocks, such as completing a double slab, when the
+// block's own placement behaviour does so. Reach is checked from the eye to the
+// clicked block's centre and to each placed cell's centre, and actor obstruction
+// at each canonical PlaceBlock call, preserving the block's
+// item.UseContext.IgnoreBBox behaviour.
 func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required, material world.Block, opts PlacementPlanOptions) (PlacementPlan, bool) {
-	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
-	if src == nil || registry == nil || required == nil || material == nil || !placementFinite(eye) || opts.Reach <= 0 || math.IsInf(opts.Reach, 0) || math.IsNaN(opts.Reach) {
+	if src == nil || registry == nil || required == nil || material == nil || opts.Reach <= 0 || math.IsInf(opts.Reach, 0) || math.IsNaN(opts.Reach) {
 		return PlacementPlan{}, false
 	}
 	if target.OutOfBounds(src.Range()) {
 		return PlacementPlan{}, false
 	}
-	current, loaded := src.BlockLoaded(target)
-	if !loaded || !world.CanReplace(current, material) {
+	requiredID, ok := placementRuntimeID(registry, required)
+	if !ok {
 		return PlacementPlan{}, false
 	}
+	current, loaded := src.BlockLoaded(target)
+	if !loaded || current == nil {
+		return PlacementPlan{}, false
+	}
+	if currentID, ok := placementRuntimeID(registry, current); ok && currentID == requiredID {
+		return PlacementPlan{}, false
+	}
+	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
+	limits := placementLimits{reach: opts.Reach, actors: opts.Actors}
+	match := placementMatch{src: src, registry: registry, target: target, requiredID: requiredID, expected: opts.Expected}
 	faces := opts.Faces
 	if faces == nil {
 		faces = make([]cube.Face, 0, len(cube.Faces()))
@@ -73,7 +85,7 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose Place
 			continue
 		}
 		support, loaded := src.BlockLoaded(clicked)
-		if !loaded || !CanClickToPlace(support) {
+		if !loaded || !CanClickToPlace(support) || !placementWithinReach(eye, clicked.Vec3Centre(), opts.Reach) {
 			continue
 		}
 		for _, sample := range placementClickOffsets(face) {
@@ -83,11 +95,11 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose Place
 			}
 			aimed := pose
 			aimed.Rotation = rotation
-			changes, known := predictPlacementWithActors(src, aimed, clicked, face, offset, material, opts.Actors)
-			if !known || !placementChangesMatch(src, registry, changes, target, required, opts.Expected) {
+			changes, known := predictPlacementWithLimits(src, &aimed, clicked, face, offset, material, limits)
+			if !known || !match.changes(changes) {
 				continue
 			}
-			if opts.RequireYawInvariant && !placementYawInvariant(src, registry, aimed, clicked, face, offset, material, target, required, opts) {
+			if opts.RequireYawInvariant && !placementYawInvariant(match, aimed, clicked, face, offset, material, limits, opts.Accept) {
 				continue
 			}
 			if opts.Accept != nil && !opts.Accept(changes) {
@@ -126,14 +138,16 @@ func placementAim(src PlacementSource, eye mgl64.Vec3, reach float64, clicked cu
 	return rotation, offset, true
 }
 
-// placementFinite reports whether every coordinate of v is finite.
-func placementFinite(v mgl64.Vec3) bool {
-	for _, c := range v {
-		if math.IsNaN(c) || math.IsInf(c, 0) {
-			return false
-		}
-	}
-	return true
+// placementWithinReach applies Player.canReach's eye-distance rule to point.
+// Non-finite coordinates are never within reach.
+func placementWithinReach(eye, point mgl64.Vec3, reach float64) bool {
+	return eye.Sub(point).Len() <= reach
+}
+
+// placementRuntimeID returns the runtime ID of b's encoded state.
+func placementRuntimeID(registry world.BlockRegistry, b world.Block) (uint32, bool) {
+	name, properties := b.EncodeBlock()
+	return registry.StateToRuntimeID(name, properties)
 }
 
 // placementClickOffsets returns aim targets at the face centre and both vertical
@@ -171,16 +185,24 @@ func placementVisible(src PlacementSource, eye, hit mgl64.Vec3, clicked cube.Pos
 	return trace.BlockVisibility(view, src.Range(), eye, hit, clicked) == trace.VisibilityClear && view.known
 }
 
-// placementChangesMatch validates all layers and matches every primary write
-// against the requested target and the caller's expected state.
-func placementChangesMatch(src PlacementSource, registry world.BlockRegistry, changes []PredictedBlockChange, target cube.Pos, required world.Block, expected func(cube.Pos) (world.Block, bool)) bool {
+// placementMatch validates predicted writes against one PlanPlacement request.
+type placementMatch struct {
+	src        PlacementSource
+	registry   world.BlockRegistry
+	target     cube.Pos
+	requiredID uint32
+	expected   func(cube.Pos) (world.Block, bool)
+}
+
+// changes validates all layers and matches every primary write against the
+// requested target and the caller's expected state.
+func (m placementMatch) changes(changes []PredictedBlockChange) bool {
 	matched := false
 	for _, change := range changes {
-		if change.Pos.OutOfBounds(src.Range()) || change.Block == nil {
+		if change.Pos.OutOfBounds(m.src.Range()) || change.Block == nil {
 			return false
 		}
-		current, loaded := src.BlockLoaded(change.Pos)
-		if !loaded {
+		if _, loaded := m.src.BlockLoaded(change.Pos); !loaded {
 			return false
 		}
 		if _, valid := NormaliseLayerBlock(change.Block, change.Layer); !valid {
@@ -189,44 +211,42 @@ func placementChangesMatch(src PlacementSource, registry world.BlockRegistry, ch
 		if change.Layer != 0 {
 			continue
 		}
-		wanted := required
-		if expected != nil {
-			var found bool
-			wanted, found = expected(change.Pos)
-			if !found || wanted == nil {
-				return false
-			}
-		} else if change.Pos != target {
+		actualID, actualKnown := placementRuntimeID(m.registry, change.Block)
+		if !actualKnown {
 			return false
 		}
-		name, properties := wanted.EncodeBlock()
-		wantedID, wantedKnown := registry.StateToRuntimeID(name, properties)
-		name, properties = change.Block.EncodeBlock()
-		actualID, actualKnown := registry.StateToRuntimeID(name, properties)
-		if !wantedKnown || !actualKnown || wantedID != actualID || !world.CanReplace(current, change.Block) {
-			return false
-		}
-		if change.Pos == target {
+		if change.Pos == m.target {
 			// Expected may cover neighbouring cells, but it cannot relax the
 			// requested target state.
-			name, properties = required.EncodeBlock()
-			requiredID, requiredKnown := registry.StateToRuntimeID(name, properties)
-			if !requiredKnown || requiredID != actualID {
+			if actualID != m.requiredID {
 				return false
 			}
 			matched = true
+		}
+		if m.expected == nil {
+			if change.Pos != m.target {
+				return false
+			}
+			continue
+		}
+		wanted, found := m.expected(change.Pos)
+		if !found || wanted == nil {
+			return false
+		}
+		if wantedID, ok := placementRuntimeID(m.registry, wanted); !ok || wantedID != actualID {
+			return false
 		}
 	}
 	return matched
 }
 
 // placementYawInvariant validates the requested writes at every quarter-turn.
-func placementYawInvariant(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, clicked cube.Pos, face cube.Face, offset mgl64.Vec3, material world.Block, target cube.Pos, required world.Block, opts PlacementPlanOptions) bool {
+func placementYawInvariant(match placementMatch, pose PlacementPose, clicked cube.Pos, face cube.Face, offset mgl64.Vec3, material world.Block, limits placementLimits, accept func([]PredictedBlockChange) bool) bool {
 	for quarterTurn := 1; quarterTurn < 4; quarterTurn++ {
 		turned := pose
 		turned.Rotation[0] += float64(quarterTurn * 90)
-		changes, known := predictPlacementWithActors(src, turned, clicked, face, offset, material, opts.Actors)
-		if !known || !placementChangesMatch(src, registry, changes, target, required, opts.Expected) || opts.Accept != nil && !opts.Accept(changes) {
+		changes, known := predictPlacementWithLimits(match.src, &turned, clicked, face, offset, material, limits)
+		if !known || !match.changes(changes) || accept != nil && !accept(changes) {
 			return false
 		}
 	}

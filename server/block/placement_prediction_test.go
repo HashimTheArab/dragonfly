@@ -136,7 +136,7 @@ func TestBlock_PredictedBlockAt(t *testing.T) {
 
 func TestBlock_PredictPlacementCanonicalBehaviour(t *testing.T) {
 	clicked := cube.Pos{4, 64, 7}
-	user := PlacementPose{Position: clicked.Vec3Centre(), Rotation: cube.Rotation{90, 0}}
+	user := &PlacementPose{Position: clicked.Vec3Centre(), Rotation: cube.Rotation{90, 0}}
 
 	t.Run("slab merge", func(t *testing.T) {
 		slab := Slab{Block: Stone{}}
@@ -462,7 +462,7 @@ func TestBlock_PredictPlacementUnsupportedUserAccessReturnsUnknown(t *testing.T)
 
 	clicked := cube.Pos{4, 64, 7}
 	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Stone{}})
-	changes, known := PredictPlacement(src, PlacementPose{}, clicked, cube.FaceUp, mgl64.Vec3{}, placementUnsupportedUserBlock{})
+	changes, known := PredictPlacement(src, nil, clicked, cube.FaceUp, mgl64.Vec3{}, placementUnsupportedUserBlock{})
 	if known {
 		t.Fatalf("prediction using unsupported user state was marked known: changes=%v", changes)
 	}
@@ -534,11 +534,24 @@ func (s *placementTestSource) Liquid(pos cube.Pos) (world.Liquid, bool) {
 	return liquid, ok
 }
 
-func predictPlacement(t *testing.T, src PlacementSource, user PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) []PredictedBlockChange {
+func predictPlacement(t *testing.T, src PlacementSource, user *PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) []PredictedBlockChange {
 	t.Helper()
 	changes, known := PredictPlacement(src, user, clickedPos, face, clickPos, placed)
 	if !known {
 		t.Fatal("prediction unexpectedly depended on unknown world state")
 	}
 	return changes
+}
+
+func TestBlock_PredictPlacementWithoutPose(t *testing.T) {
+	t.Parallel()
+
+	clicked := cube.Pos{4, 64, 7}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{clicked: Stone{}})
+	if _, known := PredictPlacement(src, nil, clicked, cube.FaceUp, mgl64.Vec3{}, Stone{}); !known {
+		t.Fatal("pose-independent placement was unknown without a pose")
+	}
+	if changes, known := PredictPlacement(src, nil, clicked, cube.FaceUp, mgl64.Vec3{}, Stairs{Block: Stone{}}); known {
+		t.Fatalf("rotation-dependent placement was known without a pose: changes=%v", changes)
+	}
 }

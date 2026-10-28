@@ -29,7 +29,7 @@ func TestPredictPlacementSubstrateAndAttachment(t *testing.T) {
 			for pos, b := range tt.extra {
 				src.blocks[pos] = b
 			}
-			changes := predictPlacement(t, src, PlacementPose{}, origin, tt.face, mgl64.Vec3{}, tt.placed)
+			changes := predictPlacement(t, src, nil, origin, tt.face, mgl64.Vec3{}, tt.placed)
 			if got := len(changes) > 0; got != tt.want {
 				t.Fatalf("placement=%v, want %v; changes=%#v", got, tt.want, changes)
 			}
@@ -44,7 +44,7 @@ func TestPredictPlacementSubstrateAndAttachment(t *testing.T) {
 
 func TestPredictDoorPlacementAndHinge(t *testing.T) {
 	pos := cube.Pos{0, 64, 0}
-	user := PlacementPose{Rotation: cube.Rotation{0, 0}}
+	user := &PlacementPose{Rotation: cube.Rotation{0, 0}}
 	facing := user.Rotation.Direction()
 	for _, door := range []world.Block{WoodDoor{Wood: SpruceWood()}, CopperDoor{Waxed: true}, IronDoor{}} {
 		for _, tt := range []struct {
@@ -96,7 +96,7 @@ func TestPredictDoorPlacementAndHinge(t *testing.T) {
 func TestPredictPlacementPreservesEyeHeight(t *testing.T) {
 	pos := cube.Pos{0, 64, 0}
 	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{pos.Side(cube.FaceDown): Stone{}})
-	user := PlacementPose{Position: mgl64.Vec3{0.5, 65, 0.5}, EyeHeight: 1.62}
+	user := &PlacementPose{Position: mgl64.Vec3{0.5, 65, 0.5}, EyeHeight: 1.62}
 	changes := predictPlacement(t, src, user, pos.Side(cube.FaceDown), cube.FaceUp, mgl64.Vec3{}, Barrel{})
 	if len(changes) != 1 {
 		t.Fatalf("changes=%v", changes)

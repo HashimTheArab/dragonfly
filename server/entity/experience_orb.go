@@ -51,6 +51,10 @@ func (t experienceOrbType) Open(tx *world.Tx, handle *world.EntityHandle, data *
 }
 
 func (experienceOrbType) EncodeEntity() string { return "minecraft:xp_orb" }
+
+// PassableByPlacement reports that blocks may be placed inside this entity.
+func (experienceOrbType) PassableByPlacement() bool { return true }
+
 func (experienceOrbType) BBox(world.Entity) cube.BBox {
 	return cube.Box(-0.125, 0, -0.125, 0.125, 0.25, 0.125)
 }

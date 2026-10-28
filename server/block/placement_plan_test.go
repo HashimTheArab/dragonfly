@@ -120,21 +120,19 @@ func TestBlock_PlanPlacementActorRules(t *testing.T) {
 	target := cube.Pos{0, 64, 0}
 	user := PlacementPose{Position: mgl64.Vec3{0.5, 64, 2.5}, EyeHeight: 1.62}
 	for _, test := range []struct {
-		typeName string
-		placed   bool
+		name   string
+		typ    world.EntityType
+		placed bool
 	}{
-		{typeName: "minecraft:player"},
-		{typeName: "minecraft:zombie"},
-		{typeName: "custom:actor"},
-		{typeName: "minecraft:item", placed: true},
-		{typeName: "minecraft:arrow", placed: true},
-		{typeName: "minecraft:xp_orb", placed: true},
+		{name: "solid", typ: placementTestEntityType{name: "minecraft:player"}},
+		{name: "unregistered"},
+		{name: "passable", typ: placementTestPassableType{placementTestEntityType{name: "minecraft:item"}}, placed: true},
 	} {
-		t.Run(test.typeName, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
 			opts := PlacementPlanOptions{
 				Reach:  5,
-				Actors: []world.PlacementActor{{Type: test.typeName, Bounds: cube.Box(0.1, 64, 0.1, 0.9, 65.8, 0.9)}},
+				Actors: []world.PlacementActor{{Type: test.typ, Bounds: cube.Box(0.1, 64, 0.1, 0.9, 65.8, 0.9)}},
 			}
 			if _, placed := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts); placed != test.placed {
 				t.Fatalf("placed = %v, want %v", placed, test.placed)
@@ -157,7 +155,7 @@ func TestBlock_PlanPlacementPreservesIgnoreBBox(t *testing.T) {
 	})
 	opts := PlacementPlanOptions{
 		Reach: 5, Faces: []cube.Face{cube.FaceUp},
-		Actors: []world.PlacementActor{{Type: "minecraft:player", Bounds: cube.Box(0.1, 64, 0.1, 0.9, 65.8, 0.9)}},
+		Actors: []world.PlacementActor{{Type: placementTestEntityType{name: "minecraft:player"}, Bounds: cube.Box(0.1, 64, 0.1, 0.9, 65.8, 0.9)}},
 		Expected: func(pos cube.Pos) (world.Block, bool) {
 			switch pos {
 			case target:
@@ -191,7 +189,7 @@ func TestBlock_PlanPlacementRejectsPartialMultiBlock(t *testing.T) {
 		}},
 		{name: "unloaded upper", edit: func(src *placementTestSource, _ *PlacementPlanOptions) { src.unknown[upper] = true }},
 		{name: "actor blocks only upper", edit: func(_ *placementTestSource, opts *PlacementPlanOptions) {
-			opts.Actors = []world.PlacementActor{{Type: "minecraft:player", Bounds: cube.Box(0.1, 65.1, 0.1, 0.9, 66.8, 0.9)}}
+			opts.Actors = []world.PlacementActor{{Type: placementTestEntityType{name: "minecraft:player"}, Bounds: cube.Box(0.1, 65.1, 0.1, 0.9, 66.8, 0.9)}}
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -281,5 +279,72 @@ func TestBlock_PlanPlacementRotationAimsAtClick(t *testing.T) {
 	src.blocks[cube.Pos{1, 65, 0}] = Stone{}
 	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceEast}}); ok {
 		t.Fatal("aim crossed obstructed terrain")
+	}
+}
+
+func TestBlock_PlanPlacementReachUsesCellCentres(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	upper := target.Side(cube.FaceUp)
+	for _, test := range []struct {
+		name   string
+		eye    mgl64.Vec3
+		placed placementTestTwoBlocks
+		reach  float64
+		want   bool
+	}{
+		// The hit point (~4.001) and target centre (~3.501) are in reach, but
+		// the clicked block's centre (~4.501) is not.
+		{name: "clicked centre out of reach", eye: mgl64.Vec3{0.6, 68, 0.5}, reach: 4.2},
+		{name: "clicked centre in reach", eye: mgl64.Vec3{0.6, 68, 0.5}, reach: 4.6, want: true},
+		// The hit point (~4.005) and clicked centre (~4.061) are in reach, but
+		// the second placed cell's centre (~4.206) is not.
+		{name: "later cell out of reach", eye: mgl64.Vec3{4.5, 64.2, 0.5}, reach: 4.1},
+		{name: "later cell in reach", eye: mgl64.Vec3{4.5, 64.2, 0.5}, reach: 4.3, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
+			opts := PlacementPlanOptions{
+				Reach: test.reach, Faces: []cube.Face{cube.FaceUp},
+				Expected: func(pos cube.Pos) (world.Block, bool) { return Stone{}, pos == target || pos == upper },
+			}
+			plan, placed := PlanPlacement(src, world.DefaultBlockRegistry, PlacementPose{Position: test.eye}, target, Stone{}, test.placed, opts)
+			if placed != test.want {
+				t.Fatalf("placed = %v, want %v; changes=%#v", placed, test.want, plan.Changes)
+			}
+		})
+	}
+}
+
+func TestBlock_PlanPlacementMergesExistingBlocks(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	user := PlacementPose{Position: mgl64.Vec3{0.5, 64, 2.5}, EyeHeight: 1.62}
+	half, double := Slab{Block: Stone{}}, Slab{Block: Stone{}, Double: true}
+	for _, test := range []struct {
+		name     string
+		current  world.Block
+		required world.Block
+		want     bool
+	}{
+		{name: "completes double slab", current: half, required: double, want: true},
+		{name: "already satisfied", current: double, required: double},
+		{name: "different slab type", current: Slab{Block: Cobblestone{}}, required: double},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// A bottom half slab covers its support's top face, so the merge
+			// clicks the side of a neighbour.
+			src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{
+				target.Side(cube.FaceWest): Stone{},
+				target:                     test.current,
+			})
+			plan, placed := PlanPlacement(src, world.DefaultBlockRegistry, user, target, test.required, half, PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceEast}})
+			if placed != test.want {
+				t.Fatalf("placed = %v, want %v; changes=%#v", placed, test.want, plan.Changes)
+			}
+			if placed {
+				assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: double})
+			}
+		})
 	}
 }

@@ -17,6 +17,7 @@ type PlacementSource interface {
 }
 
 // PlacementPose is the player state read by orientation-dependent placement rules.
+// PredictPlacement accepts a nil pose when the user is unknown.
 type PlacementPose struct {
 	Position  mgl64.Vec3
 	Rotation  cube.Rotation
@@ -58,15 +59,26 @@ func PredictedBlockAt(changes []PredictedBlockChange, pos cube.Pos, layer uint8)
 // click. Most full blocks, such as Cobblestone and Dirt, take the second
 // branch.
 //
+// pose may be nil only when the placed block does not consult player position,
+// rotation or eye height; a placement rule that does makes the result unknown.
 // Non-block side effects such as sounds, particles and scheduled updates are
 // intentionally discarded.
-func PredictPlacement(src PlacementSource, pose PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) (changes []PredictedBlockChange, known bool) {
-	return predictPlacementWithActors(src, pose, clickedPos, face, clickPos, placed, nil)
+func PredictPlacement(src PlacementSource, pose *PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) (changes []PredictedBlockChange, known bool) {
+	return predictPlacementWithLimits(src, pose, clickedPos, face, clickPos, placed, placementLimits{})
 }
 
-// predictPlacementWithActors optionally applies canonical actor obstruction when planning
-// an executable placement, while ordinary prediction remains actor-independent.
-func predictPlacementWithActors(src PlacementSource, pose PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block, actors []world.PlacementActor) (changes []PredictedBlockChange, known bool) {
+// placementLimits are the canonical Player.PlaceBlock admission checks applied
+// when planning an executable placement. Ordinary prediction leaves them unset.
+type placementLimits struct {
+	// reach is the largest eye distance to each placed cell's centre. Zero
+	// disables the check.
+	reach  float64
+	actors []world.PlacementActor
+}
+
+// predictPlacementWithLimits predicts placement and refuses the whole placement
+// when any canonical PlaceBlock call fails limits.
+func predictPlacementWithLimits(src PlacementSource, pose *PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block, limits placementLimits) (changes []PredictedBlockChange, known bool) {
 	if src == nil || placed == nil {
 		return nil, false
 	}
@@ -74,7 +86,7 @@ func predictPlacementWithActors(src PlacementSource, pose PlacementPose, clicked
 	view := &placementView{
 		src:    src,
 		known:  true,
-		actors: actors,
+		limits: limits,
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -96,20 +108,20 @@ func predictPlacementWithActors(src PlacementSource, pose PlacementPose, clicked
 		}
 		place(tx, pos, placed, u, ctx)
 	})
-	if view.obstructed {
+	if view.refused {
 		// A plan must not publish only part of a multi-block placement when a
-		// later canonical PlaceBlock call encounters an actor.
+		// later canonical PlaceBlock call is refused.
 		return nil, complete && view.known
 	}
 	return view.changes, complete && view.known
 }
 
 type placementView struct {
-	src        PlacementSource
-	changes    []PredictedBlockChange
-	known      bool
-	actors     []world.PlacementActor
-	obstructed bool
+	src     PlacementSource
+	changes []PredictedBlockChange
+	known   bool
+	limits  placementLimits
+	refused bool
 }
 
 func (v *placementView) Range() cube.Range          { return v.src.Range() }
@@ -259,7 +271,7 @@ func (v *placementView) setSecondaryLiquid(pos cube.Pos, liquid world.Liquid) {
 }
 
 type placementUser struct {
-	pose PlacementPose
+	pose *PlacementPose
 	tx   *world.Tx
 	view *placementView
 }
@@ -276,11 +288,30 @@ func (u *placementUser) Close() error {
 	return nil
 }
 
-func (u *placementUser) Position() mgl64.Vec3    { return u.pose.Position }
-func (u *placementUser) Rotation() cube.Rotation { return u.pose.Rotation }
+func (u *placementUser) Position() mgl64.Vec3 {
+	if u.pose == nil {
+		u.view.known = false
+		return mgl64.Vec3{}
+	}
+	return u.pose.Position
+}
+
+func (u *placementUser) Rotation() cube.Rotation {
+	if u.pose == nil {
+		u.view.known = false
+		return cube.Rotation{}
+	}
+	return u.pose.Rotation
+}
 
 // EyeHeight supplies the eye offset used by vertical placement rules.
-func (u *placementUser) EyeHeight() float64 { return u.pose.EyeHeight }
+func (u *placementUser) EyeHeight() float64 {
+	if u.pose == nil {
+		u.view.known = false
+		return 0
+	}
+	return u.pose.EyeHeight
+}
 
 func (u *placementUser) HeldItems() (item.Stack, item.Stack) {
 	u.unsupported()
@@ -296,10 +327,16 @@ func (u *placementUser) ReleaseItem() { u.unsupported() }
 func (u *placementUser) UseItem()     { u.unsupported() }
 
 func (u *placementUser) PlaceBlock(pos cube.Pos, b world.Block, ctx *item.UseContext) {
-	if ctx == nil || !ctx.IgnoreBBox {
-		for _, actor := range u.view.actors {
-			if world.PlacementObstructed(u.tx, pos, b, actor) {
-				u.view.obstructed = true
+	limits := u.view.limits
+	if limits.reach > 0 && !placementWithinReach(u.Position().Add(mgl64.Vec3{0, u.EyeHeight()}), pos.Vec3Centre(), limits.reach) {
+		u.view.refused = true
+		return
+	}
+	if len(limits.actors) > 0 && (ctx == nil || !ctx.IgnoreBBox) {
+		model := world.NewPlacementModel(u.tx, pos, b)
+		for _, actor := range limits.actors {
+			if model.Obstructed(actor) {
+				u.view.refused = true
 				return
 			}
 		}
