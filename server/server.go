@@ -553,13 +553,15 @@ func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Con
 	srv.pwg.Add(1)
 
 	s := session.Config{
-		Log:            srv.conf.Log,
-		MaxChunkRadius: srv.conf.MaxChunkRadius,
-		EmoteChatMuted: srv.conf.MuteEmoteChat,
-		JoinMessage:    srv.conf.JoinMessage,
-		QuitMessage:    srv.conf.QuitMessage,
-		HandleStop:     srv.handleSessionClose,
-		BlockRegistry:  w.BlockRegistry(),
+		Log:                  srv.conf.Log,
+		MaxChunkRadius:       srv.conf.MaxChunkRadius,
+		ChunkLoadsPerTick:    srv.conf.ChunkLoadsPerTick,
+		MaxChunkTransactions: srv.conf.MaxChunkTransactions,
+		EmoteChatMuted:       srv.conf.MuteEmoteChat,
+		JoinMessage:          srv.conf.JoinMessage,
+		QuitMessage:          srv.conf.QuitMessage,
+		HandleStop:           srv.handleSessionClose,
+		BlockRegistry:        w.BlockRegistry(),
 	}.New(conn)
 
 	conf.Name = conn.IdentityData().DisplayName
@@ -620,7 +622,6 @@ func (srv *Server) parseSkin(data login.ClientData) skin.Skin {
 	playerSkin.Pix, _ = base64.StdEncoding.DecodeString(data.SkinData)
 	playerSkin.Model, _ = base64.StdEncoding.DecodeString(data.SkinGeometry)
 	playerSkin.ModelConfig, _ = skin.DecodeModelConfig(skinResourcePatch)
-	playerSkin.PlayFabID = data.PlayFabID
 	playerSkin.FullID = data.SkinID
 
 	playerSkin.Cape = skin.NewCape(data.CapeImageWidth, data.CapeImageHeight)

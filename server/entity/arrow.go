@@ -63,6 +63,10 @@ func (t arrowType) Open(tx *world.Tx, handle *world.EntityHandle, data *world.En
 }
 
 func (arrowType) EncodeEntity() string { return "minecraft:arrow" }
+
+// PassableByPlacement reports that blocks may be placed inside this entity.
+func (arrowType) PassableByPlacement() bool { return true }
+
 func (arrowType) BBox(world.Entity) cube.BBox {
 	return cube.Box(-0.125, 0, -0.125, 0.125, 0.25, 0.125)
 }

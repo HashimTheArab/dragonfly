@@ -229,12 +229,15 @@ type replaceableBlock interface {
 	ReplaceableBy(b Block) bool
 }
 
+// CanReplace reports whether current may be replaced by material during placement.
+func CanReplace(current, material Block) bool {
+	replaceable, ok := current.(replaceableBlock)
+	return ok && material != nil && replaceable.ReplaceableBy(material)
+}
+
 // replaceable checks if the block at the position passed is replaceable with the block passed.
 func replaceable(w *World, c *Column, pos cube.Pos, with Block) bool {
-	if r, ok := w.blockInChunk(c, pos).(replaceableBlock); ok {
-		return r.ReplaceableBy(with)
-	}
-	return false
+	return CanReplace(w.blockInChunk(c, pos), with)
 }
 
 // BlockAction represents an action that may be performed by a block. Typically, these actions are sent to
