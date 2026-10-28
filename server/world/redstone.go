@@ -537,7 +537,7 @@ func (e *redstoneEngine) updateGraphSources(tx *Tx, graph redstoneGraph, dirty m
 		if !ok {
 			continue
 		}
-		if _, ok := b.(RedstonePowerRelayer); ok {
+		if _, ok := redstoneRelayer(b); ok {
 			continue
 		}
 		if checked == nil {
@@ -625,7 +625,7 @@ func (e *redstoneEngine) strongPowerFrom(pos cube.Pos, tx *Tx, face cube.Face) i
 	if !ok {
 		return 0
 	}
-	if source, ok := b.(RedstoneStrongPowerSource); ok {
+	if source, ok := b.(RedstoneStrongPowerSource); ok && RedstoneComponent(b) {
 		if power, ok := e.suppressedSources[neighbour]; ok {
 			return ClampRedstonePower(power)
 		}
@@ -745,7 +745,7 @@ func (e *redstoneEngine) acceptsWeakConductedPower(pos cube.Pos, tx *Tx) bool {
 	if !ok {
 		return true
 	}
-	_, relayer := b.(RedstonePowerRelayer)
+	_, relayer := redstoneRelayer(b)
 	return !relayer
 }
 
@@ -887,7 +887,7 @@ func (e *redstoneEngine) powerFrom(pos cube.Pos, tx *Tx, face cube.Face) int {
 		if !ok {
 			continue
 		}
-		relayer, isRelayer := b.(RedstonePowerRelayer)
+		relayer, isRelayer := redstoneRelayer(b)
 		// See graphPower: relayers carry recomputed power through edges, so their
 		// stored RedstonePower should not count as an independent source here.
 		if source, ok := b.(RedstonePowerSource); ok && !isRelayer && RedstoneComponent(b) && e.acceptsDirectSourcePower(pos, tx) {
@@ -906,7 +906,7 @@ func (e *redstoneEngine) powerFrom(pos cube.Pos, tx *Tx, face cube.Face) int {
 				continue
 			}
 			loss := s.loss
-			if _, nextRelayer := nextBlock.(RedstonePowerRelayer); nextRelayer {
+			if _, nextRelayer := redstoneRelayer(nextBlock); nextRelayer {
 				loss += max(relayer.RedstoneSignalLoss(s.pos, tx), 1)
 			}
 			if loss <= 15 {
@@ -1066,7 +1066,7 @@ func (e *redstoneEngine) compileEdges(tx *Tx, nodes []redstoneNode) []redstoneEd
 		if !loaded {
 			continue
 		}
-		relayer, ok := b.(RedstonePowerRelayer)
+		relayer, ok := redstoneRelayer(b)
 		if !ok {
 			continue
 		}
@@ -1077,7 +1077,7 @@ func (e *redstoneEngine) compileEdges(tx *Tx, nodes []redstoneNode) []redstoneEd
 			}
 			weight := 0
 			if neighbourBlock, ok := tx.World().blockLoaded(neighbour); ok {
-				if _, neighbourRelayer := neighbourBlock.(RedstonePowerRelayer); neighbourRelayer {
+				if _, neighbourRelayer := redstoneRelayer(neighbourBlock); neighbourRelayer {
 					weight = max(relayer.RedstoneSignalLoss(node.pos, tx), 1)
 				}
 			}
@@ -1119,7 +1119,7 @@ func (e *redstoneEngine) redstoneRelayerConnectedPositions(tx *Tx, pos cube.Pos,
 		if !ok {
 			continue
 		}
-		if _, ok := candidateBlock.(RedstonePowerRelayer); !ok {
+		if _, ok := redstoneRelayer(candidateBlock); !ok {
 			continue
 		}
 		if slices.Contains(e.redstoneRelayerNeighbourPositions(tx, candidate, candidateBlock), pos) {
@@ -1177,6 +1177,12 @@ func redstoneStepFace(from, to cube.Pos) cube.Face {
 	default:
 		return cube.FaceUp
 	}
+}
+
+// redstoneRelayer returns b as a RedstonePowerRelayer if it implements one and takes part in redstone.
+func redstoneRelayer(b Block) (RedstonePowerRelayer, bool) {
+	relayer, ok := b.(RedstonePowerRelayer)
+	return relayer, ok && RedstoneComponent(b)
 }
 
 // classifyRedstoneBlock reports the redstone capabilities implemented by b.
