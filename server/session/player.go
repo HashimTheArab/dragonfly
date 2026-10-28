@@ -276,11 +276,16 @@ func (s *Session) sendItem(item item.Stack, slot int, windowID uint32) {
 }
 
 const (
-	craftingGridSizeSmall   = 4
-	craftingGridSizeLarge   = 9
-	craftingGridSmallOffset = 28
-	craftingGridLargeOffset = 32
-	craftingResult          = 50
+	// CraftingGridSizeSmall is the number of cells in the inventory crafting grid.
+	CraftingGridSizeSmall = 4
+	// CraftingGridSizeLarge is the number of cells in a crafting table grid.
+	CraftingGridSizeLarge = 9
+	// CraftingGridSmallOffset is the first inventory crafting cell in the UI inventory.
+	CraftingGridSmallOffset = 28
+	// CraftingGridLargeOffset is the first crafting table cell in the UI inventory.
+	CraftingGridLargeOffset = 32
+	// CraftingResult is the created output slot in the UI inventory.
+	CraftingResult = 50
 )
 
 // smelter is an interface representing a block used to smelt items.
