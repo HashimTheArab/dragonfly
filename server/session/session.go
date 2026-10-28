@@ -158,11 +158,12 @@ const selfEntityRuntimeID = 1
 var errSelfRuntimeID = errors.New("invalid entity runtime ID: runtime ID for self must always be 1")
 
 type Config struct {
-	// InitialDimension and InitialPosition describe the placement already sent in
-	// StartGame. When InitialDimension is set, Spawn corrects a changed placement
-	// using the session's ordinary dimension and teleport handling.
+	// InitialDimension, InitialPosition and InitialRotation describe the placement
+	// already sent in StartGame. When InitialDimension is set, Spawn corrects a
+	// changed placement using the session's ordinary dimension and teleport handling.
 	InitialDimension world.Dimension
 	InitialPosition  mgl64.Vec3
+	InitialRotation  cube.Rotation
 	Log              *slog.Logger
 
 	MaxChunkRadius int
@@ -281,7 +282,7 @@ func (s *Session) Spawn(c Controllable, tx *world.Tx) {
 			dim, _ := world.DimensionID(tx.World().Dimension())
 			s.changeDimension(int32(dim), false, c)
 		}
-		if changed || s.conf.InitialPosition != c.Position() {
+		if changed || s.conf.InitialPosition != c.Position() || s.conf.InitialRotation != c.Rotation() {
 			s.ViewEntityTeleport(c, c.Position())
 		}
 	}
