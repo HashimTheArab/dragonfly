@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/df-mc/dragonfly/server/player/chat"
+
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/world"
 )
@@ -20,10 +22,17 @@ func (srv *Server) admitPlayer(inc incoming, yield func(*player.Player) bool) (b
 			s, online := srv.createPlayer(inc, conf, w)
 			srv.pmu.Lock()
 			srv.p[online.handle.UUID()] = online
-			delete(srv.reserved, inc.id)
+			if srv.reserved[inc.id] == inc.reserved {
+				delete(srv.reserved, inc.id)
+			}
 			srv.pmu.Unlock()
 			p := tx.AddEntity(online.handle).(*player.Player)
 			s.Spawn(p, tx)
+			if srv.closing.Load() {
+				// Shutdown's disconnect pass may already have run without this player.
+				p.Disconnect(chat.MessageServerDisconnect.Resolve(p.Locale()))
+				return false, nil
+			}
 			return !yield(p), nil
 		})
 		if !errors.Is(err, world.ErrWorldClosed) || inc.admission == nil {

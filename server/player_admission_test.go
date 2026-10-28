@@ -201,19 +201,27 @@ func TestClosedLoginDestinationReleasesAdmission(t *testing.T) {
 }
 
 // A login is refused while another with the same UUID waits for admission, and admitted again once it is released.
+// Releasing an old reservation leaves a newer one for the same UUID in place.
 func TestLoginReservationRefusesDuplicateWhileAdmissionWaits(t *testing.T) {
 	srv := &Server{p: make(map[uuid.UUID]*onlinePlayer)}
 	id := uuid.New()
-	if !srv.reserveLogin(id) {
+	first, ok := srv.reserveLogin(id)
+	if !ok {
 		t.Fatal("first login was refused")
 	}
-	if srv.reserveLogin(id) {
+	if _, ok := srv.reserveLogin(id); ok {
 		t.Fatal("second login with the same UUID was reserved while the first waits")
 	}
-	srv.releaseLogin(id)
-	if !srv.reserveLogin(id) {
+	srv.releaseLogin(id, first)
+	second, ok := srv.reserveLogin(id)
+	if !ok {
 		t.Fatal("login was refused after the failed admission released its UUID")
 	}
+	srv.releaseLogin(id, first)
+	if _, ok := srv.reserveLogin(id); ok {
+		t.Fatal("releasing the old reservation dropped the newer one")
+	}
+	srv.releaseLogin(id, second)
 }
 
 // A second login with the same UUID is refused while the first is handed off but not yet admitted.
@@ -285,5 +293,32 @@ func TestAcceptReleasesAdmissionWhenCallbackPanics(t *testing.T) {
 	}()
 	if a.releases != 1 {
 		t.Fatalf("admission released %d times, want 1", a.releases)
+	}
+}
+
+// A login admitted after shutdown's disconnect pass is disconnected instead of joining.
+func TestLoginAdmittedDuringShutdownIsDisconnected(t *testing.T) {
+	srv, _, c := admissionServer(t)
+	srv.finaliseConn(t.Context(), c, admissionListener{})
+	srv.closing.Store(true)
+	joined := false
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for p := range srv.Accept() {
+			joined = true
+			_ = p.Close()
+			break
+		}
+	}()
+	select {
+	case <-c.closed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the login admitted during shutdown was not disconnected")
+	}
+	close(srv.incoming)
+	<-done
+	if joined {
+		t.Fatal("a login admitted during shutdown joined")
 	}
 }
