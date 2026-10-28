@@ -138,12 +138,8 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 			if !ok {
 				return
 			}
-			ret, err := srv.admitPlayer(inc, yield)
-			if inc.admission != nil {
-				inc.admission.Release()
-			}
+			ret, err := srv.acceptPlayer(inc, yield)
 			if err != nil {
-				srv.releaseLogin(inc.id)
 				srv.pwg.Done()
 				_ = inc.conn.WritePacket(&packet.Disconnect{Message: "join failed"})
 				_ = inc.conn.Close()
@@ -537,6 +533,23 @@ func (srv *Server) dimension(dimension world.Dimension) *world.World {
 	case world.End:
 		return srv.end
 	}
+}
+
+// acceptPlayer admits inc and releases its provider reservation afterwards, also when yield panics. A failed
+// admission also releases the login's UUID reservation.
+func (srv *Server) acceptPlayer(inc incoming, yield func(*player.Player) bool) (ret bool, err error) {
+	failed := true
+	defer func() {
+		if inc.admission != nil {
+			inc.admission.Release()
+		}
+		if failed {
+			srv.releaseLogin(inc.id)
+		}
+	}()
+	ret, err = srv.admitPlayer(inc, yield)
+	failed = err != nil
+	return ret, err
 }
 
 // reserveLogin reserves id for a login about to be handed off for admission. It reports false if a player or

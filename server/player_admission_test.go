@@ -232,19 +232,19 @@ func TestDuplicateLoginRefusedBeforeAdmission(t *testing.T) {
 	}
 }
 
-// recordingAdmissionConn records the MovePlayer packets a session sends.
+// recordingAdmissionConn reports MovePlayer packets a session sends.
 type recordingAdmissionConn struct {
 	*admissionConn
-	mu    sync.Mutex
-	moves []*packet.MovePlayer
+	moves chan *packet.MovePlayer
 }
 
-// WritePacket records MovePlayer packets and discards the rest.
+// WritePacket reports MovePlayer packets and discards the rest.
 func (c *recordingAdmissionConn) WritePacket(pk packet.Packet) error {
 	if move, ok := pk.(*packet.MovePlayer); ok {
-		c.mu.Lock()
-		c.moves = append(c.moves, move)
-		c.mu.Unlock()
+		select {
+		case c.moves <- move:
+		default:
+		}
 	}
 	return nil
 }
@@ -252,19 +252,38 @@ func (c *recordingAdmissionConn) WritePacket(pk packet.Packet) error {
 // A revalidated placement that only changes rotation still corrects the rotation sent in StartGame.
 func TestLoginCorrectsRotationOnlyRevalidation(t *testing.T) {
 	srv, a, base := admissionServer(t)
-	c := &recordingAdmissionConn{admissionConn: base}
+	c := &recordingAdmissionConn{admissionConn: base, moves: make(chan *packet.MovePlayer, 16)}
 	srv.finaliseConn(t.Context(), c, admissionListener{})
 	a.data.Rotation = cube.Rotation{90, 30}
+	corrected := false
 	for p := range srv.Accept() {
+		timeout := time.After(10 * time.Second)
+		for !corrected {
+			select {
+			case move := <-c.moves:
+				corrected = move.Yaw == 90 && move.Pitch == 30
+			case <-timeout:
+				t.Error("no teleport corrected the rotation")
+				corrected = true
+			}
+		}
 		_ = p.Close()
 		break
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, move := range c.moves {
-		if move.Yaw == 90 && move.Pitch == 30 {
-			return
+}
+
+// A join callback that panics still releases the login's admission.
+func TestAcceptReleasesAdmissionWhenCallbackPanics(t *testing.T) {
+	srv, a, c := admissionServer(t)
+	srv.finaliseConn(t.Context(), c, admissionListener{})
+	func() {
+		defer func() { _ = recover() }()
+		for p := range srv.Accept() {
+			_ = p.Close()
+			panic("callback")
 		}
+	}()
+	if a.releases != 1 {
+		t.Fatalf("admission released %d times, want 1", a.releases)
 	}
-	t.Fatalf("no teleport corrected the rotation; sent %d MovePlayer packets", len(c.moves))
 }
