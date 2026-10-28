@@ -581,24 +581,14 @@ func (tx *Tx) liquid(pos cube.Pos) (Liquid, bool) {
 	c := tx.chunk(chunkPosFromBlockPos(pos))
 	x, y, z := uint8(pos[0]), int16(pos[1]), uint8(pos[2])
 
-	id := c.Block(x, y, z, 0)
-	b, ok := w.conf.Blocks.BlockByRuntimeID(id)
-	if !ok {
-		w.conf.Log.Error("Liquid: no block with runtime ID", "ID", id)
-		return nil, false
-	}
-	if liq, ok := b.(Liquid); ok {
-		return liq, true
-	}
-	id = c.Block(x, y, z, 1)
-
-	b, ok = w.conf.Blocks.BlockByRuntimeID(id)
-	if !ok {
-		w.conf.Log.Error("Liquid: no block with runtime ID", "ID", id)
-		return nil, false
-	}
-	liq, ok := b.(Liquid)
-	return liq, ok
+	return LiquidFromLayers(func(layer uint8) (Block, bool) {
+		id := c.Block(x, y, z, layer)
+		b, ok := w.conf.Blocks.BlockByRuntimeID(id)
+		if !ok {
+			w.conf.Log.Error("Liquid: no block with runtime ID", "ID", id)
+		}
+		return b, ok
+	})
 }
 
 // setLiquid sets a Liquid at a specific position in the World. Unlike

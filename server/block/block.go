@@ -202,17 +202,13 @@ func replaceableWith(tx *world.Tx, pos cube.Pos, with world.Block) bool {
 		return false
 	}
 	b := tx.Block(pos)
-	if replaceable, ok := b.(Replaceable); ok {
-		if !replaceable.ReplaceableBy(with) || b == with {
-			return false
-		}
-		if liquid, ok := tx.Liquid(pos); ok {
-			replaceable, ok := liquid.(Replaceable)
-			return ok && replaceable.ReplaceableBy(with)
-		}
-		return true
+	if !world.CanReplace(b, with) || b == with {
+		return false
 	}
-	return false
+	if liquid, ok := tx.Liquid(pos); ok {
+		return world.CanReplace(liquid, with)
+	}
+	return true
 }
 
 // firstReplaceable finds the first replaceable block position eligible to have a block placed on it after

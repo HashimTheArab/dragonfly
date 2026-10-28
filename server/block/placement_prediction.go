@@ -16,11 +16,12 @@ type PlacementSource interface {
 	Dimension() world.Dimension
 }
 
-// PlacementUser exposes player state used by orientation-dependent placement
-// rules.
-type PlacementUser interface {
-	Position() mgl64.Vec3
-	Rotation() cube.Rotation
+// PlacementPose is the player state read by orientation-dependent placement rules.
+// PredictPlacement accepts a nil pose when the user is unknown.
+type PlacementPose struct {
+	Position  mgl64.Vec3
+	Rotation  cube.Rotation
+	EyeHeight float64
 }
 
 // PredictedBlockChange is a block write produced by placement behaviour.
@@ -58,17 +59,34 @@ func PredictedBlockAt(changes []PredictedBlockChange, pos cube.Pos, layer uint8)
 // click. Most full blocks, such as Cobblestone and Dirt, take the second
 // branch.
 //
-// user may be nil only when the placed block does not consult player position
-// or rotation. Non-block side effects such as sounds, particles and scheduled
-// updates are intentionally discarded.
-func PredictPlacement(src PlacementSource, user PlacementUser, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) (changes []PredictedBlockChange, known bool) {
+// pose may be nil only when the placed block does not consult player position,
+// rotation or eye height; a placement rule that does makes the result unknown.
+// Non-block side effects such as sounds, particles and scheduled updates are
+// intentionally discarded.
+func PredictPlacement(src PlacementSource, pose *PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) (changes []PredictedBlockChange, known bool) {
+	return predictPlacementWithLimits(src, pose, clickedPos, face, clickPos, placed, placementLimits{})
+}
+
+// placementLimits are the canonical Player.PlaceBlock admission checks applied
+// when planning an executable placement. Ordinary prediction leaves them unset.
+type placementLimits struct {
+	// reach is the largest eye distance to each placed cell's centre. Zero
+	// disables the check.
+	reach  float64
+	actors []world.PlacementActor
+}
+
+// predictPlacementWithLimits predicts placement and refuses the whole placement
+// when any canonical PlaceBlock call fails limits.
+func predictPlacementWithLimits(src PlacementSource, pose *PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block, limits placementLimits) (changes []PredictedBlockChange, known bool) {
 	if src == nil || placed == nil {
 		return nil, false
 	}
 
 	view := &placementView{
-		src:   src,
-		known: true,
+		src:    src,
+		known:  true,
+		limits: limits,
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -79,7 +97,7 @@ func PredictPlacement(src PlacementSource, user PlacementUser, clickedPos cube.P
 		}
 	}()
 	complete := world.RunBlockTransaction(view, func(tx *world.Tx) {
-		u, ctx := &placementUser{user: user, tx: tx, view: view}, &item.UseContext{}
+		u, ctx := &placementUser{pose: pose, tx: tx, view: view}, &item.UseContext{}
 		if usable, ok := placed.(item.UsableOnBlock); ok {
 			usable.UseOnBlock(clickedPos, face, clickPos, tx, u, ctx)
 			return
@@ -90,6 +108,11 @@ func PredictPlacement(src PlacementSource, user PlacementUser, clickedPos cube.P
 		}
 		place(tx, pos, placed, u, ctx)
 	})
+	if view.refused {
+		// A plan must not publish only part of a multi-block placement when a
+		// later canonical PlaceBlock call is refused.
+		return nil, complete && view.known
+	}
 	return view.changes, complete && view.known
 }
 
@@ -97,6 +120,8 @@ type placementView struct {
 	src     PlacementSource
 	changes []PredictedBlockChange
 	known   bool
+	limits  placementLimits
+	refused bool
 }
 
 func (v *placementView) Range() cube.Range          { return v.src.Range() }
@@ -236,19 +261,17 @@ func (v *placementView) secondaryLiquid(pos cube.Pos, primary world.Block) (worl
 }
 
 func (v *placementView) setPrimaryBlock(pos cube.Pos, b world.Block) {
+	b, _ = NormaliseLayerBlock(b, 0)
 	v.changes = append(v.changes, PredictedBlockChange{Pos: pos, Block: b})
 }
 
 func (v *placementView) setSecondaryLiquid(pos cube.Pos, liquid world.Liquid) {
-	b := world.Block(Air{})
-	if liquid != nil {
-		b = liquid
-	}
+	b, _ := NormaliseLayerBlock(liquid, 1)
 	v.changes = append(v.changes, PredictedBlockChange{Pos: pos, Block: b, Layer: 1})
 }
 
 type placementUser struct {
-	user PlacementUser
+	pose *PlacementPose
 	tx   *world.Tx
 	view *placementView
 }
@@ -266,27 +289,28 @@ func (u *placementUser) Close() error {
 }
 
 func (u *placementUser) Position() mgl64.Vec3 {
-	if u.user == nil {
+	if u.pose == nil {
 		u.view.known = false
 		return mgl64.Vec3{}
 	}
-	return u.user.Position()
-}
-
-// EyeHeight preserves the optional eye offset used by vertical placement rules.
-func (u *placementUser) EyeHeight() float64 {
-	if eyed, ok := u.user.(interface{ EyeHeight() float64 }); ok {
-		return eyed.EyeHeight()
-	}
-	return 0
+	return u.pose.Position
 }
 
 func (u *placementUser) Rotation() cube.Rotation {
-	if u.user == nil {
+	if u.pose == nil {
 		u.view.known = false
 		return cube.Rotation{}
 	}
-	return u.user.Rotation()
+	return u.pose.Rotation
+}
+
+// EyeHeight supplies the eye offset used by vertical placement rules.
+func (u *placementUser) EyeHeight() float64 {
+	if u.pose == nil {
+		u.view.known = false
+		return 0
+	}
+	return u.pose.EyeHeight
 }
 
 func (u *placementUser) HeldItems() (item.Stack, item.Stack) {
@@ -303,6 +327,20 @@ func (u *placementUser) ReleaseItem() { u.unsupported() }
 func (u *placementUser) UseItem()     { u.unsupported() }
 
 func (u *placementUser) PlaceBlock(pos cube.Pos, b world.Block, ctx *item.UseContext) {
+	limits := u.view.limits
+	if limits.reach > 0 && !placementWithinReach(u.Position().Add(mgl64.Vec3{0, u.EyeHeight()}), pos.Vec3Centre(), limits.reach) {
+		u.view.refused = true
+		return
+	}
+	if len(limits.actors) > 0 && (ctx == nil || !ctx.IgnoreBBox) {
+		model := world.NewPlacementModel(u.tx, pos, b)
+		for _, actor := range limits.actors {
+			if model.Obstructed(actor) {
+				u.view.refused = true
+				return
+			}
+		}
+	}
 	u.tx.SetBlock(pos, b, nil)
 	if ctx != nil {
 		ctx.CountSub++
