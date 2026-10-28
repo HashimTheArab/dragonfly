@@ -164,3 +164,47 @@ func TestMountedPlayerDeathReleasesSeat(t *testing.T) {
 		}
 	})
 }
+
+// A fall before mounting does not count once the player dismounts, even without a tick in between.
+func TestMountAndDismountResetFallDistance(t *testing.T) {
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
+	position := mgl64.Vec3{8, 70, 8}
+	vehicle := world.EntitySpawnOpts{Position: position}.New(ridingTickVehicle{entity.TextType}, entity.StationaryBehaviourConfig{})
+	rider := world.EntitySpawnOpts{}.New(Type, Config{Position: position})
+	w.Do(func(tx *world.Tx) {
+		v, p := tx.AddEntity(vehicle), tx.AddEntity(rider).(*Player)
+		p.fallDistance = 12
+		if !tx.Mount(p, v, 0) {
+			t.Fatal("mount failed")
+		}
+		if p.fallDistance != 0 {
+			t.Fatalf("fall distance after mounting = %v, want 0", p.fallDistance)
+		}
+		p.fallDistance = 12
+		tx.Dismount(p)
+		if p.fallDistance != 0 {
+			t.Fatalf("fall distance after dismounting = %v, want 0", p.fallDistance)
+		}
+	})
+}
+
+// A server displacement does not move a mounted player off its seat.
+func TestMountedPlayerIgnoresDisplacement(t *testing.T) {
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
+	position := mgl64.Vec3{8, 70, 8}
+	vehicle := world.EntitySpawnOpts{Position: position}.New(ridingTickVehicle{entity.TextType}, entity.StationaryBehaviourConfig{})
+	rider := world.EntitySpawnOpts{}.New(Type, Config{Position: position})
+	w.Do(func(tx *world.Tx) {
+		v, p := tx.AddEntity(vehicle), tx.AddEntity(rider).(*Player)
+		if !tx.Mount(p, v, 0) {
+			t.Fatal("mount failed")
+		}
+		seat := p.Position()
+		p.Displace(mgl64.Vec3{1, 0, 0})
+		if p.Position() != seat {
+			t.Fatalf("mounted player displaced from %v to %v", seat, p.Position())
+		}
+	})
+}

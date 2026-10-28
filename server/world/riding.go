@@ -127,6 +127,7 @@ func (tx *Tx) Mount(rider, vehicle Entity, index int) bool {
 		v.ViewEntityState(rider)
 		v.ViewEntityAction(vehicle, EntityLinkAction{Rider: rider.H(), Seat: seat})
 	}
+	resetFallDistance(rider)
 	if handler, ok := vehicle.(RiderChangeHandler); ok {
 		handler.HandleRiderChange(rider, index, true)
 	}
@@ -155,10 +156,19 @@ func (tx *Tx) Dismount(rider Entity) bool {
 		v.ViewEntityAction(vehicle, EntityLinkAction{Rider: rider.H(), Seat: seat, Remove: true})
 		v.ViewEntityState(rider)
 	}
+	resetFallDistance(rider)
 	if handler, ok := vehicle.(RiderChangeHandler); ok {
 		handler.HandleRiderChange(rider, index, false)
 	}
 	return true
+}
+
+// resetFallDistance clears the fall distance of a rider that tracks one, so a fall before mounting or while
+// seated never counts once it walks again.
+func resetFallDistance(rider Entity) {
+	if r, ok := rider.(interface{ ResetFallDistance() }); ok {
+		r.ResetFallDistance()
+	}
 }
 
 // UpdateRiders moves passengers after the vehicle's authoritative movement.

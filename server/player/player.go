@@ -2428,6 +2428,9 @@ func (p *Player) Move(deltaPos mgl64.Vec3, deltaYaw, deltaPitch float64) {
 
 // Displace moves the player by a server-authoritative relative delta, clipped against block collision boxes.
 func (p *Player) Displace(deltaPos mgl64.Vec3) {
+	if _, _, riding := world.Riding(p); riding {
+		return
+	}
 	if p.Dead() || deltaPos.ApproxEqual(mgl64.Vec3{}) {
 		return
 	}
