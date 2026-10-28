@@ -55,6 +55,11 @@ type Server struct {
 	// p holds a map of all players currently connected to the server. When they
 	// leave, they are removed from the map.
 	p map[uuid.UUID]*onlinePlayer
+	// reserved holds the UUIDs of logins handed off for admission but not yet in p, so a second login with the
+	// same UUID is refused while the first waits. Guarded by pmu.
+	reserved map[uuid.UUID]*loginReservation
+	// closing is set before shutdown disconnects players, so a login admitted after that is disconnected too.
+	closing atomic.Bool
 	// pwg is a sync.WaitGroup used to wait for all players to be disconnected
 	// before server shutdown, so that their data is saved properly.
 	pwg sync.WaitGroup
@@ -65,10 +70,12 @@ type Server struct {
 
 // incoming holds data of a player that is connecting to the server.
 type incoming struct {
-	conf player.Config
-	s    *session.Session
-	p    *onlinePlayer
-	w    *world.World
+	id        uuid.UUID
+	reserved  *loginReservation
+	conf      player.Config
+	conn      session.Conn
+	w         *world.World
+	admission player.Admission
 }
 
 // onlinePlayer holds the entity handle, XUID and name of a player.
@@ -134,26 +141,11 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 			if !ok {
 				return
 			}
-			srv.pmu.Lock()
-			srv.p[inc.p.handle.UUID()] = inc.p
-			srv.pmu.Unlock()
-
-			ret, err := world.Call(context.Background(), inc.w, func(tx *world.Tx) (bool, error) {
-				p := tx.AddEntity(inc.p.handle).(*player.Player)
-				inc.s.Spawn(p, tx)
-				return !yield(p), nil
-			})
+			ret, err := srv.acceptPlayer(inc, yield)
 			if err != nil {
-				srv.pmu.Lock()
-				delete(srv.p, inc.p.handle.UUID())
-				srv.pmu.Unlock()
 				srv.pwg.Done()
-				// Join failed before spawn: the entity was never added, so close
-				// the orphaned handle and fully tear the session down (Disconnect
-				// only writes a packet; CloseConnection frees the conn/goroutines).
-				_ = inc.p.handle.Close()
-				inc.s.Disconnect("join failed")
-				inc.s.CloseConnection()
+				_ = inc.conn.WritePacket(&packet.Disconnect{Message: "join failed"})
+				_ = inc.conn.Close()
 				continue
 			}
 			if ret {
@@ -320,6 +312,7 @@ func (srv *Server) close() {
 	srv.conf.Log.Info("Server closing...")
 
 	srv.conf.Log.Debug("Disconnecting players...")
+	srv.closing.Store(true)
 	for p := range srv.Players(nil) {
 		p.Disconnect(chat.MessageServerDisconnect.Resolve(p.Locale()))
 	}
@@ -447,8 +440,29 @@ func (srv *Server) finaliseConn(ctx context.Context, conn session.Conn, l Listen
 	id := uuid.MustParse(conn.IdentityData().Identity)
 	data := srv.defaultGameData()
 
-	d, w, err := srv.conf.PlayerProvider.Load(id, srv.dimension)
-	if err != nil {
+	var d player.Config
+	var w *world.World
+	var err error
+	var admission player.Admission
+	handedOff := false
+	defer func() {
+		if admission != nil && !handedOff {
+			admission.Release()
+		}
+	}()
+	if provider, ok := srv.conf.PlayerProvider.(player.AdmissionProvider); ok {
+		admission, err = provider.LoadAdmission(id, srv.dimension)
+		if err == nil && admission != nil {
+			d, w = admission.Resolve()
+		}
+	} else {
+		d, w, err = srv.conf.PlayerProvider.Load(id, srv.dimension)
+	}
+	if err != nil || w == nil {
+		if admission != nil {
+			admission.Release()
+			admission = nil
+		}
 		w = srv.world
 		d.Position = w.Spawn().Vec3Centre()
 		d.GameMode = w.DefaultGameMode()
@@ -467,13 +481,16 @@ func (srv *Server) finaliseConn(ctx context.Context, conn session.Conn, l Listen
 		srv.conf.Log.Debug("spawn failed: "+err.Error(), "raddr", conn.RemoteAddr())
 		return
 	}
-	if _, ok := srv.Player(id); ok {
+	reservation, ok := srv.reserveLogin(id)
+	if !ok {
 		_ = l.Disconnect(conn, "Already logged in.")
 		srv.conf.Log.Debug("spawn failed: already logged in", "raddr", conn.RemoteAddr())
 		return
 	}
 	_ = conn.WritePacket(&packet.ItemRegistry{Items: srv.customItems})
-	srv.incoming <- srv.createPlayer(id, conn, d, w)
+	srv.pwg.Add(1)
+	srv.incoming <- incoming{id: id, reserved: reservation, conn: conn, conf: d, w: w, admission: admission}
+	handedOff = true
 }
 
 // defaultGameData returns a minecraft.GameData as sent for a new player. It
@@ -523,6 +540,54 @@ func (srv *Server) dimension(dimension world.Dimension) *world.World {
 	}
 }
 
+// acceptPlayer admits inc and releases its provider reservation afterwards, also when yield panics. A failed
+// admission also releases the login's UUID reservation.
+func (srv *Server) acceptPlayer(inc incoming, yield func(*player.Player) bool) (ret bool, err error) {
+	failed := true
+	defer func() {
+		if inc.admission != nil {
+			inc.admission.Release()
+		}
+		if failed {
+			srv.releaseLogin(inc.id, inc.reserved)
+		}
+	}()
+	ret, err = srv.admitPlayer(inc, yield)
+	failed = err != nil
+	return ret, err
+}
+
+// loginReservation marks one login's claim on its UUID until the login is admitted or fails.
+type loginReservation struct{ _ byte }
+
+// reserveLogin reserves id for a login about to be handed off for admission. It reports false if a player or
+// another pending login already holds id.
+func (srv *Server) reserveLogin(id uuid.UUID) (*loginReservation, bool) {
+	srv.pmu.Lock()
+	defer srv.pmu.Unlock()
+	if _, ok := srv.p[id]; ok {
+		return nil, false
+	}
+	if _, ok := srv.reserved[id]; ok {
+		return nil, false
+	}
+	if srv.reserved == nil {
+		srv.reserved = make(map[uuid.UUID]*loginReservation)
+	}
+	r := &loginReservation{}
+	srv.reserved[id] = r
+	return r, true
+}
+
+// releaseLogin drops r, the reservation of id, if it still holds id.
+func (srv *Server) releaseLogin(id uuid.UUID, r *loginReservation) {
+	srv.pmu.Lock()
+	if srv.reserved[id] == r {
+		delete(srv.reserved, id)
+	}
+	srv.pmu.Unlock()
+}
+
 // handleSessionClose handles the closing of a session. It removes the player
 // of the session from the server.
 func (srv *Server) handleSessionClose(tx *world.Tx, c session.Controllable) {
@@ -547,12 +612,14 @@ func (srv *Server) handleSessionClose(tx *world.Tx, c session.Controllable) {
 	srv.pwg.Done()
 }
 
-// createPlayer creates a new player instance using the UUID and connection
-// passed.
-func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Config, w *world.World) incoming {
-	srv.pwg.Add(1)
-
+// createPlayer keeps the handshake placement so spawn can correct a revalidated destination.
+func (srv *Server) createPlayer(inc incoming, conf player.Config, w *world.World) (*session.Session, *onlinePlayer) {
+	conn := inc.conn
+	id := uuid.MustParse(conn.IdentityData().Identity)
 	s := session.Config{
+		InitialDimension:     inc.w.Dimension(),
+		InitialPosition:      inc.conf.Position,
+		InitialRotation:      inc.conf.Rotation,
 		Log:                  srv.conf.Log,
 		MaxChunkRadius:       srv.conf.MaxChunkRadius,
 		ChunkLoadsPerTick:    srv.conf.ChunkLoadsPerTick,
@@ -573,7 +640,7 @@ func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Con
 
 	handle := world.EntitySpawnOpts{Position: conf.Position, ID: id}.New(player.Type, conf)
 	s.SetHandle(handle, conf.Skin)
-	return incoming{s: s, w: w, conf: conf, p: &onlinePlayer{name: conf.Name, xuid: conf.XUID, handle: handle}}
+	return s, &onlinePlayer{name: conf.Name, xuid: conf.XUID, handle: handle}
 }
 
 // createWorld loads a world with a specific dimension using the provider set
