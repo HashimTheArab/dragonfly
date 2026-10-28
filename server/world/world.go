@@ -893,6 +893,7 @@ func (w *World) removeEntity(e Entity, tx *Tx) *EntityHandle {
 		return nil
 	}
 	w.Handler().HandleEntityDespawn(tx, e)
+	tx.detachRiders(e)
 
 	c := tx.chunk(pos)
 	c.Entities, c.modified = sliceutil.DeleteVal(c.Entities, handle), true
@@ -1586,6 +1587,9 @@ func (w *World) columnTo(col *Column, pos ChunkPos) *chunk.Column {
 		Tick:            w.scheduledUpdates.currentTick,
 	}
 	for _, e := range col.Entities {
+		if transient, ok := e.t.(TransientEntityType); ok && transient.Transient() {
+			continue
+		}
 		data := e.encodeNBT()
 		maps.Copy(data, e.t.EncodeNBT(&e.data))
 		data["identifier"] = e.t.EncodeEntity()
