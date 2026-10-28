@@ -84,6 +84,7 @@ func (l *sessionList) sendSessionTo(s, to *Session) {
 			EntityUniqueID: int64(runtimeID),
 			Username:       s.conn.IdentityData().DisplayName,
 			XUID:           s.conn.IdentityData().XUID,
+			PlayFabID:      s.conn.IdentityData().PlayFabID,
 			BuildPlatform:  int32(protocol.DeviceUnknown),
 			Skin:           skinToProtocol(s.joinSkin),
 		}},

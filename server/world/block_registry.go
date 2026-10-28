@@ -607,7 +607,6 @@ func (br *BasicBlockRegistry) RuntimeIDToState(runtimeID uint32) (name string, p
 }
 
 // StateToRuntimeID returns the runtime ID of a block by its name and state properties.
-// Missing properties are filled from registered defaults before falling back to the entire default state.
 func (br *BasicBlockRegistry) StateToRuntimeID(name string, properties map[string]any) (runtimeID uint32, found bool) {
 	if !br.finalized {
 		panic("BlockRegistry.StateToRuntimeID called on non finalized BlockRegistry")
@@ -615,16 +614,21 @@ func (br *BasicBlockRegistry) StateToRuntimeID(name string, properties map[strin
 	if rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}]; ok {
 		return rid, true
 	}
-	defaults := br.blockProperties[name]
-	if len(properties) > 0 && len(properties) < len(defaults) {
-		extended := maps.Clone(defaults)
-		maps.Copy(extended, properties)
-		if rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(extended)}]; ok {
-			return rid, true
-		}
-	}
-	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(defaults)}]
+	rid, ok := br.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(br.blockProperties[name])}]
 	return rid, ok
+}
+
+// DefaultProperties returns the properties of the default state of the block
+// with the name passed. The palette does not mark a default, so the first state
+// registered for the name is used. For vanilla blocks this matches the game's
+// default for every property a stored state can lack, as properties older than
+// the block state version are filled in by the upgrade schemas instead.
+func (br *BasicBlockRegistry) DefaultProperties(name string) (map[string]any, bool) {
+	if !br.finalized {
+		panic("BlockRegistry.DefaultProperties called on non finalized BlockRegistry")
+	}
+	properties, ok := br.blockProperties[name]
+	return properties, ok
 }
 
 // BlockHash returns a unique identifier of the block including the block states. This function is used internally
