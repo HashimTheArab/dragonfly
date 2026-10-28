@@ -173,3 +173,26 @@ func TestAddCustomBlocksRefusesCollisionOnlyWithHashedIDs(t *testing.T) {
 		t.Fatalf("AddCustomBlocks() error = %v, want one naming %s and %s", err, collideA, collideB)
 	}
 }
+
+// A registry snapshot keeps salted network block hashes, so the restored registry decodes the same network IDs.
+func TestBlockRegistrySnapshotKeepsSaltedNetworkHashes(t *testing.T) {
+	requireCollision(t)
+	registry := registryWith(t, true, collideA, collideB)
+	data, err := MarshalBlockRegistry(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := UnmarshalBlockRegistry(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rid := range uint32(registry.BlockCount()) {
+		want, _ := registry.RuntimeIDToHash(rid)
+		if got, _ := restored.RuntimeIDToHash(rid); got != want {
+			t.Fatalf("runtime ID %d: restored network hash %#08x, want %#08x", rid, got, want)
+		}
+		if got, ok := restored.HashToRuntimeID(want); !ok || got != rid {
+			t.Fatalf("HashToRuntimeID(%#08x) = %d, %v, want %d", want, got, ok, rid)
+		}
+	}
+}

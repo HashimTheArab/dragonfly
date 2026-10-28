@@ -20,7 +20,7 @@ const NetworkHashSaltProperty = "dragonfly:network_hash_salt"
 const maxNetworkHashSalt = 1 << 16
 
 // indexNetworkHashesLocked builds networkhashToRids from ridsToNetworkhash, after salting colliding custom blocks if
-// the registry uses hashed network IDs. A shared hash maps to the lowest runtime ID. br.mu must be held.
+// the registry uses hashed network IDs. br.mu must be held.
 func (br *BasicBlockRegistry) indexNetworkHashesLocked() error {
 	br.networkHashSalts = nil
 	if br.hashedNetworkIDs {
@@ -28,13 +28,42 @@ func (br *BasicBlockRegistry) indexNetworkHashesLocked() error {
 			return err
 		}
 	}
+	br.mapNetworkHashesLocked()
+	return nil
+}
+
+// mapNetworkHashesLocked builds networkhashToRids from ridsToNetworkhash. A shared hash maps to the lowest runtime ID.
+// br.mu must be held.
+func (br *BasicBlockRegistry) mapNetworkHashesLocked() {
 	br.networkhashToRids = make(map[uint32]uint32, len(br.ridsToNetworkhash))
 	for rid, h := range br.ridsToNetworkhash {
 		if _, ok := br.networkhashToRids[h]; !ok {
 			br.networkhashToRids[h] = uint32(rid)
 		}
 	}
-	return nil
+}
+
+// restoreNetworkHashSaltsLocked gives the states of each block in salts the network block hashes that salt produced
+// when the registry was recorded, then rebuilds networkhashToRids. br.mu must be held.
+func (br *BasicBlockRegistry) restoreNetworkHashSaltsLocked(salts map[string]int32) {
+	if len(salts) == 0 {
+		return
+	}
+	br.networkHashSalts = maps.Clone(salts)
+	var scratch []byte
+	salted := make(map[string]any)
+	for rid, b := range br.blocks {
+		name, properties := b.EncodeBlock()
+		salt, ok := salts[name]
+		if !ok {
+			continue
+		}
+		clear(salted)
+		maps.Copy(salted, properties)
+		salted[NetworkHashSaltProperty] = salt
+		br.ridsToNetworkhash[rid], scratch = networkBlockHash(name, salted, scratch)
+	}
+	br.mapNetworkHashesLocked()
 }
 
 // saltNetworkHashesLocked makes every hash in ridsToNetworkhash unique. Walking runtime IDs in order, a state whose
