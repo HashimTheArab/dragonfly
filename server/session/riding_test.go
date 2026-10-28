@@ -302,3 +302,38 @@ func TestTeleportMountRideDismountAllowsMovement(t *testing.T) {
 		})
 	}
 }
+
+// A leave-vehicle interaction dismounts the rider instead of being rejected as an unknown action.
+func TestLeaveVehicleInteractionDismounts(t *testing.T) {
+	w := world.Config{Synchronous: true}.New()
+	defer w.Close()
+	s := ridingSession()
+	var input []world.RiderInput
+	vh := world.NewEntity(inputVehicleType{input: &input}, ridingConfig{})
+	rh := world.NewEntity(teleportRiderType{session: s}, ridingConfig{})
+	s.ent = rh
+	s.entityRuntimeIDs[rh] = selfEntityRuntimeID
+	s.entityRuntimeIDs[vh] = 2
+	done := false
+	w.Do(func(tx *world.Tx) {
+		vehicle := tx.AddEntity(vh).(inputVehicle)
+		rider := tx.AddEntity(rh).(teleportRider)
+		c := inputRider{entity: rider.ridingEntity}
+		if !tx.Mount(rider, vehicle, 0) {
+			t.Error("mount failed")
+			return
+		}
+		pk := &packet.Interact{ActionType: packet.InteractActionLeaveVehicle, Position: protocol.Option(mgl32.Vec3{999, 999, 999})}
+		if err := (&InteractHandler{}).Handle(pk, s, tx, c); err != nil {
+			t.Error(err)
+			return
+		}
+		if tx.Dismount(rider) {
+			t.Error("rider was still mounted after leaving the vehicle")
+		}
+		done = true
+	})
+	if !done {
+		t.Fatal("transaction did not complete")
+	}
+}
