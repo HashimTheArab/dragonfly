@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/entity"
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/session"
@@ -197,4 +198,73 @@ func TestClosedLoginDestinationReleasesAdmission(t *testing.T) {
 	default:
 		t.Fatal("failed spawn kept its connection")
 	}
+}
+
+// A login is refused while another with the same UUID waits for admission, and admitted again once it is released.
+func TestLoginReservationRefusesDuplicateWhileAdmissionWaits(t *testing.T) {
+	srv := &Server{p: make(map[uuid.UUID]*onlinePlayer)}
+	id := uuid.New()
+	if !srv.reserveLogin(id) {
+		t.Fatal("first login was refused")
+	}
+	if srv.reserveLogin(id) {
+		t.Fatal("second login with the same UUID was reserved while the first waits")
+	}
+	srv.releaseLogin(id)
+	if !srv.reserveLogin(id) {
+		t.Fatal("login was refused after the failed admission released its UUID")
+	}
+}
+
+// A second login with the same UUID is refused while the first is handed off but not yet admitted.
+func TestDuplicateLoginRefusedBeforeAdmission(t *testing.T) {
+	srv, a, c := admissionServer(t)
+	srv.incoming = make(chan incoming, 2)
+	srv.finaliseConn(t.Context(), c, admissionListener{})
+	if len(srv.incoming) != 1 {
+		t.Fatal("first login was not handed off")
+	}
+	second := &admissionConn{id: c.id, closed: make(chan struct{})}
+	t.Cleanup(func() { _ = second.Close() })
+	srv.finaliseConn(t.Context(), second, admissionListener{})
+	if len(srv.incoming) != 1 || a.releases != 1 {
+		t.Fatalf("second login: %d pending players, %d releases; want 1 pending and its reservation released", len(srv.incoming), a.releases)
+	}
+}
+
+// recordingAdmissionConn records the MovePlayer packets a session sends.
+type recordingAdmissionConn struct {
+	*admissionConn
+	mu    sync.Mutex
+	moves []*packet.MovePlayer
+}
+
+// WritePacket records MovePlayer packets and discards the rest.
+func (c *recordingAdmissionConn) WritePacket(pk packet.Packet) error {
+	if move, ok := pk.(*packet.MovePlayer); ok {
+		c.mu.Lock()
+		c.moves = append(c.moves, move)
+		c.mu.Unlock()
+	}
+	return nil
+}
+
+// A revalidated placement that only changes rotation still corrects the rotation sent in StartGame.
+func TestLoginCorrectsRotationOnlyRevalidation(t *testing.T) {
+	srv, a, base := admissionServer(t)
+	c := &recordingAdmissionConn{admissionConn: base}
+	srv.finaliseConn(t.Context(), c, admissionListener{})
+	a.data.Rotation = cube.Rotation{90, 30}
+	for p := range srv.Accept() {
+		_ = p.Close()
+		break
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, move := range c.moves {
+		if move.Yaw == 90 && move.Pitch == 30 {
+			return
+		}
+	}
+	t.Fatalf("no teleport corrected the rotation; sent %d MovePlayer packets", len(c.moves))
 }

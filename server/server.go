@@ -55,6 +55,9 @@ type Server struct {
 	// p holds a map of all players currently connected to the server. When they
 	// leave, they are removed from the map.
 	p map[uuid.UUID]*onlinePlayer
+	// reserved holds the UUIDs of logins handed off for admission but not yet in p, so a second login with the
+	// same UUID is refused while the first waits. Guarded by pmu.
+	reserved map[uuid.UUID]struct{}
 	// pwg is a sync.WaitGroup used to wait for all players to be disconnected
 	// before server shutdown, so that their data is saved properly.
 	pwg sync.WaitGroup
@@ -65,6 +68,7 @@ type Server struct {
 
 // incoming holds data of a player that is connecting to the server.
 type incoming struct {
+	id        uuid.UUID
 	conf      player.Config
 	conn      session.Conn
 	w         *world.World
@@ -139,6 +143,7 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 				inc.admission.Release()
 			}
 			if err != nil {
+				srv.releaseLogin(inc.id)
 				srv.pwg.Done()
 				_ = inc.conn.WritePacket(&packet.Disconnect{Message: "join failed"})
 				_ = inc.conn.Close()
@@ -476,14 +481,14 @@ func (srv *Server) finaliseConn(ctx context.Context, conn session.Conn, l Listen
 		srv.conf.Log.Debug("spawn failed: "+err.Error(), "raddr", conn.RemoteAddr())
 		return
 	}
-	if _, ok := srv.Player(id); ok {
+	if !srv.reserveLogin(id) {
 		_ = l.Disconnect(conn, "Already logged in.")
 		srv.conf.Log.Debug("spawn failed: already logged in", "raddr", conn.RemoteAddr())
 		return
 	}
 	_ = conn.WritePacket(&packet.ItemRegistry{Items: srv.customItems})
 	srv.pwg.Add(1)
-	srv.incoming <- incoming{conn: conn, conf: d, w: w, admission: admission}
+	srv.incoming <- incoming{id: id, conn: conn, conf: d, w: w, admission: admission}
 	handedOff = true
 }
 
@@ -534,6 +539,31 @@ func (srv *Server) dimension(dimension world.Dimension) *world.World {
 	}
 }
 
+// reserveLogin reserves id for a login about to be handed off for admission. It reports false if a player or
+// another pending login already holds id.
+func (srv *Server) reserveLogin(id uuid.UUID) bool {
+	srv.pmu.Lock()
+	defer srv.pmu.Unlock()
+	if _, ok := srv.p[id]; ok {
+		return false
+	}
+	if _, ok := srv.reserved[id]; ok {
+		return false
+	}
+	if srv.reserved == nil {
+		srv.reserved = make(map[uuid.UUID]struct{})
+	}
+	srv.reserved[id] = struct{}{}
+	return true
+}
+
+// releaseLogin drops the reservation of a login whose admission failed.
+func (srv *Server) releaseLogin(id uuid.UUID) {
+	srv.pmu.Lock()
+	delete(srv.reserved, id)
+	srv.pmu.Unlock()
+}
+
 // handleSessionClose handles the closing of a session. It removes the player
 // of the session from the server.
 func (srv *Server) handleSessionClose(tx *world.Tx, c session.Controllable) {
@@ -565,6 +595,7 @@ func (srv *Server) createPlayer(inc incoming, conf player.Config, w *world.World
 	s := session.Config{
 		InitialDimension:     inc.w.Dimension(),
 		InitialPosition:      inc.conf.Position,
+		InitialRotation:      inc.conf.Rotation,
 		Log:                  srv.conf.Log,
 		MaxChunkRadius:       srv.conf.MaxChunkRadius,
 		ChunkLoadsPerTick:    srv.conf.ChunkLoadsPerTick,
