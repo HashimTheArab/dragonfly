@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/df-mc/dragonfly/server/world"
@@ -19,7 +20,12 @@ import (
 func buildEntities(dir string, registries []world.EntityRegistry) int {
 	count := 0
 	for _, registry := range registries {
-		for _, t := range registry.Types() {
+		types := slices.Clone(registry.Types())
+		// Types come from map iteration: sort them so merged files, and with them the pack hash, are stable.
+		slices.SortFunc(types, func(a, b world.EntityType) int {
+			return strings.Compare(world.EntityNetworkIdentifier(a), world.EntityNetworkIdentifier(b))
+		})
+		for _, t := range types {
 			custom, ok := t.(world.ResourcePackEntityType)
 			if !ok {
 				continue
@@ -29,7 +35,8 @@ func buildEntities(dir string, registries []world.EntityRegistry) int {
 			checkEntityDefinition(resources.ClientEntity, "minecraft:client_entity", id)
 			writeEntityFile(dir, "entity/"+entityResourceName(id)+".entity.json", resources.ClientEntity)
 			for name, data := range resources.Assets {
-				if name == "manifest.json" || name == "pack_icon.png" || strings.HasPrefix(name, "entity/") {
+				if name == "manifest.json" || name == "pack_icon.png" || strings.HasPrefix(name, "entity/") ||
+					name == "textures/item_texture.json" || name == "textures/terrain_texture.json" {
 					panic("reserved entity resource path: " + name)
 				}
 				writeEntityFile(dir, name, data)

@@ -169,10 +169,27 @@ func TestEntityLanguageAssetsFromSeveralTypesMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"entity.test:ship.name=Ship", "entity.test:boat.name=Boat"} {
-		if !strings.Contains(string(data), want) {
-			t.Fatalf("translations %q lack %q", data, want)
-		}
+	// Merged in network identifier order, so the pack is the same whatever order the registry lists its types in.
+	if want := "entity.test:boat.name=Boat\nentity.test:ship.name=Ship"; string(data) != want {
+		t.Fatalf("translations = %q, want %q", data, want)
+	}
+}
+
+// Entity assets cannot replace the texture atlases the item and block builders generate.
+func TestEntityAssetsCannotReplaceTextureAtlases(t *testing.T) {
+	for _, name := range []string{"textures/item_texture.json", "textures/terrain_texture.json"} {
+		reg := world.EntityRegistryConfig{}.New([]world.EntityType{resourceEntityType{resources: world.EntityResources{
+			ClientEntity: []byte(`{"minecraft:client_entity":{"description":{"identifier":"test:ship"}}}`),
+			Assets:       map[string][]byte{name: []byte(`{}`)},
+		}}})
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s was accepted as an entity asset", name)
+				}
+			}()
+			buildEntities(t.TempDir(), []world.EntityRegistry{reg})
+		}()
 	}
 }
 
