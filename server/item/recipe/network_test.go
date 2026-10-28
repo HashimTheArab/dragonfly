@@ -148,3 +148,40 @@ func TestDecodeNetworkCraftingPattern_RestrictsScope(t *testing.T) {
 		}
 	}
 }
+
+// TestDecodeNetworkCraftingPattern_RespectsSymmetry checks that the advertised
+// orientation policy survives decoding, including translated grids and batches.
+func TestDecodeNetworkCraftingPattern_RespectsSymmetry(t *testing.T) {
+	for _, symmetry := range []bool{false, true} {
+		wire := protocol.ShapedRecipe{
+			Width: 2, Height: 1, Block: "crafting_table", AssumeSymmetry: symmetry,
+			Input:  []protocol.ItemDescriptorCount{networkTestIngredient(0, 1), networkTestIngredient(1, 2)},
+			Output: []protocol.ItemStack{{ItemType: protocol.ItemType{NetworkID: 1}, Count: 1}},
+		}
+		pattern, ok := DecodeNetworkCraftingPattern(&wire, resolveGridTestItem)
+		if !ok {
+			t.Fatal("valid recipe rejected")
+		}
+		for _, width := range []int{2, 3} {
+			for y := 0; y < width; y++ {
+				for x := 0; x <= width-2; x++ {
+					for _, mirror := range []bool{false, true} {
+						grid := make([]item.Stack, width*width)
+						first, second := gridStack("minecraft:oak_planks", 0, 2), gridStack("minecraft:oak_planks", 1, 4)
+						if mirror {
+							first, second = second, first
+						}
+						grid[y*width+x], grid[y*width+x+1] = first, second
+						used, matched := pattern.Match(grid, 2)
+						if want := !mirror || symmetry; matched != want {
+							t.Fatalf("symmetry=%v mirror=%v width=%d x=%d y=%d: matched=%v want=%v", symmetry, mirror, width, x, y, matched, want)
+						}
+						if matched && (len(used) != 2 || used[0].Count != first.Count() || used[1].Count != second.Count()) {
+							t.Fatalf("wrong batch consumption: %v", used)
+						}
+					}
+				}
+			}
+		}
+	}
+}

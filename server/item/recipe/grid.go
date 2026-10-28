@@ -14,6 +14,9 @@ type CraftingPattern struct {
 	// for decoded patterns. Its items must remain immutable while matching.
 	Input []Item
 	Shape Shape
+	// AssumeSymmetry allows shaped patterns to match their horizontal mirror.
+	// It has no effect on shapeless patterns.
+	AssumeSymmetry bool
 	// Output holds the checked single wire result when decoded from a network recipe.
 	// It aliases the caller's recipe output slice, including nested stack data. The
 	// caller must keep that storage immutable while the pattern is in use. Match
@@ -53,9 +56,10 @@ func (p CraftingPattern) valid() bool {
 }
 
 // Match validates the whole grid and returns removals in slot order without mutating
-// it. Shaped recipes may be translated and mirrored horizontally; every other cell
-// must be empty. Shapeless recipes require one occupied slot per non-empty ingredient
-// and use a complete assignment, including overlapping tags and exact ingredients.
+// it. Shaped recipes may be translated, and mirrored horizontally when
+// AssumeSymmetry is true; every other cell must be empty. Shapeless recipes require
+// one occupied slot per non-empty ingredient and use a complete assignment,
+// including overlapping tags and exact ingredients.
 // Counts must suffice for all times crafts; invalid input or a mismatch returns false.
 func (p CraftingPattern) Match(grid []item.Stack, times int) ([]GridConsumption, bool) {
 	width := 0
@@ -81,6 +85,9 @@ func (p CraftingPattern) Match(grid []item.Stack, times int) ([]GridConsumption,
 	for y := 0; y <= width-p.Shape.Height(); y++ {
 		for x := 0; x <= width-p.Shape.Width(); x++ {
 			for _, mirror := range []bool{false, true} {
+				if mirror && !p.AssumeSymmetry {
+					continue
+				}
 				if used, ok := p.matchShaped(grid, times, width, x, y, mirror); ok {
 					return used, true
 				}
