@@ -1,6 +1,7 @@
 package world
 
 import (
+	"maps"
 	"slices"
 	"strings"
 
@@ -44,9 +45,61 @@ func NewNetworkBlockRegistry(entries []protocol.BlockEntry) (BlockRegistry, erro
 		name, properties := block.EncodeBlock()
 		registry.stateRuntimeIDs[stateHash{name: name, properties: hashProperties(properties)}] = uint32(rid)
 	}
+	entries, salts := unsaltedEntries(entries)
 	if err := AddCustomBlocks(registry, entries); err != nil {
 		return nil, err
 	}
 	registry.Finalize()
+	registry.mu.Lock()
+	registry.restoreNetworkHashSaltsLocked(salts)
+	registry.mu.Unlock()
 	return registry, nil
+}
+
+// unsaltedEntries returns entries without the hidden NetworkHashSaltProperty a hashed-ID server declares, so salted
+// states match installed custom states, along with each salted block's salt.
+func unsaltedEntries(entries []protocol.BlockEntry) ([]protocol.BlockEntry, map[string]int32) {
+	var salts map[string]int32
+	out := entries
+	for i, entry := range entries {
+		properties := entryProperties(entry)
+		j := slices.IndexFunc(properties, func(p map[string]any) bool { return p["name"] == NetworkHashSaltProperty })
+		if j < 0 {
+			continue
+		}
+		values, _ := properties[j]["enum"].([]any)
+		if len(values) != 1 {
+			continue
+		}
+		salt, ok := values[0].(int32)
+		if !ok {
+			continue
+		}
+		if salts == nil {
+			salts, out = make(map[string]int32), slices.Clone(entries)
+		}
+		salts[entry.Name] = salt
+		entry.Properties = maps.Clone(entry.Properties)
+		entry.Properties["properties"] = slices.Delete(properties, j, j+1)
+		out[i] = entry
+	}
+	return out, salts
+}
+
+// entryProperties returns a copy of the property definitions of entry, whether built by a server or decoded from
+// the network.
+func entryProperties(entry protocol.BlockEntry) []map[string]any {
+	switch properties := entry.Properties["properties"].(type) {
+	case []map[string]any:
+		return slices.Clone(properties)
+	case []any:
+		out := make([]map[string]any, 0, len(properties))
+		for _, p := range properties {
+			if m, ok := p.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	return nil
 }

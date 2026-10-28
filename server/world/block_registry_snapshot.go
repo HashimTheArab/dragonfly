@@ -15,6 +15,8 @@ type blockRegistrySnapshot struct {
 	States           []BlockState      `nbt:"states"`
 	Actors           map[string]string `nbt:"block_actors"`
 	NetworkHashSalts map[string]int32  `nbt:"network_hash_salts,omitempty"`
+	// HashedNetworkIDs keeps UseHashedNetworkIDs, so a restored registry still refuses colliding custom blocks.
+	HashedNetworkIDs bool `nbt:"hashed_network_ids,omitempty"`
 }
 
 // MarshalBlockRegistry records a finalized registry's state palette in runtime-ID
@@ -22,9 +24,10 @@ type blockRegistrySnapshot struct {
 // Block implementations are resolved by the decoder's installed Dragonfly version.
 func MarshalBlockRegistry(registry BlockRegistry) ([]byte, error) {
 	var salts map[string]int32
+	var hashed bool
 	if basic, ok := registry.(*BasicBlockRegistry); ok {
 		clone := basic.Clone()
-		salts, registry = clone.networkHashSalts, clone
+		salts, hashed, registry = clone.networkHashSalts, clone.hashedNetworkIDs, clone
 	}
 	states := make([]BlockState, registry.BlockCount())
 	for i := range states {
@@ -37,7 +40,7 @@ func MarshalBlockRegistry(registry BlockRegistry) ([]byte, error) {
 	var out bytes.Buffer
 	enc := nbt.NewEncoder(&out)
 	enc.SortMaps = true
-	if err := enc.Encode(blockRegistrySnapshot{States: states, Actors: registry.BlockActorIDs(), NetworkHashSalts: salts}); err != nil {
+	if err := enc.Encode(blockRegistrySnapshot{States: states, Actors: registry.BlockActorIDs(), NetworkHashSalts: salts, HashedNetworkIDs: hashed}); err != nil {
 		return nil, err
 	}
 	return out.Bytes(), nil
@@ -88,6 +91,7 @@ func UnmarshalBlockRegistry(data []byte) (registry BlockRegistry, err error) {
 	}
 	r.finalizeLocked()
 	r.restoreNetworkHashSaltsLocked(snapshot.NetworkHashSalts)
+	r.hashedNetworkIDs = snapshot.HashedNetworkIDs
 	return r, nil
 }
 

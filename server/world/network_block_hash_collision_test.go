@@ -196,3 +196,62 @@ func TestBlockRegistrySnapshotKeepsSaltedNetworkHashes(t *testing.T) {
 		}
 	}
 }
+
+// A restored snapshot keeps hashed network IDs, so it still refuses colliding custom blocks.
+func TestBlockRegistrySnapshotKeepsHashedNetworkIDs(t *testing.T) {
+	data, err := MarshalBlockRegistry(registryWith(t, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := UnmarshalBlockRegistry(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restored.(*BasicBlockRegistry).hashedNetworkIDs {
+		t.Fatal("restored registry lost hashed network IDs")
+	}
+}
+
+// A client palette built from a hashed-ID server's entries keeps installed custom implementations of salted blocks
+// at their places and resolves the server's salted hashes to them.
+func TestNetworkBlockRegistryReconcilesSaltedInstalledBlocks(t *testing.T) {
+	requireCollision(t)
+	server := registryWith(t, true, collideA, collideB)
+	baseline, err := NewNetworkBlockRegistry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := NewBlockRegistry().(*BasicBlockRegistry)
+	seed.RegisterBlock(namedBlock{collideA})
+	seed.RegisterBlock(namedBlock{collideB})
+	seed.Finalize()
+	original := DefaultBlockRegistry
+	DefaultBlockRegistry = seed
+	t.Cleanup(func() { DefaultBlockRegistry = original })
+
+	var entries []protocol.BlockEntry
+	for _, name := range []string{collideA, collideB} {
+		var properties []any
+		if salt, ok := server.NetworkHashSalt(name); ok {
+			properties = append(properties, map[string]any{"name": NetworkHashSaltProperty, "enum": []any{salt}})
+		}
+		entries = append(entries, protocol.BlockEntry{Name: name, Properties: map[string]any{"properties": properties}})
+	}
+	client, err := NewNetworkBlockRegistry(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := client.BlockCount(), baseline.BlockCount()+2; got != want {
+		t.Fatalf("client palette has %d states, want %d", got, want)
+	}
+	for _, name := range []string{collideA, collideB} {
+		hash, _ := server.RuntimeIDToHash(runtimeIDOf(t, server, name))
+		rid, ok := client.HashToRuntimeID(hash)
+		if !ok {
+			t.Fatalf("client has no state with %s's hash %#08x", name, hash)
+		}
+		if b, _ := client.BlockByRuntimeID(rid); b != (namedBlock{name}) {
+			t.Fatalf("%s's hash resolves to %#v, want the installed implementation", name, b)
+		}
+	}
+}
