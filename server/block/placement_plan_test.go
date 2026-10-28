@@ -348,3 +348,18 @@ func TestBlock_PlanPlacementMergesExistingBlocks(t *testing.T) {
 		})
 	}
 }
+
+func TestBlock_PlanPlacementStraightDown(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
+	user := PlacementPose{Position: mgl64.Vec3{0.5, 65.5, 0.5}, EyeHeight: 1.62}
+	plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceUp}})
+	if !ok {
+		t.Fatal("placement directly below the eye was not planned")
+	}
+	if plan.Rotation.Pitch() != 90 {
+		t.Fatalf("pitch = %v, want 90", plan.Rotation.Pitch())
+	}
+	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: Stone{}})
+}
