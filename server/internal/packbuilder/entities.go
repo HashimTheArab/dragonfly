@@ -115,8 +115,20 @@ func writeEntityFile(dir, name string, data []byte) {
 		panic("invalid entity resource path: " + name)
 	}
 	file := filepath.Join(dir, filepath.FromSlash(name))
-	if existing, err := os.ReadFile(file); err == nil && bytes.Equal(existing, data) {
-		return
+	if existing, err := os.ReadFile(file); err == nil {
+		if bytes.Equal(existing, data) {
+			return
+		}
+		if strings.HasSuffix(name, ".lang") {
+			// Entity types may each translate their own names in a shared language file.
+			if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+				existing = append(existing, '\n')
+			}
+			if err := os.WriteFile(file, append(existing, data...), 0644); err != nil {
+				panic(err)
+			}
+			return
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(file), 0755); err != nil {
 		panic(err)

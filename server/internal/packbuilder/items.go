@@ -20,7 +20,7 @@ func buildItems(dir string) (count int, lang []string) {
 
 // buildItemsOf builds the item-related files of the custom items passed.
 func buildItemsOf(dir string, items []world.CustomItem) (count int, lang []string) {
-	if err := os.Mkdir(filepath.Join(dir, "items"), os.ModePerm); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "items"), os.ModePerm); err != nil {
 		panic(err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "textures/items"), os.ModePerm); err != nil {

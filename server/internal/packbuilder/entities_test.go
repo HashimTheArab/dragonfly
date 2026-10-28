@@ -145,3 +145,44 @@ func TestEntityResourceNameRejectsTraversal(t *testing.T) {
 		})
 	}
 }
+
+// otherResourceEntityType is a second entity type with its own identity and resources.
+type otherResourceEntityType struct{ resourceEntityType }
+
+func (otherResourceEntityType) EncodeEntity() string        { return "test:saved_boat" }
+func (otherResourceEntityType) NetworkEncodeEntity() string { return "test:boat" }
+
+// Entity types that each translate their own names in the same language file have both translations kept.
+func TestEntityLanguageAssetsFromSeveralTypesMerge(t *testing.T) {
+	ship := resourceEntityType{resources: world.EntityResources{
+		ClientEntity: []byte(`{"minecraft:client_entity":{"description":{"identifier":"test:ship"}}}`),
+		Assets:       map[string][]byte{"texts/en_US.lang": []byte("entity.test:ship.name=Ship")},
+	}}
+	boat := otherResourceEntityType{resourceEntityType{resources: world.EntityResources{
+		ClientEntity: []byte(`{"minecraft:client_entity":{"description":{"identifier":"test:boat"}}}`),
+		Assets:       map[string][]byte{"texts/en_US.lang": []byte("entity.test:boat.name=Boat")},
+	}}}
+	reg := world.EntityRegistryConfig{}.New([]world.EntityType{ship, boat})
+	dir := t.TempDir()
+	buildEntities(dir, []world.EntityRegistry{reg})
+	data, err := os.ReadFile(filepath.Join(dir, "texts/en_US.lang"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"entity.test:ship.name=Ship", "entity.test:boat.name=Boat"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("translations %q lack %q", data, want)
+		}
+	}
+}
+
+// An entity asset under items/ does not stop the item directory being built.
+func TestEntityItemAssetsDoNotBlockItems(t *testing.T) {
+	reg := world.EntityRegistryConfig{}.New([]world.EntityType{resourceEntityType{resources: world.EntityResources{
+		ClientEntity: []byte(`{"minecraft:client_entity":{"description":{"identifier":"test:ship"}}}`),
+		Assets:       map[string][]byte{"items/ship.json": []byte(`{}`)},
+	}}})
+	dir := t.TempDir()
+	buildEntities(dir, []world.EntityRegistry{reg})
+	buildItemsOf(dir, nil)
+}
