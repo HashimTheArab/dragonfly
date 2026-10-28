@@ -1033,7 +1033,7 @@ func redstoneStrongPowerConductor(pos cube.Pos, b Block, src BlockSource, face c
 	if !b.Model().FaceSolid(pos, face, src) {
 		return false
 	}
-	if _, ok := b.(RedstoneNonConductive); ok {
+	if _, ok := b.(RedstoneNonConductive); ok && RedstoneComponent(b) {
 		return false
 	}
 	if diffuser, ok := b.(redstoneLightDiffuser); ok && diffuser.LightDiffusionLevel() == 0 {

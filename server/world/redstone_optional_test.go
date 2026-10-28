@@ -94,3 +94,23 @@ func TestRedstoneOptionalBlocksGiveNoStrongPowerOrRelay(t *testing.T) {
 		_ = w.Close()
 	}
 }
+
+// optionalNonConductive is a solid block marked nonconductive, but only taking part in redstone when on.
+type optionalNonConductive struct{ on bool }
+
+func (optionalNonConductive) EncodeBlock() (string, map[string]any) {
+	return "test:optional_nonconductive", nil
+}
+func (optionalNonConductive) Hash() (uint64, uint64)    { return 1 << 52, 0 }
+func (optionalNonConductive) Model() BlockModel         { return redstoneSolidModel{} }
+func (s optionalNonConductive) RedstoneComponent() bool { return s.on }
+func (optionalNonConductive) RedstoneNonConductive()    {}
+
+// An opted-out solid block conducts strong power whatever redstone markers its type has.
+func TestRedstoneOptionalNonConductiveConductsWhenOptedOut(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		if got := redstoneStrongPowerConductor(cube.Pos{}, optionalNonConductive{on: on}, nil, cube.FaceUp); got == on {
+			t.Errorf("on=%v: conductor = %v, want %v", on, got, !on)
+		}
+	}
+}
