@@ -1822,7 +1822,9 @@ func (p *Player) UseItemOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.Vec
 		if block.CanAttemptActivation(i, p.Sneaking()) {
 			// The block was activated: Blocks such as doors must always have precedence over the item being
 			// used.
-			if useCtx := p.useContext(); act.Activate(pos, face, p.tx, p, useCtx) {
+			useCtx := p.useContext()
+			useCtx.ClickPos = &clickPos
+			if act.Activate(pos, face, p.tx, p, useCtx) {
 				p.SwingArm()
 				p.SetHeldItems(p.subtractItem(p.damageItem(i, useCtx.Damage), useCtx.CountSub), left)
 				p.addNewItem(useCtx)
@@ -1830,6 +1832,26 @@ func (p *Player) UseItemOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.Vec
 			}
 		}
 	}
+	p.useHeldItemOnBlock(pos, face, clickPos, b, i, left)
+}
+
+// UseItemOnBlockWithoutActivation uses the item held in the main hand of the player on the block at the position
+// passed as UseItemOnBlock does when the block does not take the click: the block is not activated, and the item
+// use handler, which ran for the click, does not run again. It is for an Activatable block that took a click
+// while it decided what to do with it and then passed it on. Like UseItemOnBlock, it does nothing if the block at
+// the position is air or out of reach.
+func (p *Player) UseItemOnBlockWithoutActivation(pos cube.Pos, face cube.Face, clickPos mgl64.Vec3) {
+	if _, ok := p.tx.Block(pos).(block.Air); ok || !p.canReach(pos.Vec3Centre()) {
+		p.resendNearbyBlocks(pos, face)
+		return
+	}
+	i, left := p.HeldItems()
+	p.useHeldItemOnBlock(pos, face, clickPos, p.tx.Block(pos), i, left)
+}
+
+// useHeldItemOnBlock uses the held items i and left on the block b at pos, which did not take the click: an item
+// usable on blocks is used, and a block item is placed against b.
+func (p *Player) useHeldItemOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.Vec3, b world.Block, i, left item.Stack) {
 	if i.Empty() {
 		return
 	}
@@ -2278,9 +2300,12 @@ func (p *Player) PickBlock(pos cube.Pos) {
 	if pi, ok := b.(block.Pickable); ok {
 		pickedItem = pi.Pick()
 	} else if i, ok := b.(world.Item); ok {
-		it, _ := world.ItemByName(i.EncodeItem())
-		pickedItem = item.NewStack(it, 1)
-	} else {
+		// A block registered without an item, such as a custom block that offers none, picks nothing.
+		if it, registered := world.ItemByName(i.EncodeItem()); registered {
+			pickedItem = item.NewStack(it, 1)
+		}
+	}
+	if pickedItem.Empty() {
 		return
 	}
 

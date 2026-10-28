@@ -2,6 +2,9 @@
 package customentry
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/df-mc/dragonfly/server/internal/blockinternal"
 	"github.com/df-mc/dragonfly/server/internal/iteminternal"
 	"github.com/df-mc/dragonfly/server/world"
@@ -37,4 +40,18 @@ func Block(b world.CustomBlock, blockID int32) protocol.BlockEntry {
 		Name:       name,
 		Properties: blockinternal.Components(name, b, blockID),
 	}
+}
+
+// DeclareNetworkHashSalt adds world.NetworkHashSaltProperty, with salt as its one value, to the properties of entry,
+// a custom block's entry. A registry with hashed network IDs salts a block whose network block hashes would collide
+// (world.BasicBlockRegistry.NetworkHashSalt), and the client hashes the block's states from the properties its entry
+// declares. One value adds no states and leaves their order unchanged. Properties stay sorted by name.
+func DeclareNetworkHashSalt(entry *protocol.BlockEntry, salt int32) {
+	properties, _ := entry.Properties["properties"].([]map[string]any)
+	property := map[string]any{"name": world.NetworkHashSaltProperty, "enum": []any{salt}}
+	i, _ := slices.BinarySearchFunc(properties, world.NetworkHashSaltProperty, func(p map[string]any, name string) int {
+		n, _ := p["name"].(string)
+		return strings.Compare(n, name)
+	})
+	entry.Properties["properties"] = slices.Insert(properties, i, property)
 }

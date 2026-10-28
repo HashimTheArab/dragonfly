@@ -1,6 +1,7 @@
 package world
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"sort"
@@ -42,8 +43,14 @@ func (br *BasicBlockRegistry) sortForNetworkLocked() {
 	}
 }
 
-// validateCustomBlock returns an error if the traits of a custom block are invalid.
+// validateCustomBlock returns an error if the traits of a custom block are invalid, or if it declares
+// NetworkHashSaltProperty, which the registry reserves.
 func validateCustomBlock(b CustomBlock) error {
+	if permutable, ok := b.(interface{ States() map[string][]any }); ok {
+		if _, ok := permutable.States()[NetworkHashSaltProperty]; ok {
+			return fmt.Errorf("state %s is reserved", NetworkHashSaltProperty)
+		}
+	}
 	if traited, ok := b.(interface{ Traits() []customblock.Trait }); ok {
 		_, err := customblock.SortTraits(traited.Traits())
 		return err
