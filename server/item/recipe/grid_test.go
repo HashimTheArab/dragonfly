@@ -15,7 +15,7 @@ func gridStack(name string, meta int16, count int) item.Stack {
 
 func TestCraftingPattern_ShapedPlacementAndExactEmpties(t *testing.T) {
 	a, b := gridStack("a", 0, 2), gridStack("b", 0, 4)
-	pattern := CraftingPattern{Input: []Item{a, item.Stack{}, b, a}, Shape: NewShape(2, 2)}
+	pattern := CraftingPattern{Input: []Item{a, item.Stack{}, b, a}, Shape: NewShape(2, 2), AssumeSymmetry: true}
 	for _, width := range []int{2, 3} {
 		for y := 0; y <= width-2; y++ {
 			for x := 0; x <= width-2; x++ {

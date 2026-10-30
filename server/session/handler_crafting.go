@@ -36,6 +36,7 @@ func (h *ItemStackRequestHandler) handleCraft(a *protocol.CraftRecipeStackReques
 	pattern := recipe.CraftingPattern{Input: craft.Input()}
 	if shaped, ok := craft.(recipe.Shaped); ok {
 		pattern.Shape = shaped.Shape()
+		pattern.AssumeSymmetry = true
 	}
 	offset := s.craftingOffset()
 	grid := make([]item.Stack, s.craftingSize())

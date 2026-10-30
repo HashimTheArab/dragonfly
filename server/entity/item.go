@@ -42,7 +42,11 @@ func (t itemType) Open(tx *world.Tx, handle *world.EntityHandle, data *world.Ent
 	return &Ent{tx: tx, handle: handle, data: data}
 }
 
-func (itemType) EncodeEntity() string   { return "minecraft:item" }
+func (itemType) EncodeEntity() string { return "minecraft:item" }
+
+// PassableByPlacement reports that blocks may be placed inside this entity.
+func (itemType) PassableByPlacement() bool { return true }
+
 func (itemType) NetworkOffset() float64 { return 0.5 }
 func (itemType) BBox(world.Entity) cube.BBox {
 	return cube.Box(-0.125, 0, -0.125, 0.125, 0.25, 0.125)

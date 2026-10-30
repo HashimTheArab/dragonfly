@@ -67,6 +67,7 @@ func DecodeNetworkCraftingPattern(r any, resolve func(string, int16) (world.Item
 	var output []protocol.ItemStack
 	var block string
 	var shape Shape
+	var assumeSymmetry bool
 	switch r := r.(type) {
 	case *protocol.ShapedRecipe:
 		if r == nil || r.Width < 1 || r.Width > 3 || r.Height < 1 || r.Height > 3 {
@@ -74,6 +75,7 @@ func DecodeNetworkCraftingPattern(r any, resolve func(string, int16) (world.Item
 		}
 		input, output, block = r.Input, r.Output, r.Block
 		shape = NewShape(int(r.Width), int(r.Height))
+		assumeSymmetry = r.AssumeSymmetry
 	case *protocol.ShapelessRecipe:
 		if r == nil {
 			return CraftingPattern{}, false
@@ -85,7 +87,7 @@ func DecodeNetworkCraftingPattern(r any, resolve func(string, int16) (world.Item
 	if block != "crafting_table" || len(output) != 1 || output[0].Count == 0 || output[0].NetworkID == 0 || len(input) == 0 || len(input) > 9 {
 		return CraftingPattern{}, false
 	}
-	p := CraftingPattern{Input: make([]Item, len(input)), Shape: shape, Output: output}
+	p := CraftingPattern{Input: make([]Item, len(input)), Shape: shape, AssumeSymmetry: assumeSymmetry, Output: output}
 	for i, in := range input {
 		var ok bool
 		p.Input[i], ok = DecodeNetworkIngredient(in, resolve)
