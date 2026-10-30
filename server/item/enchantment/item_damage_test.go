@@ -15,7 +15,8 @@ func TestDamageItem(t *testing.T) {
 		empty  bool
 	}{
 		{"ordinary", pick, 1, pick.Durability() - 1, false},
-		{"breaks", pick.WithDurability(1), 1, 0, true},
+		{"last usable state", pick.WithDurability(1), 1, 0, false},
+		{"breaks", pick.WithDurability(0), 1, 0, true},
 		{"unbreakable", pick.AsUnbreakable(), 1, pick.Durability(), false},
 		{"no cost", pick, 0, pick.Durability(), false},
 	} {
