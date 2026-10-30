@@ -138,3 +138,45 @@ func TestCraftingPattern_RejectsInvalidPatternsAndCounts(t *testing.T) {
 		}
 	}
 }
+
+func TestCraftingPattern_ArrangeMatches(t *testing.T) {
+	a, b := gridStack("a", 0, 1), gridStack("b", 0, 2)
+	tag := NewItemTag("t", 1)
+	tag.items = []string{"a"}
+	for _, test := range []struct {
+		name    string
+		pattern CraftingPattern
+		widths  map[int]bool
+	}{
+		{"shaped 2x2", CraftingPattern{Input: []Item{a, item.Stack{}, b, a}, Shape: NewShape(2, 2)}, map[int]bool{2: true, 3: true}},
+		{"shaped 1x2", CraftingPattern{Input: []Item{a, a}, Shape: NewShape(1, 2)}, map[int]bool{2: true, 3: true}},
+		{"shaped 3x3", CraftingPattern{Input: []Item{a, a, a, item.Stack{}, b, item.Stack{}, item.Stack{}, b, item.Stack{}}, Shape: NewShape(3, 3)}, map[int]bool{2: false, 3: true}},
+		{"shapeless", CraftingPattern{Input: []Item{b, item.Stack{}, a}}, map[int]bool{2: true, 3: true}},
+		{"shapeless five", CraftingPattern{Input: []Item{a, a, a, a, b}}, map[int]bool{2: false, 3: true}},
+	} {
+		for _, width := range []int{2, 3} {
+			arranged, ok := test.pattern.Arrange(width)
+			if ok != test.widths[width] {
+				t.Fatalf("%s width %d: Arrange ok = %v, want %v", test.name, width, ok, test.widths[width])
+			}
+			if !ok {
+				continue
+			}
+			grid := make([]item.Stack, len(arranged))
+			for i, cell := range arranged {
+				grid[i] = cell.(item.Stack)
+			}
+			if _, ok := test.pattern.Match(grid, 1); !ok {
+				t.Fatalf("%s width %d: arranged grid %v does not match", test.name, width, grid)
+			}
+		}
+	}
+	tagged := CraftingPattern{Input: []Item{tag, tag}, Shape: NewShape(2, 1)}
+	arranged, ok := tagged.Arrange(3)
+	if !ok || !reflect.DeepEqual(arranged[:2], []Item{tag, tag}) || !arranged[2].Empty() || !arranged[3].Empty() {
+		t.Fatalf("tag arrangement = %v, %v", arranged, ok)
+	}
+	if _, ok := tagged.Arrange(4); ok {
+		t.Fatal("accepted unsupported width")
+	}
+}

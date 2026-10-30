@@ -75,7 +75,7 @@ func (s Stack) Grow(n int) Stack {
 
 // Durability returns the current durability of the item stack. If the item is not one that implements the
 // Durable interface, BaseDurability will always return -1.
-// The closer the durability returned is to 0, the closer the item is to being broken.
+// Zero durability is the last usable state; the next damaging use breaks the item.
 func (s Stack) Durability() int {
 	if durable, ok := s.Item().(Durable); ok {
 		return durable.DurabilityInfo().MaxDurability - s.damage
@@ -95,7 +95,7 @@ func (s Stack) MaxDurability() int {
 // Damage returns a new stack that is damaged by the amount passed. (Meaning, its durability lowered by the
 // amount passed.) If the item does not implement the Durable interface, the original stack is returned.
 // The damage passed may be negative to add durability.
-// If the final durability reaches 0 or below, the item returned is the resulting item of the breaking of the
+// If the final durability falls below 0, the item returned is the resulting item of the breaking of the
 // item. If the final durability reaches a number higher than the maximum durability, the stack returned will
 // get the maximum durability.
 func (s Stack) Damage(d int) Stack {
@@ -105,12 +105,12 @@ func (s Stack) Damage(d int) Stack {
 	}
 	durability := s.Durability()
 	info := durable.DurabilityInfo()
-	if durability-d <= 0 {
+	if durability-d < 0 {
 		if info.Persistent {
 			// Persistent items can't be broken.
 			return s
 		}
-		// A durability of 0, so the item is broken.
+		// Damage exceeded the maximum, so the item is broken.
 		return info.BrokenItem()
 	}
 	if durability-d > info.MaxDurability {
@@ -124,7 +124,7 @@ func (s Stack) Damage(d int) Stack {
 
 // WithDurability returns a new item stack with the durability passed. If the item does not implement the
 // Durable interface, the original stack is returned.
-// The closer the durability d is to 0, the closer the item is to being broken. If a durability of 0 is passed,
+// Zero durability retains the last usable state. If a negative durability is passed,
 // a stack with the item type of the BrokenItem is returned. If a durability is passed that exceeds the
 // maximum durability, the stack returned will have the maximum durability.
 func (s Stack) WithDurability(d int) Stack {
@@ -138,8 +138,8 @@ func (s Stack) WithDurability(d int) Stack {
 		s.damage = 0
 		return s
 	}
-	if d == 0 {
-		// A durability of 0, so the item is broken.
+	if d < 0 {
+		// Damage exceeded the maximum, so the item is broken.
 		return durable.DurabilityInfo().BrokenItem()
 	}
 	s.damage = maxDurability - d
