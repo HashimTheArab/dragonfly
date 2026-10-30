@@ -1,6 +1,8 @@
 package chunk_test
 
 import (
+	"github.com/df-mc/dragonfly/server/block/cube"
+	"slices"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block"
@@ -247,5 +249,34 @@ func TestRequestModeLevelChunkUsesZeroCount(t *testing.T) {
 	}
 	if want := int32(ch.HighestFilledSubChunk()); got != want {
 		t.Errorf("SubChunkLimit = %d, want %d", got, want)
+	}
+}
+
+func TestRequestModeAirSubChunks(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		r     cube.Range
+		limit int32
+		first int32
+		count int
+	}{
+		{"overworld shoreline", cube.Range{-64, 319}, 8, 4, 16},
+		{"empty overworld", cube.Range{-64, 319}, 0, -4, 24},
+		{"nether", cube.Range{0, 127}, 4, 4, 4},
+		{"full", cube.Range{-64, 319}, 24, 0, 0},
+		{"unlimited", cube.Range{-64, 319}, -1, 0, 0},
+		{"invalid negative", cube.Range{-64, 319}, -2, 0, 0},
+		{"invalid height", cube.Range{-64, 319}, 25, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := chunk.RequestModeAirSubChunks(tc.r, tc.limit)
+			var want []int32
+			for i := 0; i < tc.count; i++ {
+				want = append(want, tc.first+int32(i))
+			}
+			if !slices.Equal(got, want) {
+				t.Fatalf("known empty bands=%v, want %v", got, want)
+			}
+		})
 	}
 }
