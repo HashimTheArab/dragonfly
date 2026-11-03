@@ -8,6 +8,9 @@ import (
 // DriedKelp is a food item that can be quickly eaten by the player.
 type DriedKelp struct{}
 
+// HasHarmfulEffects reports that this food applies no adverse effects.
+func (DriedKelp) HasHarmfulEffects() bool { return false }
+
 // AlwaysConsumable ...
 func (DriedKelp) AlwaysConsumable() bool {
 	return false

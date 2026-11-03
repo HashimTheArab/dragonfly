@@ -12,6 +12,9 @@ import (
 // SweetBerries are food items that can be planted into sweet berry bushes.
 type SweetBerries struct{}
 
+// HasHarmfulEffects reports that eating berries applies no adverse effects.
+func (SweetBerries) HasHarmfulEffects() bool { return false }
+
 // AlwaysConsumable ...
 func (SweetBerries) AlwaysConsumable() bool {
 	return false

@@ -15,6 +15,9 @@ type Chicken struct {
 	Cooked bool
 }
 
+// HasHarmfulEffects includes the chance of hunger from uncooked chicken.
+func (c Chicken) HasHarmfulEffects() bool { return !c.Cooked }
+
 // Consume ...
 func (c Chicken) Consume(_ *world.Tx, co Consumer) Stack {
 	if c.Cooked {

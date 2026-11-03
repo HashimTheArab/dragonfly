@@ -12,6 +12,12 @@ type SuspiciousStew struct {
 	Type StewType
 }
 
+// HasHarmfulEffects reports whether this stew's effect is adverse.
+func (s SuspiciousStew) HasHarmfulEffects() bool {
+	_, _, harmful := s.Type.effectInfo()
+	return harmful
+}
+
 // MaxCount ...
 func (SuspiciousStew) MaxCount() int {
 	return 1
