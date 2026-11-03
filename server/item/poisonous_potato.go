@@ -12,6 +12,9 @@ type PoisonousPotato struct {
 	defaultFood
 }
 
+// HasHarmfulEffects includes the chance of poisoning the consumer.
+func (PoisonousPotato) HasHarmfulEffects() bool { return true }
+
 // Consume ...
 func (p PoisonousPotato) Consume(_ *world.Tx, c Consumer) Stack {
 	c.Saturate(2, 1.2)

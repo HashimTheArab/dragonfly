@@ -9,6 +9,9 @@ import (
 // GoldenApple is a special food item that bestows beneficial effects.
 type GoldenApple struct{}
 
+// HasHarmfulEffects reports that this food applies no adverse effects.
+func (GoldenApple) HasHarmfulEffects() bool { return false }
+
 // AlwaysConsumable ...
 func (e GoldenApple) AlwaysConsumable() bool {
 	return true
