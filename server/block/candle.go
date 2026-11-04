@@ -103,12 +103,19 @@ func (c Candle) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 // Activate ...
 func (c Candle) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.User, ctx *item.UseContext) bool {
 	held, _ := u.HeldItems()
-	if _, ok := held.Enchantment(enchantment.FireAspect); ok {
+	if c.CanActivateWith(held) {
 		c.Ignite(pos, tx, nil)
 		ctx.DamageItem(1)
 		return true
 	}
 	return false
+}
+
+// CanActivateWith reports whether the candle consumes a Fire Aspect interaction.
+// Ignition items handle their own use after activation declines the click.
+func (Candle) CanActivateWith(held item.Stack) bool {
+	_, ok := held.Enchantment(enchantment.FireAspect)
+	return ok
 }
 
 // Ignite ...
@@ -152,4 +159,9 @@ func allCandles() []world.Block {
 		}
 	}
 	return b
+}
+
+// PlacementItemCount reports the inventory items represented by this block part.
+func (c Candle) PlacementItemCount() int {
+	return c.AdditionalCandles + 1
 }

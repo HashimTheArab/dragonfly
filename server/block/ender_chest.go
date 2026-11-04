@@ -30,11 +30,14 @@ type EnderChest struct {
 	viewers *atomic.Int64
 }
 
+func (EnderChest) OpensContainer() {}
+
 // NewEnderChest creates a new initialised ender chest.
 func NewEnderChest() EnderChest {
 	return EnderChest{viewers: &atomic.Int64{}}
 }
 
+// ContainerSize returns the number of slots shown for an ender chest.
 func (EnderChest) ContainerSize() int { return 27 }
 
 // BreakInfo ...
@@ -108,9 +111,12 @@ func (c EnderChest) close(tx *world.Tx, pos cube.Pos) {
 	tx.PlaySound(pos.Vec3Centre(), sound.EnderChestClose{})
 }
 
+// BlockActorID returns the Bedrock NBT identifier for EnderChest.
+func (EnderChest) BlockActorID() string { return "EnderChest" }
+
 // EncodeNBT ...
 func (c EnderChest) EncodeNBT() map[string]interface{} {
-	return map[string]interface{}{"id": "EnderChest"}
+	return map[string]interface{}{"id": c.BlockActorID()}
 }
 
 // DecodeNBT ...

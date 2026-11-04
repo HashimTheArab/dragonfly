@@ -13,6 +13,8 @@ type SmithingTable struct {
 	solid
 }
 
+func (SmithingTable) OpensContainer() {}
+
 // EncodeItem ...
 func (SmithingTable) EncodeItem() (name string, meta int16) {
 	return "minecraft:smithing_table", 0

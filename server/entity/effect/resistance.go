@@ -28,3 +28,8 @@ func (resistance) Multiplier(e world.DamageSource, lvl int) float64 {
 func (resistance) RGBA() color.RGBA {
 	return color.RGBA{R: 0x91, G: 0x46, B: 0xf0, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (resistance) Metadata() Metadata {
+	return Metadata{Name: "resistance", Icon: "resistance_effect"}
+}

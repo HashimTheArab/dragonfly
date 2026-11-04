@@ -13,6 +13,8 @@ type CraftingTable struct {
 	solid
 }
 
+func (CraftingTable) OpensContainer() {}
+
 // EncodeItem ...
 func (c CraftingTable) EncodeItem() (name string, meta int16) {
 	return "minecraft:crafting_table", 0

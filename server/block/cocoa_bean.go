@@ -37,14 +37,7 @@ func (c CocoaBean) HasLiquidDrops() bool {
 
 // NeighbourUpdateTick ...
 func (c CocoaBean) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
-	var woodType WoodType
-	switch b := tx.Block(pos.Side(c.Facing.Face())).(type) {
-	case Log:
-		woodType = b.Wood
-	case Wood:
-		woodType = b.Wood
-	}
-	if woodType != JungleWood() {
+	if support, _ := c.Support(pos); !c.SupportedBy(tx.Block(support)) {
 		breakBlock(c, pos, tx)
 	}
 }
@@ -60,14 +53,7 @@ func (c CocoaBean) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *wo
 		return false
 	}
 
-	var woodType WoodType
-	oppositePos := pos.Side(face.Opposite())
-	if log, ok := tx.Block(oppositePos).(Log); ok {
-		woodType = log.Wood
-	} else if wood, ok := tx.Block(oppositePos).(Wood); ok {
-		woodType = wood.Wood
-	}
-	if woodType == JungleWood() {
+	if c.SupportedBy(tx.Block(pos.Side(face.Opposite()))) {
 		c.Facing = face.Opposite().Direction()
 		ctx.IgnoreBBox = true
 
@@ -88,13 +74,16 @@ func (c CocoaBean) RandomTick(pos cube.Pos, tx *world.Tx, r *rand.Rand) {
 
 // BreakInfo ...
 func (c CocoaBean) BreakInfo() BreakInfo {
-	return newBreakInfo(0.2, alwaysHarvestable, axeEffective, func(item.Tool, []item.Enchantment) []item.Stack {
+	return cropBreakInfo(0.2, anyEffective(item.TypeAxe, item.TypeSword), cropDrop{item: c, count: func([]item.Enchantment) int {
 		if c.Age == 2 {
-			return []item.Stack{item.NewStack(c, rand.IntN(2)+2)}
+			return rand.IntN(2) + 2
 		}
-		return []item.Stack{item.NewStack(c, 1)}
-	}).withBlastResistance(3)
+		return 1
+	}}).withBlastResistance(3)
 }
+
+// SwordMiningSpeed ...
+func (CocoaBean) SwordMiningSpeed() float64 { return 1.5 }
 
 // CompostChance ...
 func (CocoaBean) CompostChance() float64 {

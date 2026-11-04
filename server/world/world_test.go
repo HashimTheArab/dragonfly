@@ -257,3 +257,47 @@ func (*testTickerBlock) EncodeNBT() map[string]any {
 func (b *testTickerBlock) Tick(int64, cube.Pos, *Tx) {
 	b.ticks++
 }
+
+// A paused world must not advance tick, time or weather, and resuming must keep
+// the settings it had rather than resetting them.
+func TestPausedWorldFreezesAndResumesFromSameState(t *testing.T) {
+	w := Config{}.New()
+	defer w.Close()
+	NewLoader(1, w, NopViewer{})
+	w.SetTickRange(3)
+
+	type state struct{ tick, time, rain int64 }
+	current := func() state {
+		w.set.Lock()
+		defer w.set.Unlock()
+		return state{w.set.CurrentTick, w.set.Time, w.set.RainTime}
+	}
+	waitAdvance := func(from state) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for current().tick == from.tick {
+			if time.Now().After(deadline) {
+				t.Fatal("world did not tick")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	waitAdvance(current())
+
+	w.SetPaused(true)
+	<-w.exec(func(*Tx) {}) // drain a tick that started before the pause
+	frozen := current()
+	time.Sleep(250 * time.Millisecond)
+	if got := current(); got != frozen {
+		t.Fatalf("paused world advanced from %+v to %+v", frozen, got)
+	}
+	if !w.Paused() || !w.TimeCycle() || w.tickRange() != 3 {
+		t.Fatalf("pause changed settings: paused=%v cycle=%v range=%d", w.Paused(), w.TimeCycle(), w.tickRange())
+	}
+
+	w.SetPaused(false)
+	waitAdvance(frozen)
+	if got := current(); got.tick-frozen.tick > 3 || got.time <= frozen.time || got.rain >= frozen.rain {
+		t.Fatalf("resume did not continue from %+v (now %+v)", frozen, got)
+	}
+}

@@ -32,16 +32,8 @@ func (Bow) FuelInfo() FuelInfo {
 // Release ...
 func (Bow) Release(releaser Releaser, tx *world.Tx, ctx *UseContext, duration time.Duration) {
 	creative := releaser.GameMode().CreativeInventory()
-	ticks := duration.Milliseconds() / 50
-	if ticks < 3 {
-		// The player must hold the bow for at least three ticks.
-		return
-	}
-
-	d := float64(ticks) / 20
-	force := math.Min((d*d+d*2)/3, 1)
-	if force < 0.1 {
-		// The force must be at least 0.1.
+	force := BowDrawPower(int(duration.Milliseconds() / 50))
+	if force == 0 {
 		return
 	}
 
@@ -116,4 +108,18 @@ func (Bow) Requirements() []Stack {
 // EncodeItem ...
 func (Bow) EncodeItem() (name string, meta int16) {
 	return "minecraft:bow", 0
+}
+
+// BowDrawPower returns the fraction of a bow's maximum launch speed after
+// drawing for ticks. A draw too short to release an arrow returns zero.
+func BowDrawPower(ticks int) float64 {
+	if ticks < 3 {
+		return 0
+	}
+	duration := float64(ticks) / 20
+	power := math.Min((duration*duration+2*duration)/3, 1)
+	if power < 0.1 {
+		return 0
+	}
+	return power
 }

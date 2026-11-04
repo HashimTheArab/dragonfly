@@ -35,3 +35,8 @@ func (absorption) End(e world.Entity, _ int) {
 func (absorption) RGBA() color.RGBA {
 	return color.RGBA{R: 0x25, G: 0x52, B: 0xa5, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (absorption) Metadata() Metadata {
+	return Metadata{Name: "absorption", Icon: "absorption_effect"}
+}

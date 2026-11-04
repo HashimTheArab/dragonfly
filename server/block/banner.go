@@ -1,12 +1,13 @@
 package block
 
 import (
+	"time"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
-	"time"
 )
 
 // Banner is a tall decorative block that can be customised.
@@ -85,6 +86,9 @@ func (b Banner) EncodeBlock() (name string, properties map[string]any) {
 	return "minecraft:standing_banner", map[string]any{"ground_sign_direction": int32(b.Attach.o)}
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Banner.
+func (Banner) BlockActorID() string { return "Banner" }
+
 // EncodeNBT ...
 func (b Banner) EncodeNBT() map[string]any {
 	patterns := make([]any, 0, len(b.Patterns))
@@ -92,7 +96,7 @@ func (b Banner) EncodeNBT() map[string]any {
 		patterns = append(patterns, p.EncodeNBT())
 	}
 	return map[string]any{
-		"id":       "Banner",
+		"id":       b.BlockActorID(),
 		"Patterns": patterns,
 		"Type":     int32(boolByte(b.Illager)),
 		"Base":     int32(invertColour(b.Colour)),
@@ -107,10 +111,25 @@ func (b Banner) DecodeNBT(m map[string]any) any {
 	}
 	b.Illager = nbtconv.Int32(m, "Type") == 1
 	if patterns := nbtconv.Slice(m, "Patterns"); patterns != nil {
-		b.Patterns = make([]BannerPatternLayer, len(patterns))
-		for i, p := range b.Patterns {
-			b.Patterns[i] = p.DecodeNBT(patterns[i].(map[string]any)).(BannerPatternLayer)
+		layers := make([]BannerPatternLayer, 0, len(patterns))
+		for _, raw := range patterns {
+			patternNBT, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			patternID := nbtconv.String(patternNBT, "Pattern")
+			pt, ok := BannerPatternByIDOK(patternID)
+			if !ok {
+				// Skip unknown patterns rather than panicking. Servers in the wild may send pattern IDs that are
+				// not part of the vanilla registry.
+				continue
+			}
+			layers = append(layers, BannerPatternLayer{
+				Type:   pt,
+				Colour: invertColourID(int16(nbtconv.Int32(patternNBT, "Color"))),
+			})
 		}
+		b.Patterns = layers
 	}
 	return b
 }

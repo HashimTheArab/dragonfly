@@ -31,6 +31,7 @@ func (s *Session) ViewSubChunks(centre world.SubChunkPos, offsets []protocol.Sub
 
 	entries := make([]protocol.SubChunkEntry, 0, len(offsets))
 	transaction := make(map[uint64]struct{})
+	heightMaps := make(map[*chunk.Chunk]chunk.SubChunkHeightMaps)
 	for _, offset := range offsets {
 		ind := int16(centre.Y()) + int16(offset[1]) - int16(r[0])>>4
 		if ind < 0 || ind > int16(r.Height()>>4) {
@@ -45,7 +46,12 @@ func (s *Session) ViewSubChunks(centre world.SubChunkPos, offsets []protocol.Sub
 			entries = append(entries, protocol.SubChunkEntry{Result: protocol.SubChunkResultChunkNotFound, Offset: offset})
 			continue
 		}
-		entries = append(entries, s.subChunkEntry(offset, ind, col, transaction))
+		maps, ok := heightMaps[col.Chunk]
+		if !ok {
+			maps = chunk.NewSubChunkHeightMaps(col.Chunk)
+			heightMaps[col.Chunk] = maps
+		}
+		entries = append(entries, s.subChunkEntry(offset, ind, col, maps, transaction))
 	}
 	if s.conn.ClientCacheEnabled() && len(transaction) > 0 {
 		s.blobMu.Lock()
@@ -61,73 +67,35 @@ func (s *Session) ViewSubChunks(centre world.SubChunkPos, offsets []protocol.Sub
 	})
 }
 
-func (s *Session) subChunkEntry(offset protocol.SubChunkOffset, ind int16, col *world.Column, transaction map[uint64]struct{}) protocol.SubChunkEntry {
-	chunkMap := col.HeightMap()
-	subMapType, subMap := byte(protocol.HeightMapDataHasData), protocol.HeightMap{}
-	higher, lower := true, true
-	for z := uint8(0); z < 16; z++ {
-		for x := uint8(0); x < 16; x++ {
-			y := chunkMap.At(x, z)
-			otherInd := col.SubIndex(y)
-			switch {
-			case otherInd > ind:
-				subMap[z][x], lower = 16, false
-			case otherInd < ind:
-				subMap[z][x], higher = -1, false
-			default:
-				subMap[z][x], lower, higher = int8(y-col.SubY(otherInd)), false, false
-			}
-		}
-	}
-	var subMapData protocol.Optional[protocol.HeightMap]
-	switch {
-	case higher:
-		subMapType = protocol.HeightMapDataTooHigh
-	case lower:
-		subMapType = protocol.HeightMapDataTooLow
-	default:
-		subMapData = protocol.Option(subMap)
-	}
-
+// subChunkEntry builds one response using the column’s prepared surface summary.
+func (s *Session) subChunkEntry(
+	offset protocol.SubChunkOffset, ind int16, col *world.Column, heightMaps chunk.SubChunkHeightMaps,
+	transaction map[uint64]struct{},
+) protocol.SubChunkEntry {
 	sub := col.Sub()[ind]
 	if sub.Empty() {
-		return protocol.SubChunkEntry{
-			Result:              protocol.SubChunkResultSuccessAllAir,
-			HeightMapType:       subMapType,
-			HeightMapData:       subMapData,
-			RenderHeightMapType: subMapType,
-			RenderHeightMapData: subMapData,
-			Offset:              offset,
-		}
+		return heightMaps.Entry(ind, offset, nil, nil)
 	}
 
 	serialisedSubChunk := chunk.EncodeSubChunk(col.Chunk, chunk.NetworkEncoding, int(ind))
 
-	blockEntityBuf := bytes.NewBuffer(nil)
-	enc := nbt.NewEncoderWithEncoding(blockEntityBuf, nbt.NetworkLittleEndian)
+	entities := make([]chunk.BlockEntity, 0, len(col.BlockEntities))
 	for pos, b := range col.BlockEntities {
 		if n, ok := b.(world.NBTer); ok && col.SubIndex(int16(pos.Y())) == ind {
-			d := n.EncodeNBT()
-			d["x"], d["y"], d["z"] = int32(pos[0]), int32(pos[1]), int32(pos[2])
-			_ = enc.Encode(d)
+			entities = append(entities, chunk.BlockEntity{Pos: pos, Data: n.EncodeNBT()})
 		}
 	}
-
-	entry := protocol.SubChunkEntry{
-		Result:              protocol.SubChunkResultSuccess,
-		RawPayload:          protocol.Option(append(serialisedSubChunk, blockEntityBuf.Bytes()...)),
-		HeightMapType:       subMapType,
-		HeightMapData:       subMapData,
-		RenderHeightMapType: subMapType,
-		RenderHeightMapData: subMapData,
-		Offset:              offset,
+	blockEntityData, err := chunk.EncodeBlockEntities(entities)
+	if err != nil {
+		s.conf.Log.Error("encode sub-chunk block entities", "ind", ind, "err", err)
 	}
+
+	entry := heightMaps.Entry(ind, offset, serialisedSubChunk, blockEntityData)
 	if s.conn.ClientCacheEnabled() {
 		if hash := xxhash.Sum64(serialisedSubChunk); s.trackBlob(hash, serialisedSubChunk) {
 			transaction[hash] = struct{}{}
-
 			entry.BlobHash = protocol.Option(hash)
-			entry.RawPayload = protocol.Option(blockEntityBuf.Bytes())
+			entry.RawPayload = protocol.Option(blockEntityData)
 		}
 	}
 	return entry
@@ -145,11 +113,12 @@ func (s *Session) sendBlobHashes(pos world.ChunkPos, dim world.Dimension, c *chu
 	if subChunkRequests {
 		biomes := chunk.EncodeBiomes(c, chunk.NetworkEncoding)
 		if hash := xxhash.Sum64(biomes); s.trackBlob(hash, biomes) {
+			count, limit := chunk.RequestModeLevelChunk(c)
 			s.writePacket(&packet.LevelChunk{
 				Dimension:     s.dimensionID(dim),
-				SubChunkCount: 0,
+				SubChunkCount: count,
 				Position:      protocol.ChunkPos(pos),
-				SubChunkLimit: protocol.Option(int32(c.HighestFilledSubChunk())),
+				SubChunkLimit: limit,
 				BlobHashes:    []uint64{hash},
 				RawPayload:    []byte{0},
 				CacheEnabled:  true,
@@ -206,40 +175,36 @@ func (s *Session) sendBlobHashes(pos world.ChunkPos, dim world.Dimension, c *chu
 // sendNetworkChunk sends a network encoded chunk to the client.
 func (s *Session) sendNetworkChunk(pos world.ChunkPos, dim world.Dimension, c *chunk.Chunk, blockEntities map[cube.Pos]world.Block) {
 	if subChunkRequests {
+		count, limit := chunk.RequestModeLevelChunk(c)
 		s.writePacket(&packet.LevelChunk{
 			Dimension:     s.dimensionID(dim),
-			SubChunkCount: 0,
+			SubChunkCount: count,
 			Position:      protocol.ChunkPos(pos),
-			SubChunkLimit: protocol.Option(int32(c.HighestFilledSubChunk())),
+			SubChunkLimit: limit,
 			RawPayload:    append(chunk.EncodeBiomes(c, chunk.NetworkEncoding), 0),
 		})
 		return
 	}
 
 	data := chunk.Encode(c, chunk.NetworkEncoding)
-	chunkBuf := bytes.NewBuffer(nil)
-	for _, s := range data.SubChunks {
-		_, _ = chunkBuf.Write(s)
-	}
-	_, _ = chunkBuf.Write(data.Biomes)
 
-	// Length of 1 byte for the border block count.
-	chunkBuf.WriteByte(0)
-
-	enc := nbt.NewEncoderWithEncoding(chunkBuf, nbt.NetworkLittleEndian)
+	entities := make([]chunk.BlockEntity, 0, len(blockEntities))
 	for bp, b := range blockEntities {
 		if n, ok := b.(world.NBTer); ok {
-			d := n.EncodeNBT()
-			d["x"], d["y"], d["z"] = int32(bp[0]), int32(bp[1]), int32(bp[2])
-			_ = enc.Encode(d)
+			entities = append(entities, chunk.BlockEntity{Pos: bp, Data: n.EncodeNBT()})
 		}
+	}
+	raw, err := chunk.EncodeLevelChunkPayload(data, entities)
+	if err != nil {
+		s.conf.Log.Error("encode level chunk payload", "pos", pos, "err", err)
+		return
 	}
 
 	s.writePacket(&packet.LevelChunk{
 		Dimension:     s.dimensionID(dim),
 		Position:      protocol.ChunkPos{pos.X(), pos.Z()},
 		SubChunkCount: uint32(len(data.SubChunks)),
-		RawPayload:    append([]byte(nil), chunkBuf.Bytes()...),
+		RawPayload:    raw,
 	})
 }
 

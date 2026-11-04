@@ -3,6 +3,9 @@ package world
 import (
 	_ "embed"
 	"fmt"
+	"maps"
+
+	vanilla "github.com/cinnabar-mc/protocolgen/generated/data/item"
 	"github.com/df-mc/dragonfly/server/item/category"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"image"
@@ -16,6 +19,13 @@ type Item interface {
 	EncodeItem() (name string, meta int16)
 }
 
+// BlockRuntimeRepresentable represents an item that should advertise a specific block runtime ID to clients.
+// This is useful for items that place a block state different from the item itself.
+type BlockRuntimeRepresentable interface {
+	// BlockForRuntimeID returns the block state that should be encoded in the item's BlockRuntimeID field.
+	BlockForRuntimeID() Block
+}
+
 // CustomItem represents an item that is non-vanilla and requires a resource pack and extra steps to show it
 // to the client.
 type CustomItem interface {
@@ -26,6 +36,18 @@ type CustomItem interface {
 	Texture() image.Image
 	// Category is the category the item will be listed under in the creative inventory.
 	Category() category.Category
+}
+
+// VanillaItemEntry holds the runtime dictionary entry for a vanilla item.
+type VanillaItemEntry struct {
+	RuntimeID      int32          `nbt:"runtime_id"`
+	ComponentBased bool           `nbt:"component_based"`
+	Version        int32          `nbt:"version"`
+	Data           map[string]any `nbt:"data,omitempty"`
+	// MaxStackSize is the highest count a stack of the item may hold. It is not part of the
+	// runtime dictionary and is filled from vanilla data, so it is set even for items with
+	// no Go type.
+	MaxStackSize int `nbt:"-"`
 }
 
 // RegisterItem registers an item with the ID and meta passed. Once registered, items may be obtained from an
@@ -60,6 +82,7 @@ type itemHash struct {
 var (
 	//go:embed vanilla_items.nbt
 	itemRuntimeIDData []byte
+
 	// items holds a list of all registered items, indexed using the itemHash created when calling
 	// Item.EncodeItem.
 	items = map[itemHash]Item{}
@@ -69,23 +92,25 @@ var (
 	itemRuntimeIDsToNames = map[int32]string{}
 	// itemNamesToRuntimeIDs holds a map to translate item string IDs to runtime IDs.
 	itemNamesToRuntimeIDs = map[string]int32{}
+	// vanillaItemEntries holds the full runtime dictionary for vanilla items.
+	vanillaItemEntries = map[string]VanillaItemEntry{}
 )
 
-// init reads all item entries from the resource JSON, and sets the according values in the runtime ID maps.
+// init reads embedded item identities and components, then adds shared stack limits.
 func init() {
-	var m map[string]struct {
-		RuntimeID      int32          `nbt:"runtime_id"`
-		ComponentBased bool           `nbt:"component_based"`
-		Version        int32          `nbt:"version"`
-		Data           map[string]any `nbt:"data,omitempty"`
-	}
-	err := nbt.Unmarshal(itemRuntimeIDData, &m)
+	err := nbt.Unmarshal(itemRuntimeIDData, &vanillaItemEntries)
 	if err != nil {
 		panic(err)
 	}
-	for name, e := range m {
+	for name, e := range vanillaItemEntries {
 		itemNamesToRuntimeIDs[name] = e.RuntimeID
 		itemRuntimeIDsToNames[e.RuntimeID] = name
+		definition, ok := vanilla.LookupRuntime(name)
+		if !ok || definition.MaxCount <= 0 {
+			panic(fmt.Sprintf("vanilla item %s has no shared stack limit", name))
+		}
+		e.MaxStackSize = definition.MaxCount
+		vanillaItemEntries[name] = e
 	}
 }
 
@@ -124,6 +149,29 @@ func Items() []Item {
 		m = append(m, i)
 	}
 	return m
+}
+
+// VanillaItemEntries returns all vanilla item runtime dictionary entries, indexed by item name.
+func VanillaItemEntries() map[string]VanillaItemEntry {
+	entries := make(map[string]VanillaItemEntry, len(vanillaItemEntries))
+	for name, entry := range vanillaItemEntries {
+		entries[name] = cloneVanillaItemEntry(entry)
+	}
+	return entries
+}
+
+// VanillaItemEntryByName returns a vanilla item runtime dictionary entry by item name.
+func VanillaItemEntryByName(name string) (VanillaItemEntry, bool) {
+	entry, ok := vanillaItemEntries[name]
+	if !ok {
+		return VanillaItemEntry{}, false
+	}
+	return cloneVanillaItemEntry(entry), true
+}
+
+func cloneVanillaItemEntry(entry VanillaItemEntry) VanillaItemEntry {
+	entry.Data = maps.Clone(entry.Data)
+	return entry
 }
 
 // CustomItems returns a slice of all registered custom items.

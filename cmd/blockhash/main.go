@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/types"
 	"io"
 	"log"
 	"os"
@@ -294,9 +295,15 @@ func (b *hashBuilder) ftype(structName, s string, expr ast.Expr, directives map[
 	return "", 0
 }
 
+// resolveBlocks selects types with block identity and a gameplay model for hash generation.
 func (b *hashBuilder) resolveBlocks() {
 	for bl, fields := range b.fields {
-		if _, ok := b.funcs[bl]; ok {
+		_, encodes := b.funcs[bl]
+		declaration := b.pkg.Types.Scope().Lookup(bl)
+		if !encodes || declaration == nil {
+			continue
+		}
+		if method, _, _ := types.LookupFieldOrMethod(declaration.Type(), false, b.pkg.Types, "Model"); method != nil {
 			b.blockFields[bl] = fields
 		}
 	}
@@ -311,7 +318,8 @@ func (b *hashBuilder) readFuncs(pkg *packages.Package) {
 func (b *hashBuilder) readFuncDecls(node ast.Node) bool {
 	if fun, ok := node.(*ast.FuncDecl); ok {
 		// If the function is called 'EncodeBlock' and the receiver is not nil, meaning the function is a method, this
-		// is an implementation of the world.Block interface.
+		// supplies a block identity. resolveBlocks also requires a model so metadata-only
+		// types do not receive gameplay hashes.
 		if fun.Name.Name == "EncodeBlock" && fun.Recv != nil {
 			b.funcs[fun.Recv.List[0].Type.(*ast.Ident).Name] = fun
 		}

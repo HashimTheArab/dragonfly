@@ -38,12 +38,19 @@ func (t TNT) ProjectileHit(pos cube.Pos, tx *world.Tx, e world.Entity, _ cube.Fa
 // Activate ...
 func (t TNT) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.User, ctx *item.UseContext) bool {
 	held, _ := u.HeldItems()
-	if _, ok := held.Enchantment(enchantment.FireAspect); ok {
+	if t.CanActivateWith(held) {
 		t.Ignite(pos, tx, nil)
 		ctx.DamageItem(1)
 		return true
 	}
 	return false
+}
+
+// CanActivateWith reports whether activation ignites TNT with Fire Aspect.
+// Flint and steel and fire charges use their own item-use path instead.
+func (TNT) CanActivateWith(held item.Stack) bool {
+	_, ok := held.Enchantment(enchantment.FireAspect)
+	return ok
 }
 
 // Ignite ...

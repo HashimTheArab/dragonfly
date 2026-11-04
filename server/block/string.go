@@ -59,10 +59,15 @@ func (s String) DeriveState(pos cube.Pos, src world.BlockSource) world.Block {
 }
 
 // Connects returns true if the tripwire connects to the block at the face
-// passed. Tripwire connects to other tripwire.
+// passed. Tripwire connects to other tripwire and hooks pointing toward it.
 func (String) Connects(pos cube.Pos, face cube.Face, src world.BlockSource) bool {
-	_, ok := src.Block(pos.Side(face)).(String)
-	return ok
+	switch b := src.Block(pos.Side(face)).(type) {
+	case String:
+		return true
+	case TripwireHook:
+		return b.Facing.Face() == face.Opposite()
+	}
+	return false
 }
 
 // HasLiquidDrops ...

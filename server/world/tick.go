@@ -24,13 +24,32 @@ func (t ticker) tickLoop(w *World) {
 	for {
 		select {
 		case <-tc.C:
-			<-w.exec(t.tick)
+			<-w.exec(func(tx *Tx) {
+				// Checked on the owner so no tick runs once SetPaused(true) has been observed there.
+				if !w.paused.Load() {
+					t.tick(tx)
+				}
+			})
 		case <-w.closing:
 			// World is being closed: Stop ticking and get rid of a task.
 			w.running.Done()
 			return
 		}
 	}
+}
+
+// SetPaused suspends or resumes the automatic tick loop, like the vanilla
+// single-player pause: entities, scheduled, random and redstone ticks, time
+// and weather all stand still, while viewers, tasks, chunk loading and saving
+// keep running. Nothing is reset, so resuming continues from the exact state
+// at the pause; missed ticks are not caught up. AdvanceTick still ticks.
+func (w *World) SetPaused(paused bool) {
+	w.paused.Store(paused)
+}
+
+// Paused reports whether the automatic tick loop is suspended.
+func (w *World) Paused() bool {
+	return w.paused.Load()
 }
 
 // AdvanceTick advances the World by a single tick. It is generally only useful
@@ -48,11 +67,17 @@ func (t ticker) tick(tx *Tx) {
 	w := tx.World()
 
 	w.set.Lock()
-	if s := w.set.Spawn; s[1] > tx.Range()[1] && w.Dimension() == Overworld {
-		// Vanilla will set the spawn position's Y value to max to indicate that
-		// the player should spawn at the highest position in the world.
-		w.set.Spawn[1] = tx.highestObstructingBlock(s[0], s[2]) + 1
+	spawn := w.set.Spawn
+	w.set.Unlock()
+	if spawn[1] > tx.Range()[1] && w.Dimension() == Overworld {
+		height := tx.highestObstructingBlock(spawn[0], spawn[2]) + 1
+		w.set.Lock()
+		if w.set.Spawn == spawn {
+			w.set.Spawn[1] = height
+		}
+		w.set.Unlock()
 	}
+	w.set.Lock()
 	if len(viewers) == 0 && w.set.CurrentTick != 0 && !w.conf.Synchronous {
 		// Don't continue ticking if no viewers are in the world. Synchronous
 		// worlds only tick on explicit AdvanceTick calls, so they always tick.
@@ -78,6 +103,7 @@ func (t ticker) tick(tx *Tx) {
 	}
 
 	w.set.Unlock()
+	w.scheduledUpdates.currentTick = tick
 
 	if tryAdvanceDay {
 		t.tryAdvanceDay(tx, cycle)
@@ -224,6 +250,7 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 			// for loaders to view it.
 			tx.World().entities[handle] = chunkPos
 			c.Entities = append(c.Entities, handle)
+			c.modified = true
 
 			var viewers []Viewer
 
@@ -232,6 +259,7 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 			// the loaders from the old chunk. We can assume they never saw the entity in the first place.
 			if old, ok := tx.World().chunks[lastPos]; ok {
 				old.Entities = sliceutil.DeleteVal(old.Entities, handle)
+				old.modified = true
 				viewers = old.viewers
 			}
 
@@ -253,6 +281,7 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 
 		if tx.World().conf.Synchronous || len(c.viewers) > 0 {
 			if te, ok := e.(TickerEntity); ok {
+				c.modified = true
 				te.Tick(tx, tick)
 			}
 		}

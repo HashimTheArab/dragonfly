@@ -739,7 +739,7 @@ func (p *Player) FinalDamageFrom(dmg float64, src world.DamageSource) float64 {
 func (p *Player) Explode(src world.ExplosionSource, impact float64) {
 	explosionPos := src.Position()
 	diff := p.Position().Sub(explosionPos)
-	p.Hurt(math.Floor((impact*impact+impact)*3.5*src.Size()*2+1), entity.ExplosionDamageSource{Source: src})
+	p.Hurt(block.ExplosionDamage(src.Size(), impact), entity.ExplosionDamageSource{Source: src})
 	p.knockBack(explosionPos, impact, diff[1]/diff.Len()*impact)
 }
 
@@ -1784,7 +1784,7 @@ func (p *Player) UseItemOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.Vec
 	if act, ok := b.(block.Activatable); ok {
 		// If a player is sneaking, it will not activate the block clicked, unless it is not holding any
 		// items, in which case the block will be activated as usual.
-		if !p.Sneaking() || i.Empty() {
+		if block.CanAttemptActivation(i, p.Sneaking()) {
 			// The block was activated: Blocks such as doors must always have precedence over the item being
 			// used.
 			if useCtx := p.useContext(); act.Activate(pos, face, p.tx, p, useCtx) {
@@ -2208,13 +2208,8 @@ func (p *Player) BreakBlock(pos cube.Pos) {
 	}
 
 	p.Exhaust(0.005)
-	// Only blocks that naturally break instantly (zero hardness) cost no durability; a block made to break
-	// within one tick by a fast tool or status effects still consumes durability.
-	if block.BreaksInstantly(b) {
-		return
-	}
-	if durable, ok := held.Item().(item.Durable); ok {
-		p.SetHeldItems(p.damageItem(held, durable.DurabilityInfo().BreakDurability), left)
+	if damage := block.BreakDurability(b, held); damage > 0 {
+		p.SetHeldItems(p.damageItem(held, damage), left)
 	}
 }
 
@@ -3292,10 +3287,7 @@ func (p *Player) damageItem(s item.Stack, d int) item.Stack {
 	if p.Handler().HandleItemDamage(ctx, s, &d); ctx.Cancelled() || d <= 0 {
 		return s
 	}
-	if e, ok := s.Enchantment(enchantment.Unbreaking); ok {
-		d = enchantment.Unbreaking.Reduce(s.Item(), e.Level(), d)
-	}
-	if s = s.Damage(d); s.Empty() {
+	if s = enchantment.DamageItem(s, d); s.Empty() {
 		p.tx.PlaySound(p.Position(), sound.ItemBreak{})
 	}
 	return s

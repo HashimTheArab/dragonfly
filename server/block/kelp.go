@@ -82,12 +82,8 @@ func (k Kelp) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.T
 		return
 	}
 
-	below := pos.Side(cube.FaceDown)
-	belowBlock := tx.Block(below)
-	if _, kelp := belowBlock.(Kelp); !kelp {
-		if !belowBlock.Model().FaceSolid(below, cube.FaceUp, tx) {
-			return false
-		}
+	if !kelpSupported(pos, tx) {
+		return false
 	}
 
 	liquid, ok := tx.Liquid(pos)
@@ -113,12 +109,8 @@ func (k Kelp) NeighbourUpdateTick(pos, changedNeighbour cube.Pos, tx *world.Tx) 
 		tx.SetBlock(pos, k.withRandomAge(), nil)
 	}
 
-	below := pos.Side(cube.FaceDown)
-	belowBlock := tx.Block(below)
-	if _, kelp := belowBlock.(Kelp); !kelp {
-		if !belowBlock.Model().FaceSolid(below, cube.FaceUp, tx) {
-			breakBlock(k, pos, tx)
-		}
+	if !kelpSupported(pos, tx) {
+		breakBlock(k, pos, tx)
 	}
 }
 
@@ -152,4 +144,17 @@ func allKelp() (b []world.Block) {
 		b = append(b, Kelp{Age: i})
 	}
 	return
+}
+
+// kelpSupported checks the substrate for both placement and neighbour updates.
+func kelpSupported(pos cube.Pos, tx *world.Tx) bool {
+	below := pos.Side(cube.FaceDown)
+	b := tx.Block(below)
+	switch b.(type) {
+	case Kelp:
+		return true
+	case Magma, SoulSand, WoodFence, NetherBrickFence:
+		return false
+	}
+	return b.Model().FaceSolid(below, cube.FaceUp, tx)
 }

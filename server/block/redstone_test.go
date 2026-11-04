@@ -1361,3 +1361,16 @@ func redstoneTorchBurnoutTestWaitFor(t *testing.T, w *world.World, ready func() 
 	}
 	t.Fatal(fail())
 }
+
+func TestTripwireConnectsToFacingHook(t *testing.T) {
+	pos := cube.Pos{0, 64, 0}
+	for _, side := range cube.Directions() {
+		for _, facing := range cube.Directions() {
+			source := blockSource{pos.Side(side.Face()): TripwireHook{Facing: facing}}
+			want := facing == side.Opposite()
+			if got := (String{}).Connects(pos, side.Face(), source); got != want {
+				t.Errorf("hook on %v facing %v: connected = %v, want %v", side, facing, got, want)
+			}
+		}
+	}
+}

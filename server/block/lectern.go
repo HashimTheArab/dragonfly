@@ -27,6 +27,8 @@ type Lectern struct {
 	Page int
 }
 
+func (Lectern) OpensContainer() {}
+
 // Model ...
 func (Lectern) Model() world.BlockModel {
 	return model.Lectern{}
@@ -127,12 +129,15 @@ func (l Lectern) TurnPage(pos cube.Pos, tx *world.Tx, page int) error {
 	return nil
 }
 
+// BlockActorID returns the Bedrock NBT identifier for Lectern.
+func (Lectern) BlockActorID() string { return "Lectern" }
+
 // EncodeNBT ...
 func (l Lectern) EncodeNBT() map[string]any {
 	m := map[string]any{
 		"hasBook": boolByte(!l.Book.Empty()),
 		"page":    int32(l.Page),
-		"id":      "Lectern",
+		"id":      l.BlockActorID(),
 	}
 	if r, ok := l.Book.Item().(readableBook); ok {
 		m["book"] = item.WriteNBT(l.Book, true)

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"go/ast"
 	"go/format"
+	"go/types"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,7 +16,8 @@ import (
 )
 
 // accessorSpec describes a generated getter/setter method pair. A block qualifies for a spec when it
-// implements EncodeBlock and has a field named Field of the type Pkg.FieldType.
+// implements EncodeBlock, has a gameplay model, and has a field named Field of
+// the type Pkg.FieldType. Metadata-only types must not gain world.Block setters.
 type accessorSpec struct {
 	// Iface is the name of the interface generated for the accessor pair, such as 'HasFacing'.
 	Iface string
@@ -114,7 +116,7 @@ func main() {
 		log.Fatalln("Must pass one package to produce accessor methods for.")
 	}
 	cfg := &packages.Config{
-		Mode: packages.NeedName | packages.NeedSyntax | packages.NeedFiles,
+		Mode: packages.NeedName | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedFiles,
 	}
 	pkgs, err := packages.Load(cfg, flag.Args()[0])
 	if err != nil {
@@ -183,6 +185,10 @@ func (b *accessorBuilder) resolveMethods() []methodData {
 	for _, spec := range specs {
 		var names []string
 		for name := range b.blocks {
+			declaration := b.pkg.Types.Scope().Lookup(name)
+			if method, _, _ := types.LookupFieldOrMethod(declaration.Type(), false, b.pkg.Types, "Model"); method == nil {
+				continue
+			}
 			if !b.hasField(name, spec) {
 				continue
 			}

@@ -16,3 +16,8 @@ type nausea struct {
 func (nausea) RGBA() color.RGBA {
 	return color.RGBA{R: 0x55, G: 0x1d, B: 0x4a, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (nausea) Metadata() Metadata {
+	return Metadata{Name: "nausea", Icon: "nausea_effect"}
+}

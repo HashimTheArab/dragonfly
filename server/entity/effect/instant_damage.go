@@ -33,3 +33,8 @@ func (InstantDamageSource) ReducedByArmour() bool     { return false }
 func (InstantDamageSource) ReducedByResistance() bool { return true }
 func (InstantDamageSource) Fire() bool                { return false }
 func (InstantDamageSource) IgnoreTotem() bool         { return false }
+
+// Metadata returns the effect's name and icon.
+func (instantDamage) Metadata() Metadata {
+	return Metadata{Name: "instant_damage", Icon: "wither_effect"}
+}

@@ -38,7 +38,10 @@ func (w WrittenBook) DecodeNBT(data map[string]any) any {
 	if pages, ok := data["pages"].([]any); ok {
 		w.Pages = make([]string, len(pages))
 		for i, page := range pages {
-			w.Pages[i] = page.(map[string]any)["text"].(string)
+			if pageData, ok := page.(map[string]any); ok {
+				// Keep malformed pages blank without shifting later page indices.
+				w.Pages[i], _ = pageData["text"].(string)
+			}
 		}
 	}
 	w.Title, _ = data["title"].(string)

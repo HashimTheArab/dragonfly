@@ -8,7 +8,8 @@ type Material struct {
 	renderMethod Method
 	// faceDimming is if the material should be dimmed by the direction it's facing.
 	faceDimming bool
-	// ambientOcclusion controls how much ambient occlusion is applied when lighting.
+	// ambientOcclusion is how strongly ambient occlusion is applied to the material when
+	// lighting it, with 0 disabling it and 1 being the vanilla strength.
 	ambientOcclusion float32
 }
 
@@ -16,13 +17,12 @@ type Material struct {
 // occlusion based on the render method given.
 func NewMaterial(texture string, method Method) Material {
 	m := Material{
-		texture:          texture,
-		renderMethod:     method,
-		faceDimming:      true,
-		ambientOcclusion: 1,
+		texture:      texture,
+		renderMethod: method,
+		faceDimming:  true,
 	}
-	if !method.AmbientOcclusion() {
-		m.ambientOcclusion = 0
+	if method.AmbientOcclusion() {
+		m.ambientOcclusion = 1
 	}
 	return m
 }
@@ -39,14 +39,24 @@ func (m Material) WithoutFaceDimming() Material {
 	return m
 }
 
-// WithAmbientOcclusion returns a copy of the Material with ambient occlusion enabled.
+// WithAmbientOcclusion returns a copy of the Material with ambient occlusion enabled at the
+// vanilla strength. Use WithAmbientOcclusionIntensity to pick a different one.
 func (m Material) WithAmbientOcclusion() Material {
 	m.ambientOcclusion = 1
 	return m
 }
 
+// WithAmbientOcclusionIntensity returns a copy of the Material with ambient occlusion applied
+// at the intensity given, where 0 disables it and 1 is the vanilla strength. The client
+// expects an intensity between 0 and 10.
+func (m Material) WithAmbientOcclusionIntensity(intensity float32) Material {
+	m.ambientOcclusion = intensity
+	return m
+}
+
 // WithoutAmbientOcclusion returns a copy of the Material with ambient occlusion disabled.
 func (m Material) WithoutAmbientOcclusion() Material {
+	m.ambientOcclusion = 0
 	m.ambientOcclusion = 0
 	return m
 }
@@ -54,9 +64,25 @@ func (m Material) WithoutAmbientOcclusion() Material {
 // Encode returns the material encoded as a map that can be sent over the network to the client.
 func (m Material) Encode() map[string]any {
 	return map[string]any{
-		"texture":           m.texture,
-		"render_method":     m.renderMethod.String(),
-		"face_dimming":      m.faceDimming,
+		"texture":       m.texture,
+		"render_method": m.renderMethod.String(),
+		"face_dimming":  m.faceDimming,
+		// The client reads this as an intensity, not a flag: a bool here is silently
+		// rejected and the block renders unlit.
 		"ambient_occlusion": m.ambientOcclusion,
+	}
+}
+
+// MaterialInstances returns the encoded material-instances component for the textures in
+// p. Keeping this encoding with Properties gives custom-block encoders one source of truth
+// for the component shape.
+func (p Properties) MaterialInstances() map[string]any {
+	materials := make(map[string]any, len(p.Textures))
+	for target, material := range p.Textures {
+		materials[target] = material.Encode()
+	}
+	return map[string]any{
+		"mappings":  map[string]any{},
+		"materials": materials,
 	}
 }

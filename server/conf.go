@@ -69,6 +69,13 @@ type Config struct {
 	// MaxChunkRadius is the maximum view distance that each player may have,
 	// measured in chunks. A chunk radius generally leads to more memory usage.
 	MaxChunkRadius int
+	// ChunkLoadsPerTick is the maximum number of chunks requested for each
+	// player per tick. Values of zero or less select the default of 4.
+	ChunkLoadsPerTick int
+	// MaxChunkTransactions stops new chunk requests for a client with the blob
+	// cache enabled while this many chunk transactions await its response.
+	// Values of zero or less select the default of 8.
+	MaxChunkTransactions int
 	// JoinMessage, QuitMessage and ShutdownMessage are the messages to send for
 	// when a player joins or quits the server and when the server shuts down,
 	// kicking all online players. If set, JoinMessage and QuitMessage must have

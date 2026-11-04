@@ -163,13 +163,17 @@ func (t *PortalTravelComputer) travel(e Traveller, tx *world.Tx, destination *wo
 
 	sourceDim, destinationDim := source.Dimension(), destination.Dimension()
 	origin := e.Position()
-	pos := translatePortalPosition(cube.PosFromVec3(origin), sourceDim, destinationDim)
+	pos := TranslatePortalPosition(cube.PosFromVec3(origin), sourceDim, destinationDim)
 
 	t.mu.Lock()
 	t.travelling, t.timedOut, t.awaitingTravel = true, true, false
 	t.mu.Unlock()
 
-	handle := tx.RemoveEntity(e)
+	actor, ok := e.H().Entity(tx)
+	if !ok {
+		return
+	}
+	handle := tx.RemoveEntity(actor)
 	if handle == nil {
 		t.mu.Lock()
 		t.travelling, t.timedOut = false, false
@@ -190,7 +194,7 @@ func (t *PortalTravelComputer) travelQueued(e Traveller, tx *world.Tx, destinati
 
 	sourceDim, destinationDim := source.Dimension(), destination.Dimension()
 	origin := e.Position()
-	pos := translatePortalPosition(cube.PosFromVec3(origin), sourceDim, destinationDim)
+	pos := TranslatePortalPosition(cube.PosFromVec3(origin), sourceDim, destinationDim)
 
 	t.mu.Lock()
 	t.travelling, t.timedOut, t.awaitingTravel = true, true, false
@@ -307,10 +311,10 @@ func handlePortalTravel(e Traveller, source, destination world.Dimension) {
 	}
 }
 
-// translatePortalPosition maps a position in the source dimension to the equivalent position in the target dimension.
+// TranslatePortalPosition maps a position in the source dimension to the equivalent position in the target dimension.
 // Overworld coordinates are divided by 8 when crossing to the Nether and Nether coordinates are multiplied by 8 when
 // crossing to the Overworld; the Y coordinate is clamped to the target dimension's vertical range.
-func translatePortalPosition(pos cube.Pos, source, target world.Dimension) cube.Pos {
+func TranslatePortalPosition(pos cube.Pos, source, target world.Dimension) cube.Pos {
 	switch source {
 	case world.Overworld:
 		pos[0], pos[2] = pos[0]>>3, pos[2]>>3

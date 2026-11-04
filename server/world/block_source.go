@@ -8,6 +8,13 @@ type BlockSource interface {
 	Block(cube.Pos) Block
 }
 
+// LiquidSource is a BlockSource that can also resolve liquids.
+type LiquidSource interface {
+	BlockSource
+	// Liquid returns the liquid at the given position, if any.
+	Liquid(cube.Pos) (Liquid, bool)
+}
+
 // StateDeriver is implemented by Blocks that derive part of their state from the blocks around them,
 // such as the connections of a fence. World uses it to recalculate that state for chunks saved before
 // it existed, which hold a default in its place.

@@ -25,7 +25,7 @@ func (MelonSeeds) SameCrop(c Crop) bool {
 
 // NeighbourUpdateTick ...
 func (m MelonSeeds) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
-	if _, ok := tx.Block(pos.Side(cube.FaceDown)).(Farmland); !ok {
+	if !m.SupportedBy(tx.Block(pos.Side(cube.FaceDown))) {
 		breakBlock(m, pos, tx)
 	} else if m.Direction != cube.FaceDown {
 		if _, ok := tx.Block(pos.Side(m.Direction)).(Melon); !ok {
@@ -79,7 +79,7 @@ func (m MelonSeeds) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *w
 		return false
 	}
 
-	if _, ok := tx.Block(pos.Side(cube.FaceDown)).(Farmland); !ok {
+	if !m.SupportedBy(tx.Block(pos.Side(cube.FaceDown))) {
 		return false
 	}
 

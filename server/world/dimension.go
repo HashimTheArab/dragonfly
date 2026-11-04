@@ -35,6 +35,12 @@ func DimensionByID(id int) (Dimension, bool) {
 	return dimensionReg.Lookup(id)
 }
 
+// DimensionName returns a built-in dimension's display name or a custom
+// dimension's registered name. Unknown IDs return an empty name and false.
+func DimensionName(id int) (string, bool) {
+	return dimensionReg.Name(id)
+}
+
 // DimensionID looks up the ID that a Dimension was registered with. If not
 // found, false is returned.
 func DimensionID(dim Dimension) (int, bool) {
@@ -79,6 +85,20 @@ func (reg *dimensionRegistry) Lookup(id int) (Dimension, bool) {
 func (reg *dimensionRegistry) LookupID(dim Dimension) (int, bool) {
 	id, ok := reg.ids[dim]
 	return id, ok
+}
+
+// Name resolves the name from the dimension or its custom registration.
+func (reg *dimensionRegistry) Name(id int) (string, bool) {
+	dim, ok := reg.dimensions[id]
+	if !ok {
+		return "", false
+	}
+	for _, registration := range reg.custom {
+		if registration.ID == id {
+			return registration.Name, true
+		}
+	}
+	return fmt.Sprint(dim), true
 }
 
 // RegisterDimension registers a custom dimension.

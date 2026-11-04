@@ -18,6 +18,8 @@ type Loom struct {
 	Facing cube.Direction
 }
 
+func (Loom) OpensContainer() {}
+
 // FuelInfo ...
 func (Loom) FuelInfo() item.FuelInfo {
 	return newFuelInfo(time.Second * 15)

@@ -28,3 +28,8 @@ func (fatalPoison) Apply(e world.Entity, eff Effect) {
 func (fatalPoison) RGBA() color.RGBA {
 	return color.RGBA{R: 0x4e, G: 0x93, B: 0x31, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (fatalPoison) Metadata() Metadata {
+	return Metadata{Name: "fatal_poison", Icon: "poison_effect"}
+}

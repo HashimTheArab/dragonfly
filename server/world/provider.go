@@ -5,7 +5,6 @@ import (
 
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world/chunk"
-	"github.com/df-mc/goleveldb/leveldb"
 	"github.com/google/uuid"
 	"io"
 )
@@ -26,7 +25,7 @@ type Provider interface {
 	SavePlayerSpawnPosition(uuid uuid.UUID, pos cube.Pos) error
 	// LoadColumn reads a world.Column from the DB at a position and dimension
 	// in the DB. If no column at that position exists, errors.Is(err,
-	// leveldb.ErrNotFound) equals true.
+	// ErrColumnNotFound) equals true.
 	LoadColumn(pos ChunkPos, dim Dimension) (*chunk.Column, error)
 	// StoreColumn stores a world.Column at a position and dimension in the DB.
 	// An error is returned if storing was unsuccessful.
@@ -52,7 +51,7 @@ func (n NopProvider) Settings() *Settings {
 }
 func (NopProvider) SaveSettings(*Settings) {}
 func (NopProvider) LoadColumn(ChunkPos, Dimension) (*chunk.Column, error) {
-	return nil, leveldb.ErrNotFound
+	return nil, ErrColumnNotFound
 }
 func (NopProvider) StoreColumn(ChunkPos, Dimension, *chunk.Column) error { return nil }
 func (NopProvider) LoadPlayerSpawnPosition(uuid.UUID) (cube.Pos, bool, error) {

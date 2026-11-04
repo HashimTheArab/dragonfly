@@ -1,0 +1,76 @@
+package trace
+
+import (
+	"math"
+	"slices"
+
+	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/world"
+	"github.com/go-gl/mathgl/mgl64"
+)
+
+// Visibility describes a block-model visibility query.
+type Visibility uint8
+
+const (
+	VisibilityInvalid Visibility = iota
+	VisibilityClear
+	VisibilityBlocked
+)
+
+// BlockVisibility checks a segment against block models.
+// Invalid geometry is distinct from terrain obstruction, so it cannot be
+// mistaken for protective cover.
+// Every visited cell must lie within bounds, including ignored cells. Ignored
+// blocks allow a ray to end on or start inside the block being interacted with.
+// Zero-length segments inside bounds are clear. Non-finite coordinates are invalid.
+func BlockVisibility(src world.BlockSource, bounds cube.Range, start, end mgl64.Vec3, ignored ...cube.Pos) Visibility {
+	if !ValidBlockSegment(bounds, start, end) {
+		return VisibilityInvalid
+	}
+	if mgl64.FloatEqual(end.Sub(start).LenSqr(), 0) {
+		return VisibilityClear
+	}
+	result := VisibilityClear
+	TraverseBlocks(start, end, func(pos cube.Pos) bool {
+		if pos.Y() < bounds.Min() || pos.Y() > bounds.Max() {
+			result = VisibilityInvalid
+			return false
+		}
+		if slices.Contains(ignored, pos) {
+			return true
+		}
+		if BlockIntersects(pos, src, src.Block(pos), start, end) {
+			result = VisibilityBlocked
+			return false
+		}
+		return true
+	})
+	return result
+}
+
+// ValidBlockSegment reports whether both segment endpoints have finite
+// coordinates and occupy cells inside bounds. Zero-length segments are valid;
+// callers of TraverseBlocks must reject them before traversing.
+func ValidBlockSegment(bounds cube.Range, start, end mgl64.Vec3) bool {
+	return ValidBlockRay(bounds, start, end) && !cube.PosFromVec3(end).OutOfBounds(bounds)
+}
+
+// ValidBlockRay reports whether a ray segment has finite coordinates and starts
+// inside bounds. Its end may leave bounds; traversers must stop before reading
+// any out-of-bounds cell. Zero-length segments are valid and must be rejected
+// before calling TraverseBlocks.
+func ValidBlockRay(bounds cube.Range, start, end mgl64.Vec3) bool {
+	return finiteVectors(start, end) && !cube.PosFromVec3(start).OutOfBounds(bounds)
+}
+
+func finiteVectors(vectors ...mgl64.Vec3) bool {
+	for _, v := range vectors {
+		for _, n := range v {
+			if math.IsNaN(n) || math.IsInf(n, 0) {
+				return false
+			}
+		}
+	}
+	return true
+}

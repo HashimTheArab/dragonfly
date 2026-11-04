@@ -26,3 +26,8 @@ func (hunger) Apply(e world.Entity, eff Effect) {
 func (hunger) RGBA() color.RGBA {
 	return color.RGBA{R: 0x58, G: 0x76, B: 0x53, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (hunger) Metadata() Metadata {
+	return Metadata{Name: "hunger", Icon: "hunger_effect"}
+}

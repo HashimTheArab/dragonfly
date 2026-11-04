@@ -12,6 +12,7 @@ import (
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/entity"
 	"github.com/df-mc/dragonfly/server/entity/effect"
+	"github.com/df-mc/dragonfly/server/entity/networkoffset"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/item/inventory"
@@ -76,7 +77,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 	yaw, pitch := e.Rotation().Elem()
 	metadata := s.entityMetadata(e)
 
-	id := e.H().Type().EncodeEntity()
+	id := entityNetworkIdentifier(e.H().Type())
 	switch v := e.(type) {
 	case Controllable:
 		_, actualPlayer := sessions.Lookup(v.UUID())
@@ -97,11 +98,13 @@ func (s *Session) ViewEntity(e world.Entity) {
 			GameType:        gameTypeFromMode(v.GameMode()),
 			HeadYaw:         float32(yaw),
 			Pitch:           float32(pitch),
-			Position:        vec64To32(e.Position()),
-			UUID:            v.UUID(),
-			Username:        v.Name(),
-			Yaw:             float32(yaw),
-			BuildPlatform:   int32(protocol.DeviceUnknown),
+			// AddPlayer is encoded in base space. Player movement packets use the
+			// pose-specific network offset applied by entityNetworkPosition.
+			Position:      vec64To32(e.Position()),
+			UUID:          v.UUID(),
+			Username:      v.Name(),
+			Yaw:           float32(yaw),
+			BuildPlatform: int32(protocol.DeviceUnknown),
 			AbilityData: protocol.AbilityData{
 				EntityUniqueID: int64(runtimeID),
 				Layers: []protocol.AbilityLayer{{
@@ -126,7 +129,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 				EntityUniqueID:  int64(runtimeID),
 				EntityRuntimeID: runtimeID,
 				Item:            instanceFromItem(s.br, v.Behaviour().(*entity.ItemBehaviour).Item()),
-				Position:        vec64To32(v.Position()),
+				Position:        vec64To32(entityNetworkPosition(e, v.Position())),
 				Velocity:        vec64To32(v.Velocity()),
 				EntityMetadata:  metadata,
 			})
@@ -137,10 +140,6 @@ func (s *Session) ViewEntity(e world.Entity) {
 			metadata[protocol.EntityDataKeyVariant] = int32(s.br.BlockRuntimeID(v.Behaviour().(*entity.FallingBlockBehaviour).Block()))
 		}
 	}
-	if v, ok := e.H().Type().(NetworkEncodeableEntity); ok {
-		id = v.NetworkEncodeEntity()
-	}
-
 	var vel mgl64.Vec3
 	if v, ok := e.(interface{ Velocity() mgl64.Vec3 }); ok {
 		vel = v.Velocity()
@@ -151,7 +150,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 		EntityRuntimeID: runtimeID,
 		EntityType:      id,
 		EntityMetadata:  metadata,
-		Position:        vec64To32(e.Position()),
+		Position:        vec64To32(entityNetworkPosition(e, e.Position())),
 		Velocity:        vec64To32(vel),
 		Pitch:           float32(pitch),
 		Yaw:             float32(yaw),
@@ -223,7 +222,7 @@ func (s *Session) viewEntityAbsoluteMovement(id uint64, e world.Entity, pos mgl6
 	}
 	s.writePacket(&packet.MoveActorAbsolute{
 		EntityRuntimeID: id,
-		Position:        vec64To32(pos.Add(entityOffset(e))),
+		Position:        vec64To32(entityNetworkPosition(e, pos)),
 		Rotation:        vec64To32(mgl64.Vec3{rot.Pitch(), rot.Yaw(), rot.Yaw()}),
 		Flags:           flags,
 	})
@@ -242,10 +241,59 @@ func (s *Session) ViewEntityVelocity(e world.Entity, velocity mgl64.Vec3) {
 
 // entityOffset returns the offset that entities have client-side.
 func entityOffset(e world.Entity) mgl64.Vec3 {
-	if offset, ok := e.H().Type().(OffsetEntity); ok {
-		return mgl64.Vec3{0, offset.NetworkOffset()}
+	entityType := e.H().Type()
+	if entityNetworkIdentifier(entityType) == "minecraft:player" {
+		pose := networkoffset.PlayerPose{}
+		if sl, ok := e.(sleeper); ok {
+			_, pose.Sleeping = sl.Sleeping()
+		}
+		if sw, ok := e.(swimmer); ok && sw.Swimming() {
+			pose.Swimming = true
+		}
+		if cr, ok := e.(crawler); ok && cr.Crawling() {
+			pose.Crawling = true
+		}
+		if gl, ok := e.(glider); ok && gl.Gliding() {
+			pose.Gliding = true
+		}
+		if sn, ok := e.(sneaker); ok && sn.Sneaking() {
+			pose.Sneaking = true
+		}
+		if pose != (networkoffset.PlayerPose{}) {
+			return mgl64.Vec3{0, networkoffset.Player(pose)}
+		}
 	}
-	return mgl64.Vec3{}
+	return mgl64.Vec3{0, entityTypeOffset(entityType)}
+}
+
+// entityTypeOffset resolves an explicit type offset before its client-facing vanilla default.
+func entityTypeOffset(entityType world.EntityType) float64 {
+	if offset, ok := entityType.(OffsetEntity); ok {
+		return offset.NetworkOffset()
+	}
+	identifier := entityNetworkIdentifier(entityType)
+	if identifier == "minecraft:player" {
+		return networkoffset.Player(networkoffset.PlayerPose{})
+	}
+	return networkoffset.Entity(identifier)
+}
+
+// entityNetworkIdentifier returns the identifier encoded to the client for an entity type.
+func entityNetworkIdentifier(entityType world.EntityType) string {
+	if networkType, ok := entityType.(NetworkEncodeableEntity); ok {
+		return networkType.NetworkEncodeEntity()
+	}
+	return entityType.EncodeEntity()
+}
+
+// entityNetworkPosition converts an entity base position to Bedrock network space.
+func entityNetworkPosition(e world.Entity, pos mgl64.Vec3) mgl64.Vec3 {
+	return pos.Add(entityOffset(e))
+}
+
+// entityBasePosition converts a Bedrock network position to an entity base position.
+func entityBasePosition(e world.Entity, pos mgl64.Vec3) mgl64.Vec3 {
+	return pos.Sub(entityOffset(e))
 }
 
 // ViewTime ...
@@ -274,7 +322,7 @@ func (s *Session) ViewEntityTeleport(e world.Entity, position mgl64.Vec3) {
 	if _, ok := e.(Controllable); ok {
 		s.writePacket(&packet.MovePlayer{
 			EntityRuntimeID: id,
-			Position:        vec64To32(position.Add(entityOffset(e))),
+			Position:        vec64To32(entityNetworkPosition(e, position)),
 			Pitch:           float32(pitch),
 			Yaw:             float32(yaw),
 			HeadYaw:         float32(yaw),
@@ -287,7 +335,7 @@ func (s *Session) ViewEntityTeleport(e world.Entity, position mgl64.Vec3) {
 	}
 	s.writePacket(&packet.MoveActorAbsolute{
 		EntityRuntimeID: id,
-		Position:        vec64To32(position.Add(entityOffset(e))),
+		Position:        vec64To32(entityNetworkPosition(e, position)),
 		Rotation:        vec64To32(mgl64.Vec3{pitch, yaw, yaw}),
 		Flags:           packet.MoveFlagTeleport,
 	})
@@ -510,6 +558,11 @@ func (s *Session) ViewParticle(pos mgl64.Vec3, p world.Particle) {
 			EventType: packet.LevelEventParticleLegacyEvent | 88,
 			Position:  vec64To32(pos),
 		})
+	case particle.WindExplosion:
+		s.writePacket(&packet.LevelEvent{
+			EventType: packet.LevelEventParticlesWindExplosion,
+			Position:  vec64To32(pos),
+		})
 	}
 }
 
@@ -679,6 +732,8 @@ func (s *Session) playSound(pos mgl64.Vec3, t world.Sound, disableRelative bool)
 		case sound.Dream():
 			pk.SoundType = packet.SoundEventGoatCall7
 		}
+	case sound.WindChargeBurst:
+		pk.SoundType = packet.SoundEventWindChargeBurst
 	case sound.FireExtinguish:
 		pk.SoundType = packet.SoundEventExtinguishFire
 	case sound.Ignite:
@@ -746,6 +801,10 @@ func (s *Session) playSound(pos mgl64.Vec3, t world.Sound, disableRelative bool)
 		pk.SoundType = packet.SoundEventBarrelClose
 	case sound.BarrelOpen:
 		pk.SoundType = packet.SoundEventBarrelOpen
+	case sound.ShulkerBoxClose:
+		pk.SoundType = packet.SoundEventShulkerBoxClosed
+	case sound.ShulkerBoxOpen:
+		pk.SoundType = packet.SoundEventShulkerBoxOpen
 	case sound.BlockBreaking:
 		pk.SoundType, pk.ExtraData = packet.SoundEventHit, int32(s.br.BlockRuntimeID(so.Block))
 	case sound.ItemBreak:
@@ -884,10 +943,6 @@ func (s *Session) playSound(pos mgl64.Vec3, t world.Sound, disableRelative bool)
 			Position:  vec64To32(pos),
 		})
 		return
-	case sound.ShulkerBoxClose:
-		pk.SoundType = packet.SoundEventShulkerBoxClosed
-	case sound.ShulkerBoxOpen:
-		pk.SoundType = packet.SoundEventShulkerBoxOpen
 	case sound.DecoratedPotInserted:
 		s.writePacket(&packet.PlaySound{
 			SoundName: "block.decorated_pot.insert",

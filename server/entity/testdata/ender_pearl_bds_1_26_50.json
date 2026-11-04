@@ -1,0 +1,294 @@
+{
+  "server": "Official BDS1.26.50.5",
+  "mode": "direct",
+  "physics": {
+    "power": 1.5,
+    "gravity": 0.025,
+    "drag": 0,
+    "first_tick": "move with launch velocity, then gravity"
+  },
+  "samples": [
+    {
+      "rotation": {
+        "pitch": 0.0,
+        "yaw": 0.0
+      },
+      "start": [
+        1300.5,
+        65.62001037597656,
+        1300.5
+      ],
+      "captured_velocity": [
+        1.3113415775478643e-07,
+        0.0,
+        1.5
+      ],
+      "world": {
+        "floor_y": 63,
+        "floor_min_x": 1248,
+        "floor_max_x": 1359,
+        "floor_min_z": 1280,
+        "floor_max_z": 1439,
+        "wall": null
+      },
+      "observed_teleport_eye": [
+        1300.5,
+        65.62001037597656,
+        1318.33642578125
+      ],
+      "actual_impact": [
+        1300.5,
+        64,
+        1318.33642578125
+      ],
+      "actual_impact_note": "Ground Y from known floor; wall Y inferred from teleport eye offset with ~0.00002-block precision.",
+      "actual_block": [
+        1300,
+        63,
+        1318
+      ],
+      "float32_contact": [
+        1300.5,
+        64.0,
+        1318.33642578125
+      ],
+      "flight_ticks": 12
+    },
+    {
+      "rotation": {
+        "pitch": -20.0,
+        "yaw": 30.0
+      },
+      "start": [
+        1300.5,
+        65.62001037597656,
+        1300.5
+      ],
+      "captured_velocity": [
+        -0.7047521471977234,
+        0.5129101276397705,
+        1.2207571268081665
+      ],
+      "world": {
+        "floor_y": 63,
+        "floor_min_x": 1248,
+        "floor_max_x": 1359,
+        "floor_min_z": 1280,
+        "floor_max_z": 1439,
+        "wall": null
+      },
+      "observed_teleport_eye": [
+        1268.8468017578125,
+        65.62001037597656,
+        1355.3297119140625
+      ],
+      "actual_impact": [
+        1268.8468017578125,
+        64,
+        1355.3297119140625
+      ],
+      "actual_impact_note": "Ground Y from known floor; wall Y inferred from teleport eye offset with ~0.00002-block precision.",
+      "actual_block": [
+        1268,
+        63,
+        1355
+      ],
+      "float32_contact": [
+        1268.8468017578125,
+        64.0,
+        1355.3297119140625
+      ],
+      "flight_ticks": 45
+    },
+    {
+      "rotation": {
+        "pitch": -45.0,
+        "yaw": 0.0
+      },
+      "start": [
+        1300.5,
+        65.62001037597656,
+        1300.5
+      ],
+      "captured_velocity": [
+        9.272586964925722e-08,
+        1.0606602430343628,
+        1.0606602430343628
+      ],
+      "world": {
+        "floor_y": 63,
+        "floor_min_x": 1248,
+        "floor_max_x": 1359,
+        "floor_min_z": 1280,
+        "floor_max_z": 1439,
+        "wall": null
+      },
+      "observed_teleport_eye": [
+        1300.5,
+        65.62001037597656,
+        1393.1328125
+      ],
+      "actual_impact": [
+        1300.5,
+        64,
+        1393.1328125
+      ],
+      "actual_impact_note": "Ground Y from known floor; wall Y inferred from teleport eye offset with ~0.00002-block precision.",
+      "actual_block": [
+        1300,
+        63,
+        1393
+      ],
+      "float32_contact": [
+        1300.5,
+        64.0,
+        1393.1328125
+      ],
+      "flight_ticks": 88
+    },
+    {
+      "rotation": {
+        "pitch": 35.0,
+        "yaw": -20.0
+      },
+      "start": [
+        1300.5,
+        65.62001037597656,
+        1300.5
+      ],
+      "captured_velocity": [
+        0.4202686548233032,
+        -0.8603376746177673,
+        1.1546399593353271
+      ],
+      "world": {
+        "floor_y": 63,
+        "floor_min_x": 1248,
+        "floor_max_x": 1359,
+        "floor_min_z": 1280,
+        "floor_max_z": 1439,
+        "wall": null
+      },
+      "observed_teleport_eye": [
+        1301.2808837890625,
+        65.62001037597656,
+        1302.6453857421875
+      ],
+      "actual_impact": [
+        1301.2808837890625,
+        64,
+        1302.6453857421875
+      ],
+      "actual_impact_note": "Ground Y from known floor; wall Y inferred from teleport eye offset with ~0.00002-block precision.",
+      "actual_block": [
+        1301,
+        63,
+        1302
+      ],
+      "float32_contact": [
+        1301.2808837890625,
+        64.0,
+        1302.6453857421875
+      ],
+      "flight_ticks": 2
+    },
+    {
+      "rotation": {
+        "pitch": 60.0,
+        "yaw": 180.0
+      },
+      "start": [
+        1300.5,
+        65.62001037597656,
+        1300.5
+      ],
+      "captured_velocity": [
+        0.0,
+        -1.299044132232666,
+        -0.7499898076057434
+      ],
+      "world": {
+        "floor_y": 63,
+        "floor_min_x": 1248,
+        "floor_max_x": 1359,
+        "floor_min_z": 1280,
+        "floor_max_z": 1439,
+        "wall": null
+      },
+      "observed_teleport_eye": [
+        1300.5,
+        65.62001037597656,
+        1299.5682373046875
+      ],
+      "actual_impact": [
+        1300.5,
+        64,
+        1299.5682373046875
+      ],
+      "actual_impact_note": "Ground Y from known floor; wall Y inferred from teleport eye offset with ~0.00002-block precision.",
+      "actual_block": [
+        1300,
+        63,
+        1299
+      ],
+      "float32_contact": [
+        1300.5,
+        64.0,
+        1299.5682373046875
+      ],
+      "flight_ticks": 2
+    },
+    {
+      "rotation": {
+        "pitch": -20.0,
+        "yaw": 0.0
+      },
+      "start": [
+        1300.5,
+        65.62001037597656,
+        1300.5
+      ],
+      "captured_velocity": [
+        1.232296256148402e-07,
+        0.5129101276397705,
+        1.4095826148986816
+      ],
+      "world": {
+        "floor_y": 63,
+        "floor_min_x": 1248,
+        "floor_max_x": 1359,
+        "floor_min_z": 1280,
+        "floor_max_z": 1439,
+        "wall": {
+          "z": 1340,
+          "min_y": 64,
+          "max_y": 90,
+          "min_x": 1248,
+          "max_x": 1359
+        }
+      },
+      "observed_teleport_eye": [
+        1300.5,
+        72.14717102050781,
+        1340.0
+      ],
+      "actual_impact": [
+        1300.5,
+        70.52716064453125,
+        1340.0
+      ],
+      "actual_impact_note": "Ground Y from known floor; wall Y inferred from teleport eye offset with ~0.00002-block precision.",
+      "actual_block": [
+        1300,
+        70,
+        1340
+      ],
+      "float32_contact": [
+        1300.5,
+        70.52716064453125,
+        1340.0
+      ],
+      "flight_ticks": 29
+    }
+  ]
+}

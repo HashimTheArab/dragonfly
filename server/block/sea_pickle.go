@@ -35,6 +35,9 @@ func (SeaPickle) canSurvive(pos cube.Pos, tx *world.Tx) bool {
 			return false
 		}
 	}
+	if _, pot := below.(DecoratedPot); pot {
+		return true
+	}
 	if emitter, ok := below.(LightDiffuser); ok && emitter.LightDiffusionLevel() != 15 {
 		return false
 	}
@@ -180,4 +183,9 @@ func allSeaPickles() (b []world.Block) {
 		b = append(b, SeaPickle{AdditionalCount: i, Dead: true})
 	}
 	return
+}
+
+// PlacementItemCount reports the inventory items represented by this block part.
+func (s SeaPickle) PlacementItemCount() int {
+	return s.AdditionalCount + 1
 }

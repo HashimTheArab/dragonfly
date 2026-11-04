@@ -16,6 +16,16 @@ type Properties struct {
 	// Geometry represents the geometry identifier that should be used for the block. If you want to use the default
 	// cube geometry, leave this field empty and set Cube to true.
 	Geometry string
+	// GeometryCulling represents the identifier of the block-culling rules used by the geometry. Leave empty to use
+	// the client's default culling behaviour.
+	GeometryCulling string
+	// GeometryCullingLayer groups this geometry with other blocks for culling rules that use the
+	// same_culling_layer condition.
+	GeometryCullingLayer string
+	// BoneVisibility maps the names of bones in the geometry to a Molang expression that tells if the bone is shown.
+	// The expression may only query block states, using query.block_state. Bones left out are always shown. It may
+	// not be used with minecraft:geometry.full_block or minecraft:geometry.cross.
+	BoneVisibility map[string]string
 	// MapColour represents the hex colour that should be used for the block on a map.
 	MapColour string
 	// Rotation represents the rotation of the block. Rotations are only applied in 90 degree increments, meaning

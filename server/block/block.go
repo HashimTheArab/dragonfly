@@ -21,6 +21,34 @@ type Activatable interface {
 	Activate(pos cube.Pos, clickedFace cube.Face, tx *world.Tx, u item.User, ctx *item.UseContext) bool
 }
 
+// ConditionalActivatable exposes the held-item conditions under which a block's
+// activation may consume a click. It must not mutate the block or held stack.
+// World- and actor-dependent refusals may still occur during Activate.
+type ConditionalActivatable interface {
+	Activatable
+	CanActivateWith(held item.Stack) bool
+}
+
+// MayActivate reports whether a block may consume a click before the held item
+// is used. Sneaking bypasses activation while holding an item. Blocks without a
+// held-item condition conservatively retain activation precedence.
+func MayActivate(b world.Block, held item.Stack, sneaking bool) bool {
+	if !CanAttemptActivation(held, sneaking) {
+		return false
+	}
+	if conditional, ok := b.(ConditionalActivatable); ok {
+		return conditional.CanActivateWith(held)
+	}
+	_, ok := b.(Activatable)
+	return ok
+}
+
+// CanAttemptActivation reports whether the stance permits trying a block's
+// activation. Sneaking bypasses activation only while holding an item.
+func CanAttemptActivation(held item.Stack, sneaking bool) bool {
+	return !sneaking || held.Empty()
+}
+
 // Pickable represents a block that may give a different item then the block itself when picked.
 type Pickable interface {
 	// Pick returns the item that is picked when the block is picked.
@@ -118,6 +146,13 @@ type Permutable interface {
 	// Permutations returns a slice of all the different permutations for the block. Multiple permutations can be
 	// applied at once if their conditions are met.
 	Permutations() []customblock.Permutation
+}
+
+// Traited represents a custom block with vanilla traits. Each trait adds states the client sets when the block is
+// placed, so, as for Permutable, a block must be registered in dragonfly for each combination of their values.
+type Traited interface {
+	// Traits returns the traits of the block.
+	Traits() []customblock.Trait
 }
 
 // unknownFace is a face that is used for certain block items. This should not be exposed in the API.
@@ -255,6 +290,15 @@ func (transparent) LightDiffusionLevel() uint8 {
 
 // gravityAffected is a struct that may be embedded for blocks affected by gravity.
 type gravityAffected struct{}
+
+// IsGravityAffected reports whether b uses Dragonfly's falling-block behaviour.
+// Embedded blocks inherit the classification along with the behaviour.
+func IsGravityAffected(b world.Block) bool {
+	_, ok := b.(interface {
+		fall(world.Block, cube.Pos, *world.Tx)
+	})
+	return ok
+}
 
 // Solidifies ...
 func (g gravityAffected) Solidifies(cube.Pos, *world.Tx) bool {

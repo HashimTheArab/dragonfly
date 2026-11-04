@@ -17,7 +17,7 @@ type regeneration struct {
 // Apply applies health to the world.Entity passed if the duration of the effect is at the right tick.
 func (regeneration) Apply(e world.Entity, eff Effect) {
 	interval := max(50>>(eff.Level()-1), 1)
-	if eff.Tick()%interval == 0 {
+	if eff.periodicPulse(interval) {
 		if l, ok := e.(living); ok {
 			l.Heal(1, RegenerationHealingSource{})
 		}
@@ -34,3 +34,8 @@ func (regeneration) RGBA() color.RGBA {
 type RegenerationHealingSource struct{}
 
 func (RegenerationHealingSource) HealingSource() {}
+
+// Metadata returns the effect's name and icon.
+func (regeneration) Metadata() Metadata {
+	return Metadata{Name: "regeneration", Icon: "regeneration_effect"}
+}

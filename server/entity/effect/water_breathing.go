@@ -16,3 +16,8 @@ type waterBreathing struct {
 func (waterBreathing) RGBA() color.RGBA {
 	return color.RGBA{R: 0x98, G: 0xda, B: 0xc0, A: 0xff}
 }
+
+// Metadata returns the effect's name and icon.
+func (waterBreathing) Metadata() Metadata {
+	return Metadata{Name: "water_breathing", Icon: "water_breathing_effect"}
+}
