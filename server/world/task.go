@@ -319,7 +319,7 @@ func (w *World) DoAfter(delay time.Duration, f func(tx *Tx)) *Task {
 // panics, Call re-panics with the original value on the waiting goroutine after
 // logging the original stack through the World's Logger. Context cancellation
 // stops pending work, but Call waits for a callback that has already started.
-func Call[T any](ctx context.Context, w *World, f func(tx *Tx) (T, error)) (T, error) {
+func (w *World) Call[T any](ctx context.Context, f func(tx *Tx) (T, error)) (T, error) {
 	var zero T
 	ctx, err := callContext(ctx)
 	if err != nil {
@@ -334,11 +334,11 @@ func Call[T any](ctx context.Context, w *World, f func(tx *Tx) (T, error)) (T, e
 	return awaitTask(ctx, task, &result)
 }
 
-// CallEntity runs f with the EntityHandle's entity on its current world owner
-// and waits for the typed result. Off-owner code only, like Call. If f panics,
-// CallEntity re-panics with the original value on the waiting goroutine.
-func CallEntity[T any](ctx context.Context, h *EntityHandle, f func(tx *Tx, e Entity) (T, error)) (T, error) {
-	return CallRef(ctx, NewEntityRef[Entity](h), f)
+// Call runs f with the EntityHandle's entity on its current world owner
+// and waits for the typed result. Off-owner code only, like World.Call. If f panics,
+// Call re-panics with the original value on the waiting goroutine.
+func (h *EntityHandle) Call[T any](ctx context.Context, f func(tx *Tx, e Entity) (T, error)) (T, error) {
+	return NewEntityRef[Entity](h).Call(ctx, f)
 }
 
 // scheduleTask enqueues a scheduledTransaction on the world's owner queue,

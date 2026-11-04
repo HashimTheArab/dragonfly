@@ -118,7 +118,7 @@ func (srv *Server) Listen() {
 // yields players that join the server while blocking otherwise. The iterator
 // returned ends when the Server is closed using a call to Close. The loop body
 // runs on the player's world owner: blocking there stalls that world, and
-// calling world.Call, world.CallEntity, world.CallRef, or Task.Wait for the
+// calling world.World.Call, world.EntityHandle.Call, world.EntityRef.Call, or Task.Wait for the
 // same owner deadlocks. Players returned are only valid within the block of the
 // for loop used to iterate over them. Use p.H() with player.Do for work that
 // outlives the loop body:
@@ -141,7 +141,7 @@ func (srv *Server) Accept() iter.Seq[*player.Player] {
 			srv.p[inc.p.handle.UUID()] = inc.p
 			srv.pmu.Unlock()
 
-			ret, err := world.Call(context.Background(), inc.w, func(tx *world.Tx) (bool, error) {
+			ret, err := inc.w.Call(context.Background(), func(tx *world.Tx) (bool, error) {
 				p := tx.AddEntity(inc.p.handle).(*player.Player)
 				inc.s.Spawn(p, tx)
 				return !yield(p), nil
@@ -208,8 +208,8 @@ func (srv *Server) PlayerCount() int {
 // Players returns an iterator that yields players currently online. If Players
 // is called from within a transaction, the respective transaction should be
 // passed. Passing nil is otherwise valid. Each loop body runs on the yielded
-// player's world owner, so blocking stalls that world and calling world.Call,
-// world.CallEntity, world.CallRef, or Task.Wait for the same owner deadlocks.
+// player's world owner, so blocking stalls that world and calling world.World.Call,
+// world.EntityHandle.Call, world.EntityRef.Call, or Task.Wait for the same owner deadlocks.
 // Players in other worlds are yielded by blocking on those owners sequentially;
 // mirrored handlers in two worlds can therefore deadlock each other. For
 // fan-out, collect Player.H values and schedule each with player.Do instead.
@@ -246,7 +246,7 @@ func (srv *Server) Players(tx *world.Tx) iter.Seq[*player.Player] {
 					continue
 				}
 			}
-			ret, err := player.Call(context.Background(), handle, func(_ *world.Tx, p *player.Player) (bool, error) {
+			ret, err := player.NewRef(handle).Call(context.Background(), func(_ *world.Tx, p *player.Player) (bool, error) {
 				return !yield(p), nil
 			})
 			if err != nil {
