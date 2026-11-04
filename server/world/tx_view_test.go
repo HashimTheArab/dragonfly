@@ -46,6 +46,9 @@ func TestRunBlockTransaction_Reliability(t *testing.T) {
 	}) {
 		t.Fatal("supported detached dimension query was marked incomplete")
 	}
+	if RunBlockTransaction(view, func(tx *Tx) { _ = tx.EntityViewers(nil) }) {
+		t.Fatal("unsupported detached entity viewers query was reported complete")
+	}
 	if RunBlockTransaction(nil, func(*Tx) {}) || RunBlockTransaction(view, nil) {
 		t.Fatal("nil detached transaction input was reported complete")
 	}
@@ -92,7 +95,8 @@ func TestBlockTransactionView_TxMethodCoverage(t *testing.T) {
 		{"ScheduleBlockUpdate", "AddParticle", "PlayEntityAnimation", "PlaySound"},
 		// Unsupported operations that make the result unreliable.
 		{
-			"MarkEntityModified",
+			"Mount", "Dismount", "UpdateRiders", "HandleRiderInput",
+			"MarkEntityModified", "EntityViewers",
 			"Defer", "DeferErr", "World", "SetBlockEntity", "BlocksWithin", "BuildStructure", "HighestLightBlocker", "HighestBlock", "Light", "SkyLight", "BlockLight",
 			"SetBiome", "Biome", "Temperature", "RainingAt", "SnowingAt", "ThunderingAt", "Raining", "Thundering",
 			"AddEntity", "AddEntityAt", "RemoveEntity", "EntitiesWithin", "Entities", "Players", "Viewers", "Sleepers",

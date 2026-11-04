@@ -22,7 +22,8 @@ type PassiveBehaviourConfig struct {
 	// ExistenceDuration.
 	Expire func(e *Ent, tx *world.Tx)
 	// Tick is called for every tick that the entity is alive. Tick is called
-	// after the entity moves on a tick.
+	// after the entity moves on a tick. It is skipped while mounted, when the
+	// vehicle owns movement.
 	Tick func(e *Ent, tx *world.Tx)
 }
 
@@ -84,18 +85,22 @@ func (p *PassiveBehaviour) Tick(e *Ent, tx *world.Tx) *Movement {
 		return nil
 	}
 
-	m := p.mc.TickMovement(e, e.data.Pos, e.data.Vel, e.data.Rot, tx)
-	e.data.Pos, e.data.Vel = m.pos, m.vel
-	p.fallDistance = math.Max(p.fallDistance-m.dpos[1], 0)
-
 	p.fuse = p.conf.ExistenceDuration - e.Age()
-
-	if p.conf.Tick != nil {
-		p.conf.Tick(e, tx)
+	var m *Movement
+	if _, _, riding := world.Riding(e); riding {
+		e.data.Vel = zeroVec3
+		p.fallDistance = 0
+	} else {
+		m = p.mc.TickMovement(e, e.data.Pos, e.data.Vel, e.data.Rot, tx)
+		e.data.Pos, e.data.Vel = m.pos, m.vel
+		p.fallDistance = math.Max(p.fallDistance-m.dpos[1], 0)
+		if p.conf.Tick != nil {
+			p.conf.Tick(e, tx)
+		}
 	}
 
 	if p.Fuse()%(time.Second/4) == 0 {
-		for _, v := range tx.Viewers(m.pos) {
+		for _, v := range tx.Viewers(e.Position()) {
 			v.ViewEntityState(e)
 		}
 	}
