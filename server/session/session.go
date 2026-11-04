@@ -20,6 +20,7 @@ import (
 	"github.com/df-mc/dragonfly/server/player/form"
 	"github.com/df-mc/dragonfly/server/player/hud"
 	"github.com/df-mc/dragonfly/server/player/skin"
+	"github.com/df-mc/dragonfly/server/session/stackrequest"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/google/uuid"
@@ -596,7 +597,7 @@ func (s *Session) registerHandlers() {
 		packet.IDFilterText:                nil,
 		packet.IDInteract:                  &InteractHandler{},
 		packet.IDInventoryTransaction:      &InventoryTransactionHandler{},
-		packet.IDItemStackRequest:          &ItemStackRequestHandler{changes: map[byte]map[byte]changeInfo{}, responseChanges: map[int32]map[*inventory.Inventory]map[byte]responseChange{}},
+		packet.IDItemStackRequest:          &ItemStackRequestHandler{engine: stackrequest.New()},
 		packet.IDLecternUpdate:             &LecternUpdateHandler{},
 		packet.IDMobEquipment:              &MobEquipmentHandler{},
 		packet.IDModalFormResponse:         &ModalFormResponseHandler{forms: make(map[uint32]form.Form)},

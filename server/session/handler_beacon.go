@@ -50,13 +50,15 @@ func (h *ItemStackRequestHandler) handleBeaconPayment(a *protocol.BeaconPaymentS
 	if sOk {
 		beacon.Secondary = secondary.(effect.LastingType)
 	}
-	tx.SetBlock(pos, beacon, nil)
+	h.plan.Defer(stackRequestEffect(func() {
+		tx.SetBlock(pos, beacon, nil)
+	}))
 
 	// The client will send a Destroy action after this action, but we can't rely on that because the client
 	// could just not send it.
 	// We just ignore the next Destroy action and set the item to air here.
 	h.setItemInSlot(slot, item.Stack{}, s, tx)
-	h.ignoreDestroy = true
+	h.plan.IgnoreDestroyActions()
 	return nil
 }
 

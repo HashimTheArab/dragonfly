@@ -2,14 +2,14 @@ package session
 
 import (
 	"fmt"
+	"math"
+	"slices"
+
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/item/creative"
-	"github.com/df-mc/dragonfly/server/item/inventory"
 	"github.com/df-mc/dragonfly/server/item/recipe"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
-	"math"
-	"slices"
 )
 
 // handleCraft handles the CraftRecipe request action.
@@ -43,7 +43,10 @@ func (h *ItemStackRequestHandler) handleCraft(a *protocol.CraftRecipeStackReques
 				// We've already consumed this slot, skip it.
 				continue
 			}
-			has, _ := s.ui.Item(int(slot))
+			has, err := h.plan.ItemAt(protocol.FullContainerName{ContainerID: protocol.ContainerCraftingInput}, int(slot))
+			if err != nil {
+				return err
+			}
 			if has.Empty() != expected.Empty() || has.Count() < expected.Count()*timesCrafted {
 				// We can't process this item, as it's not a part of the recipe.
 				continue
@@ -107,11 +110,18 @@ func (h *ItemStackRequestHandler) handleAutoCraft(a *protocol.AutoCraftRecipeSta
 	for _, expected := range flattenedInputs {
 		remaining := expected.Count() * timesCrafted
 
-		for id, inv := range map[byte]*inventory.Inventory{
-			protocol.ContainerCraftingInput:              s.ui,
-			protocol.ContainerCombinedHotBarAndInventory: s.inv,
+		for _, container := range []struct {
+			id   byte
+			size int
+		}{
+			{protocol.ContainerCraftingInput, s.ui.Size()},
+			{protocol.ContainerCombinedHotBarAndInventory, s.inv.Size()},
 		} {
-			for slot, has := range inv.Slots() {
+			for slot := 0; slot < container.size; slot++ {
+				has, err := h.plan.ItemAt(protocol.FullContainerName{ContainerID: container.id}, slot)
+				if err != nil {
+					return err
+				}
 				if has.Empty() {
 					// We don't have this item, skip it.
 					continue
@@ -129,7 +139,7 @@ func (h *ItemStackRequestHandler) handleAutoCraft(a *protocol.AutoCraftRecipeSta
 
 				has = has.Grow(-removal)
 				h.setItemInSlot(protocol.StackRequestSlotInfo{
-					Container: protocol.FullContainerName{ContainerID: id},
+					Container: protocol.FullContainerName{ContainerID: container.id},
 					Slot:      byte(slot),
 				}, has, s, tx)
 				if remaining == 0 {
@@ -253,7 +263,10 @@ func (h *ItemStackRequestHandler) tryDynamicCraft(s *Session, tx *world.Tx, time
 	input := make([]recipe.Item, size)
 	for i := uint32(0); i < size; i++ {
 		slot := offset + i
-		it, _ := s.ui.Item(int(slot))
+		it, err := h.plan.ItemAt(protocol.FullContainerName{ContainerID: protocol.ContainerCraftingInput}, int(slot))
+		if err != nil {
+			return err
+		}
 		if it.Empty() {
 			input[i] = item.Stack{}
 		} else {
@@ -278,7 +291,10 @@ func (h *ItemStackRequestHandler) tryDynamicCraft(s *Session, tx *world.Tx, time
 		minStackCount := math.MaxInt
 		for i := uint32(0); i < size; i++ {
 			slot := offset + i
-			it, _ := s.ui.Item(int(slot))
+			it, err := h.plan.ItemAt(protocol.FullContainerName{ContainerID: protocol.ContainerCraftingInput}, int(slot))
+			if err != nil {
+				return err
+			}
 			if !it.Empty() {
 				if it.Count() < minStackCount {
 					minStackCount = it.Count()
@@ -294,7 +310,10 @@ func (h *ItemStackRequestHandler) tryDynamicCraft(s *Session, tx *world.Tx, time
 		// Now consume the validated amount from each non-empty slot
 		for i := uint32(0); i < size; i++ {
 			slot := offset + i
-			it, _ := s.ui.Item(int(slot))
+			it, err := h.plan.ItemAt(protocol.FullContainerName{ContainerID: protocol.ContainerCraftingInput}, int(slot))
+			if err != nil {
+				return err
+			}
 			if !it.Empty() {
 				// Consume one item from this slot per craft
 				st := it.Grow(-1 * timesCrafted)

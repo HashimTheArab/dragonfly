@@ -99,8 +99,8 @@ func (h PlayerAuthInputHandler) handleActions(pk *packet.PlayerAuthInput, s *Ses
 		// As of 1.18 this is now used for sending item stack requests such as when mining a block.
 		sh := s.handlers[packet.IDItemStackRequest].(*ItemStackRequestHandler)
 		if err := sh.handleRequest(request, s, tx, c); err != nil {
-			// Item stacks being out of sync isn't uncommon, so don't error. Just debug the error and let the
-			// revert do its work.
+			// Item stacks being out of sync isn't uncommon, so don't disconnect. The rejected plan has not
+			// mutated live inventories.
 			s.conf.Log.Debug("process packet: PlayerAuthInput: resolve item stack request: " + err.Error())
 		}
 	}
