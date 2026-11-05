@@ -177,10 +177,11 @@ func fillStorage(storage *PalettedStorage, runtimeID uint32) {
 	}
 }
 
+// TestPalettedStorageCompactForRuntimeCacheGrowsAgainAfterShrinking checks that a storage
+// shrunk by the cheap compaction widens again as values are added. Servers such as Geyser
+// encode storages wider than their palettes need, and an index must never overflow into
+// the next block.
 func TestPalettedStorageCompactForRuntimeCacheGrowsAgainAfterShrinking(t *testing.T) {
-	// Servers such as Geyser encode storages wider than their palettes need. After the
-	// cheap compaction shrinks one, adding values must widen it again rather than let an
-	// index overflow into the next block.
 	storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, []uint32{11, 22}))
 	storage.Set(1, 2, 3, 22)
 
