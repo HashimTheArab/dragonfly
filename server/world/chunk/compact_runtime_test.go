@@ -176,3 +176,25 @@ func fillStorage(storage *PalettedStorage, runtimeID uint32) {
 		}
 	}
 }
+
+func TestPalettedStorageCompactForRuntimeCacheGrowsAgainAfterShrinking(t *testing.T) {
+	// Servers such as Geyser encode storages wider than their palettes need. After the
+	// cheap compaction shrinks one, adding values must widen it again rather than let an
+	// index overflow into the next block.
+	storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, []uint32{11, 22}))
+	storage.Set(1, 2, 3, 22)
+
+	storage.compactForRuntimeCache()
+	for v := uint32(33); v <= 99; v += 11 {
+		storage.Set(1, 4, 3, v)
+		if got := storage.At(1, 4, 3); got != v {
+			t.Fatalf("At(1,4,3) = %d after setting %d", got, v)
+		}
+		if got := storage.At(1, 5, 3); got != 11 {
+			t.Fatalf("At(1,5,3) = %d after setting %d below it, want 11", got, v)
+		}
+	}
+	if got := storage.At(1, 2, 3); got != 22 {
+		t.Fatalf("At(1,2,3) = %d, want 22", got)
+	}
+}

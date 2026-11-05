@@ -192,6 +192,9 @@ func (storage *PalettedStorage) compactForRuntimeCache() {
 
 	if size := paletteSizeFor(storage.palette.Len()); size < storage.palette.size {
 		storage.resize(size)
+		// The palette's size decides when Set widens the storage again, so it must
+		// shrink with the indices or a later value overflows into its neighbour.
+		storage.palette.size = size
 	}
 }
 
