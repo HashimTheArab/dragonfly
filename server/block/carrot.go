@@ -26,6 +26,9 @@ func (c Carrot) AlwaysConsumable() bool {
 	return false
 }
 
+// HasHarmfulEffects reports that eating a carrot applies no adverse effects.
+func (Carrot) HasHarmfulEffects() bool { return false }
+
 // ConsumeDuration ...
 func (c Carrot) ConsumeDuration() time.Duration {
 	return item.DefaultConsumeDuration

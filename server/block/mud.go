@@ -1,11 +1,17 @@
 package block
 
-import "github.com/df-mc/dragonfly/server/world"
+import (
+	"github.com/df-mc/dragonfly/server/block/model"
+	"github.com/df-mc/dragonfly/server/world"
+)
 
 // Mud is a decorative block obtained by using a water bottle on a dirt block.
 type Mud struct {
 	solid
 }
+
+// Model returns the lowered collision surface.
+func (Mud) Model() world.BlockModel { return model.Mud{} }
 
 // SoilFor ...
 func (Mud) SoilFor(block world.Block) bool {

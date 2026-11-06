@@ -25,3 +25,30 @@ func TestRepeatStacks(t *testing.T) {
 type testItem struct{}
 
 func (testItem) EncodeItem() (string, int16) { return "minecraft:test", 0 }
+
+// TestStack_MaximumDamageRetainsLastUse covers the stone pickaxe that BDS
+// still sends at Damage=131, including its network NBT round trip.
+func TestStack_MaximumDamageRetainsLastUse(t *testing.T) {
+	for _, tier := range ToolTiers() {
+		t.Run(tier.Name, func(t *testing.T) {
+			fresh := NewStack(Pickaxe{Tier: tier}, 1)
+			tag := map[string]any{"Damage": int32(tier.Durability)}
+			last := ReadNBT(tag, &fresh)
+			if last.Empty() || last.Durability() != 0 {
+				t.Fatalf("maximum damage discarded last use: count=%d durability=%d", last.Count(), last.Durability())
+			}
+			if got := WriteNBT(last, false)["Damage"]; got != int32(tier.Durability) {
+				t.Fatalf("round trip damage=%v, want %d", got, tier.Durability)
+			}
+			if !last.Damage(1).Empty() {
+				t.Fatal("use beyond maximum damage did not break tool")
+			}
+			if got := fresh.WithDurability(0); got.Empty() || got.Durability() != 0 {
+				t.Fatal("zero durability discarded last use")
+			}
+			if !fresh.WithDurability(-1).Empty() {
+				t.Fatal("negative durability retained broken tool")
+			}
+		})
+	}
+}

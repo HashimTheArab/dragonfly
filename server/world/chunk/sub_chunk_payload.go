@@ -1,6 +1,7 @@
 package chunk
 
 import (
+	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
@@ -83,4 +84,19 @@ func (m SubChunkHeightMaps) Entry(index int16, offset protocol.SubChunkOffset, t
 // marks request mode and the older protocol.SubChunkRequestMode* sentinels are rejected.
 func RequestModeLevelChunk(c *Chunk) (subChunkCount uint32, subChunkLimit protocol.Optional[int32]) {
 	return 0, protocol.Option(int32(c.HighestFilledSubChunk()))
+}
+
+// RequestModeAirSubChunks returns the absolute subchunk coordinates above a
+// request-mode column's populated prefix. A negative or out-of-range limit does
+// not establish any empty terrain.
+func RequestModeAirSubChunks(r cube.Range, limit int32) []int32 {
+	count := int32((r.Height() >> 4) + 1)
+	if limit < 0 || limit > count {
+		return nil
+	}
+	var air []int32
+	for index := limit; index < count; index++ {
+		air = append(air, int32(r.Min()>>4)+index)
+	}
+	return air
 }

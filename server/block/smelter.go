@@ -48,9 +48,9 @@ func (s *smelter) InsertItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
 		}
 
 		if h.Facing != cube.FaceDown {
-			slot = 1
+			slot = SmelterFuelSlot
 		} else {
-			slot = 0
+			slot = SmelterInputSlot
 		}
 
 		stack := sourceStack.Grow(-sourceStack.Count() + 1)
@@ -88,11 +88,11 @@ func (s *smelter) ExtractItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
 			continue
 		}
 
-		if sourceSlot == 0 {
+		if sourceSlot == SmelterInputSlot {
 			continue
 		}
 
-		if sourceSlot == 1 {
+		if sourceSlot == SmelterFuelSlot {
 			fuel, ok := sourceStack.Item().(item.Fuel)
 			if ok && fuel.FuelInfo().Duration.Seconds() != 0 {
 				continue
@@ -189,9 +189,9 @@ func (s *smelter) tickSmelting(requirement, decrement time.Duration, lit bool, s
 	prevMaxDuration := s.maxDuration
 
 	// Now get each item in the smelter. We don't need to validate errors here since we know the bounds of the smelter.
-	input, _ := s.inventory.Item(0)
-	fuel, _ := s.inventory.Item(1)
-	product, _ := s.inventory.Item(2)
+	input, _ := s.inventory.Item(SmelterInputSlot)
+	fuel, _ := s.inventory.Item(SmelterFuelSlot)
+	product, _ := s.inventory.Item(SmelterResultSlot)
 
 	// Initialise some default smelt info, and update it if we can smelt the item.
 	var inputInfo item.SmeltInfo
@@ -216,7 +216,7 @@ func (s *smelter) tickSmelting(requirement, decrement time.Duration, lit bool, s
 	canSmelt := input.Count() > 0 && (inputInfo.Product.Comparable(product)) && !inputInfo.Product.Empty() && product.Count() < product.MaxCount()
 	if s.remainingDuration <= 0 && canSmelt && fuelInfo.Duration > 0 && fuel.Count() > 0 {
 		s.remainingDuration, s.maxDuration, lit = fuelInfo.Duration, fuelInfo.Duration, true
-		defer s.inventory.SetItem(1, fuelInfo.Residue)
+		defer s.inventory.SetItem(SmelterFuelSlot, fuelInfo.Residue)
 	}
 
 	// Now we need to process a single stage of fuel loss. First, ensure that we have enough remaining duration.
@@ -233,8 +233,8 @@ func (s *smelter) tickSmelting(requirement, decrement time.Duration, lit bool, s
 			// Check if we've cooked enough to match the requirement.
 			if s.cookDuration >= requirement {
 				// We can now create the product and reduce the input by one.
-				defer s.inventory.SetItem(0, input.Grow(-1))
-				defer s.inventory.SetItem(2, item.NewStack(inputInfo.Product.Item(), product.Count()+inputInfo.Product.Count()))
+				defer s.inventory.SetItem(SmelterInputSlot, input.Grow(-1))
+				defer s.inventory.SetItem(SmelterResultSlot, item.NewStack(inputInfo.Product.Item(), product.Count()+inputInfo.Product.Count()))
 
 				// Calculate the amount of experience to grant. Round the experience down to the nearest integer.
 				// The remaining XP is a chance to be granted an additional experience point.

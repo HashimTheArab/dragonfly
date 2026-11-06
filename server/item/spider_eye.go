@@ -11,6 +11,9 @@ type SpiderEye struct {
 	defaultFood
 }
 
+// HasHarmfulEffects reports the poison applied when eating a spider eye.
+func (SpiderEye) HasHarmfulEffects() bool { return true }
+
 // Consume ...
 func (SpiderEye) Consume(_ *world.Tx, c Consumer) Stack {
 	c.Saturate(2, 3.2)

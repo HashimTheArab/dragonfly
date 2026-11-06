@@ -190,3 +190,42 @@ func (p CraftingPattern) matchShapeless(grid []item.Stack, times int) ([]GridCon
 	}
 	return used, true
 }
+
+// Arrange lays the pattern out in a width by width grid, row-major, in a
+// placement Match accepts: shaped ingredients unmirrored from the top-left
+// corner, shapeless ingredients in consecutive slots. Empty cells hold an empty
+// item.Stack. Each cell holds the ingredient for one craft; a caller filling the
+// grid for several crafts multiplies its count. It returns false for an
+// unsupported grid width or a pattern that does not fit.
+func (p CraftingPattern) Arrange(width int) ([]Item, bool) {
+	if (width != 2 && width != 3) || !p.valid() {
+		return nil, false
+	}
+	grid := make([]Item, width*width)
+	for i := range grid {
+		grid[i] = item.Stack{}
+	}
+	if p.Shape == (Shape{}) {
+		slot := 0
+		for _, in := range p.Input {
+			if in.Empty() {
+				continue
+			}
+			if slot == len(grid) {
+				return nil, false
+			}
+			grid[slot] = in
+			slot++
+		}
+		return grid, true
+	}
+	if p.Shape.Width() > width || p.Shape.Height() > width {
+		return nil, false
+	}
+	for i, in := range p.Input {
+		if !in.Empty() {
+			grid[(i/p.Shape.Width())*width+i%p.Shape.Width()] = in
+		}
+	}
+	return grid, true
+}
