@@ -77,8 +77,11 @@ func (storage *PalettedStorage) At(x, y, z byte) uint32 {
 
 // PaletteIndex returns the index in the Palette that the value at a given x, y and z points to. It is a cheaper
 // alternative to At when scanning a storage for specific palette entries, as it does not dereference the Palette.
+// An index the Palette does not cover resolves to the first entry, so the result always points to the value At
+// returns and is safe to use on a slice with one element per Palette entry.
 func (storage *PalettedStorage) PaletteIndex(x, y, z byte) uint16 {
-	return storage.paletteIndex(x&15, y&15, z&15)
+	index, _ := storage.coveredPaletteIndex(x&15, y&15, z&15)
+	return index
 }
 
 // Set sets a value at a specific x, y and z. The Palette and PalettedStorage are expanded
@@ -257,10 +260,13 @@ func (storage *PalettedStorage) compact() {
 	}
 
 	usedIndices := make([]bool, storage.palette.Len())
+	allCovered := true
 	for x := byte(0); x < 16; x++ {
 		for y := byte(0); y < 16; y++ {
 			for z := byte(0); z < 16; z++ {
-				usedIndices[storage.coveredPaletteIndex(x, y, z)] = true
+				index, covered := storage.coveredPaletteIndex(x, y, z)
+				usedIndices[index] = true
+				allCovered = allCovered && covered
 			}
 		}
 	}
@@ -277,8 +283,9 @@ func (storage *PalettedStorage) compact() {
 
 	// If every palette entry is used and the palette size cannot shrink, nothing changes.
 	// This avoids allocating a new indices slice and palette values slice for already-optimal storages.
+	// An uncovered index is always rewritten, or it would start to read as a value added to the palette later.
 	size := paletteSizeFor(usedCount)
-	if allUsed && size == storage.palette.size {
+	if allUsed && allCovered && size == storage.palette.size {
 		return
 	}
 
@@ -299,7 +306,8 @@ func (storage *PalettedStorage) compact() {
 			for z := byte(0); z < 16; z++ {
 				// Replace all usages of the old palette indexes with the new indexes using the map we
 				// produced earlier.
-				newStorage.setPaletteIndex(x, y, z, conversion[storage.coveredPaletteIndex(x, y, z)])
+				index, _ := storage.coveredPaletteIndex(x, y, z)
+				newStorage.setPaletteIndex(x, y, z, conversion[index])
 			}
 		}
 	}
@@ -307,10 +315,11 @@ func (storage *PalettedStorage) compact() {
 }
 
 // coveredPaletteIndex looks up the Palette index at a given x, y and z value, resolving an index the Palette
-// does not cover to the first entry, the same value Palette.Value returns for it.
-func (storage *PalettedStorage) coveredPaletteIndex(x, y, z byte) uint16 {
+// does not cover to the first entry, the same value Palette.Value returns for it. It also reports whether the
+// Palette covered the index.
+func (storage *PalettedStorage) coveredPaletteIndex(x, y, z byte) (uint16, bool) {
 	if i := storage.paletteIndex(x, y, z); int(i) < storage.palette.Len() {
-		return i
+		return i, true
 	}
-	return 0
+	return 0, false
 }
