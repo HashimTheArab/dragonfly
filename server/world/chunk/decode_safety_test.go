@@ -2,6 +2,7 @@ package chunk
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"strings"
 	"testing"
@@ -76,6 +77,63 @@ func TestDecodePalette_RejectsHostileCounts(t *testing.T) {
 				t.Fatal("accepted a zero palette count")
 			}
 		})
+	}
+}
+
+// TestDiskEncodingDecodePalette_BoundsTheCount checks that disk data cannot hold a palette larger
+// than its storage's index width. Such a palette gives indices that do not fit, so writing to the
+// storage later would overwrite a neighbouring block.
+func TestDiskEncodingDecodePalette_BoundsTheCount(t *testing.T) {
+	rejected := []struct {
+		name  string
+		size  paletteSize
+		count uint32
+	}{
+		{"beyond the index width", 2, 5},
+		{"beyond the widest index width", 16, 65537},
+		{"beyond the signed range", 4, 0xffffffff},
+		{"zero", 4, 0},
+	}
+	for _, c := range rejected {
+		t.Run(c.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			_ = binary.Write(buf, binary.LittleEndian, c.count)
+			_, err := DiskEncoding.decodePalette(buf, c.size, BiomePaletteEncoding)
+			if err == nil || !strings.Contains(err.Error(), "invalid palette entry count") && !strings.Contains(err.Error(), "exceeds") {
+				t.Fatalf("count %d with %d bits per index: err = %v, want it rejected by the count check", c.count, c.size, err)
+			}
+		})
+	}
+	t.Run("a full palette", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		_ = binary.Write(buf, binary.LittleEndian, []uint32{4, 11, 22, 33, 44})
+		palette, err := DiskEncoding.decodePalette(buf, 2, BiomePaletteEncoding)
+		if err != nil {
+			t.Fatalf("rejected a palette that fits its storage: %v", err)
+		}
+		if got := palette.Value(3); palette.Len() != 4 || got != 44 {
+			t.Fatalf("palette len = %d, Value(3) = %d, want 4 and 44", palette.Len(), got)
+		}
+	})
+}
+
+// TestDiskDecode_ReloadsMoreBiomesThanASectionHasCells checks that a chunk with more distinct
+// biomes in one section than it has cells still loads after saving. Compacting a chunk does not
+// reach its biome storages, so the palette keeps every biome it ever held.
+func TestDiskDecode_ReloadsMoreBiomesThanASectionHasCells(t *testing.T) {
+	r := cube.Range{0, 15}
+	ch := New(testBlockRegistry{air: 0}, r)
+	for biome := uint32(1); biome <= 4097; biome++ {
+		ch.SetBiome(0, 0, 0, biome)
+	}
+	ch.Compact()
+
+	decoded, err := DiskDecode(testBlockRegistry{air: 0}, Encode(ch, DiskEncoding), r)
+	if err != nil {
+		t.Fatalf("a chunk that was just saved did not load: %v", err)
+	}
+	if got := decoded.Biome(0, 0, 0); got != 4097 {
+		t.Fatalf("Biome(0,0,0) = %d, want 4097", got)
 	}
 }
 
