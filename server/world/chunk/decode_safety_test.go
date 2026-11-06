@@ -2,6 +2,7 @@ package chunk
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"strings"
 	"testing"
@@ -77,6 +78,43 @@ func TestDecodePalette_RejectsHostileCounts(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDiskEncodingDecodePalette_BoundsTheCount checks that disk data follows the same count
+// rule as the network encodings. A palette larger than its storage's index width gives indices
+// that do not fit, so writing to the storage later would overwrite a neighbouring block.
+func TestDiskEncodingDecodePalette_BoundsTheCount(t *testing.T) {
+	rejected := []struct {
+		name  string
+		size  paletteSize
+		count uint32
+	}{
+		{"beyond the index width", 2, 5},
+		{"beyond the cell count", 16, 4097},
+		{"beyond the signed range", 4, 0xffffffff},
+		{"zero", 4, 0},
+	}
+	for _, c := range rejected {
+		t.Run(c.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			_ = binary.Write(buf, binary.LittleEndian, c.count)
+			_, err := DiskEncoding.decodePalette(buf, c.size, BiomePaletteEncoding)
+			if err == nil || !strings.Contains(err.Error(), "invalid palette entry count") && !strings.Contains(err.Error(), "exceeds") {
+				t.Fatalf("count %d with %d bits per index: err = %v, want it rejected by the count check", c.count, c.size, err)
+			}
+		})
+	}
+	t.Run("a full palette", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		_ = binary.Write(buf, binary.LittleEndian, []uint32{4, 11, 22, 33, 44})
+		palette, err := DiskEncoding.decodePalette(buf, 2, BiomePaletteEncoding)
+		if err != nil {
+			t.Fatalf("rejected a palette that fits its storage: %v", err)
+		}
+		if got := palette.Value(3); palette.Len() != 4 || got != 44 {
+			t.Fatalf("palette len = %d, Value(3) = %d, want 4 and 44", palette.Len(), got)
+		}
+	})
 }
 
 func TestNetworkPersistentEncodingDecodePalette_RejectsUncountedOverflow(t *testing.T) {
