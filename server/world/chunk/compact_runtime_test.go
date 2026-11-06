@@ -145,36 +145,43 @@ func TestPalettedStorageCompactForRuntimeCacheShrinksOversizedMultiValueStorage(
 // storage holding an index its palette does not cover leaves no such index behind. It would not
 // fit the narrower width, and a value added to the palette later would change what the cell reads.
 func TestPalettedStorageCompactForRuntimeCacheResolvesUncoveredIndex(t *testing.T) {
-	storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, []uint32{11, 22}))
-	storage.Set(1, 2, 3, 22)
-	storage.setPaletteIndex(1, 15, 0, 5)
-
-	storage.compactForRuntimeCache()
-
-	if got, want := storage.bitsPerIndex, uint16(1); got != want {
-		t.Fatalf("bitsPerIndex = %d, want %d", got, want)
+	cases := []struct {
+		name    string
+		palette []uint32
+		raw     uint16
+		width   uint16
+	}{
+		{"index does not fit the new width", []uint32{11, 22}, 5, 1},
+		{"index fits the new width", []uint32{11, 22, 33}, 3, 2},
 	}
-	for x := byte(0); x < 16; x++ {
-		for y := byte(0); y < 16; y++ {
-			for z := byte(0); z < 16; z++ {
-				if got := storage.PaletteIndex(x, y, z); int(got) >= storage.palette.Len() {
-					t.Fatalf("PaletteIndex(%d,%d,%d) = %d, outside a palette of %d", x, y, z, got, storage.palette.Len())
-				}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, c.palette))
+			storage.Set(1, 2, 3, 22)
+			storage.setPaletteIndex(1, 15, 0, c.raw)
+
+			storage.compactForRuntimeCache()
+
+			if got := storage.bitsPerIndex; got != c.width {
+				t.Fatalf("bitsPerIndex = %d, want %d", got, c.width)
 			}
-		}
-	}
-	// Enough new values to reach index 5, on cells away from the ones checked below.
-	for v := uint32(33); v <= 66; v += 11 {
-		storage.Set(9, 0, 0, v)
-	}
-	if got := storage.At(1, 15, 0); got != 11 {
-		t.Fatalf("At(1,15,0) = %d, want the fallback value 11", got)
-	}
-	if got := storage.At(1, 1, 1); got != 11 {
-		t.Fatalf("At(1,1,1) = %d, want 11", got)
-	}
-	if got := storage.At(1, 2, 3); got != 22 {
-		t.Fatalf("At(1,2,3) = %d, want 22", got)
+			if got := storage.paletteIndex(1, 15, 0); got != 0 {
+				t.Fatalf("stored index = %d, want the first entry", got)
+			}
+			// Enough new values to reach the raw index, on a cell away from the ones checked below.
+			for v := uint32(100); storage.palette.Len() <= int(c.raw); v++ {
+				storage.Set(9, 0, 0, v)
+			}
+			if got := storage.At(1, 15, 0); got != 11 {
+				t.Fatalf("At(1,15,0) = %d, want the fallback value 11", got)
+			}
+			if got := storage.At(1, 1, 1); got != 11 {
+				t.Fatalf("At(1,1,1) = %d, want 11", got)
+			}
+			if got := storage.At(1, 2, 3); got != 22 {
+				t.Fatalf("At(1,2,3) = %d, want 22", got)
+			}
+		})
 	}
 }
 
