@@ -299,10 +299,22 @@ func FuzzDecodeSubChunkRuntimeOperations(f *testing.F) {
 	})
 }
 
+// uncoveredIndexPayload returns a network sub-chunk holding an index its palette does not cover. A
+// fuzzer is unlikely to find one, because the smallest such storage takes over a kilobyte of valid data.
+func uncoveredIndexPayload() []byte {
+	storage := newPalettedStorage(make([]uint32, paletteSize(2).uint32s()), newPalette(2, []uint32{1, 2, 3}))
+	storage.Set(1, 2, 3, 2)
+	storage.setPaletteIndex(1, 15, 0, 3)
+	ch := New(testBlockRegistry{}, cube.Range{0, 127})
+	ch.sub[0].storages = []*PalettedStorage{storage}
+	return EncodeSubChunk(ch, NetworkEncoding, 0)
+}
+
 func FuzzNetworkDecodeRuntimeOperations(f *testing.F) {
 	f.Add([]byte{}, byte(0))
 	f.Add([]byte{1, 0xff}, byte(1))
 	f.Add([]byte{9, 0, 0}, byte(1))
+	f.Add(uncoveredIndexPayload(), byte(1))
 
 	f.Fuzz(func(t *testing.T, payload []byte, count byte) {
 		if len(payload) > 1<<20 {
