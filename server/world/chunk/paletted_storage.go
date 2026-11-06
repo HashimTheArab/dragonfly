@@ -266,12 +266,13 @@ func (storage *PalettedStorage) compact() {
 	for x := byte(0); x < 16; x++ {
 		for y := byte(0); y < 16; y++ {
 			for z := byte(0); z < 16; z++ {
-				// An index the palette does not cover means the first entry, the same as in Palette.Value.
 				index := storage.paletteIndex(x, y, z)
-				if int(index) >= len(usedIndices) {
-					index, allCovered = 0, false
+				if int(index) < len(usedIndices) {
+					usedIndices[index] = true
+					continue
 				}
-				usedIndices[index] = true
+				// An index the palette does not cover means the first entry, the same as in Palette.Value.
+				usedIndices[0], allCovered = true, false
 			}
 		}
 	}

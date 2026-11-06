@@ -117,11 +117,13 @@ func TestPalettedStorage_PaletteIndexPointsToTheValueAtReturns(t *testing.T) {
 	storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, []uint32{11, 22}))
 	storage.Set(1, 2, 3, 22)
 	storage.setPaletteIndex(1, 15, 0, 5)
+	// The first index past the end of the palette.
+	storage.setPaletteIndex(1, 14, 0, 2)
 
 	for _, c := range []struct {
 		x, y, z byte
 		want    uint16
-	}{{1, 15, 0, 0}, {1, 2, 3, 1}, {0, 0, 0, 0}} {
+	}{{1, 15, 0, 0}, {1, 14, 0, 0}, {1, 2, 3, 1}, {0, 0, 0, 0}} {
 		got := storage.PaletteIndex(c.x, c.y, c.z)
 		if got != c.want {
 			t.Fatalf("PaletteIndex(%d,%d,%d) = %d, want %d", c.x, c.y, c.z, got, c.want)
