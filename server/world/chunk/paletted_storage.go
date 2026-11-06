@@ -260,7 +260,7 @@ func (storage *PalettedStorage) compact() {
 	for x := byte(0); x < 16; x++ {
 		for y := byte(0); y < 16; y++ {
 			for z := byte(0); z < 16; z++ {
-				usedIndices[storage.paletteIndex(x, y, z)] = true
+				usedIndices[storage.coveredPaletteIndex(x, y, z)] = true
 			}
 		}
 	}
@@ -299,9 +299,18 @@ func (storage *PalettedStorage) compact() {
 			for z := byte(0); z < 16; z++ {
 				// Replace all usages of the old palette indexes with the new indexes using the map we
 				// produced earlier.
-				newStorage.setPaletteIndex(x, y, z, conversion[storage.paletteIndex(x, y, z)])
+				newStorage.setPaletteIndex(x, y, z, conversion[storage.coveredPaletteIndex(x, y, z)])
 			}
 		}
 	}
 	*storage = *newStorage
+}
+
+// coveredPaletteIndex looks up the Palette index at a given x, y and z value, resolving an index the Palette
+// does not cover to the first entry, the same value Palette.Value returns for it.
+func (storage *PalettedStorage) coveredPaletteIndex(x, y, z byte) uint16 {
+	if i := storage.paletteIndex(x, y, z); int(i) < storage.palette.Len() {
+		return i
+	}
+	return 0
 }
