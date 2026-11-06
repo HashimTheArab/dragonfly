@@ -153,8 +153,12 @@ func (storage *PalettedStorage) setPaletteIndex(x, y, z byte, i uint16) {
 
 // resize changes the size of a PalettedStorage to newPaletteSize. A new PalettedStorage is constructed,
 // and all values available in the current storage are set in their appropriate locations in the
-// new storage.
+// new storage. An index the Palette does not cover might not fit the new width, so it is set to the first
+// entry, the same value Palette.Value returns for it.
 func (storage *PalettedStorage) resize(newPaletteSize paletteSize) {
+	// The palette's size decides when Set widens the storage again, so it must always match
+	// the width of the indices or a later value overflows into its neighbour.
+	storage.palette.size = newPaletteSize
 	if newPaletteSize == paletteSize(storage.bitsPerIndex) {
 		return // Don't resize if the size is already equal.
 	}
@@ -165,7 +169,11 @@ func (storage *PalettedStorage) resize(newPaletteSize paletteSize) {
 		for x := byte(0); x < 16; x++ {
 			for y := byte(0); y < 16; y++ {
 				for z := byte(0); z < 16; z++ {
-					newStorage.setPaletteIndex(x, y, z, storage.paletteIndex(x, y, z))
+					index := storage.paletteIndex(x, y, z)
+					if int(index) >= storage.palette.Len() {
+						index = 0
+					}
+					newStorage.setPaletteIndex(x, y, z, index)
 				}
 			}
 		}

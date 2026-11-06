@@ -141,6 +141,66 @@ func TestPalettedStorageCompactForRuntimeCacheShrinksOversizedMultiValueStorage(
 	}
 }
 
+// TestPalettedStorageCompactForRuntimeCacheResolvesUncoveredIndex checks that shrinking a decoded
+// storage holding an index its palette does not cover leaves no such index behind. It would not
+// fit the narrower width, and a value added to the palette later would change what the cell reads.
+func TestPalettedStorageCompactForRuntimeCacheResolvesUncoveredIndex(t *testing.T) {
+	cases := []struct {
+		name    string
+		palette []uint32
+		raw     uint16
+		width   uint16
+	}{
+		{"index does not fit the new width", []uint32{11, 22}, 5, 1},
+		{"index fits the new width", []uint32{11, 22, 33}, 3, 2},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, c.palette))
+			storage.Set(1, 2, 3, 22)
+			storage.setPaletteIndex(1, 15, 0, c.raw)
+
+			storage.compactForRuntimeCache()
+
+			if got := storage.bitsPerIndex; got != c.width {
+				t.Fatalf("bitsPerIndex = %d, want %d", got, c.width)
+			}
+			if got := storage.paletteIndex(1, 15, 0); got != 0 {
+				t.Fatalf("stored index = %d, want the first entry", got)
+			}
+			// Enough new values to reach the raw index, on a cell away from the ones checked below.
+			for v := uint32(100); storage.palette.Len() <= int(c.raw); v++ {
+				storage.Set(9, 0, 0, v)
+			}
+			if got := storage.At(1, 15, 0); got != 11 {
+				t.Fatalf("At(1,15,0) = %d, want the fallback value 11", got)
+			}
+			if got := storage.At(1, 1, 1); got != 11 {
+				t.Fatalf("At(1,1,1) = %d, want 11", got)
+			}
+			if got := storage.At(1, 2, 3); got != 22 {
+				t.Fatalf("At(1,2,3) = %d, want 22", got)
+			}
+		})
+	}
+}
+
+// TestPalettedStorageResizeKeepsPaletteSizeInStep checks that resize alone keeps the palette
+// size equal to the index width, whichever way it moves the width.
+func TestPalettedStorageResizeKeepsPaletteSizeInStep(t *testing.T) {
+	storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, []uint32{11, 22}))
+
+	for _, size := range []paletteSize{1, 2, 1} {
+		storage.resize(size)
+		if got := storage.palette.size; got != size {
+			t.Fatalf("palette size = %d after resizing to %d", got, size)
+		}
+		if got := storage.bitsPerIndex; got != uint16(size) {
+			t.Fatalf("bitsPerIndex = %d after resizing to %d", got, size)
+		}
+	}
+}
+
 type testBlockRegistry struct {
 	air uint32
 }
@@ -174,5 +234,28 @@ func fillStorage(storage *PalettedStorage, runtimeID uint32) {
 				storage.Set(x, y, z, runtimeID)
 			}
 		}
+	}
+}
+
+// TestPalettedStorageCompactForRuntimeCacheGrowsAgainAfterShrinking checks that a storage
+// shrunk by the cheap compaction widens again as values are added. Servers such as Geyser
+// encode storages wider than their palettes need, and an index must never overflow into
+// the next block.
+func TestPalettedStorageCompactForRuntimeCacheGrowsAgainAfterShrinking(t *testing.T) {
+	storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, []uint32{11, 22}))
+	storage.Set(1, 2, 3, 22)
+
+	storage.compactForRuntimeCache()
+	for v := uint32(33); v <= 99; v += 11 {
+		storage.Set(1, 4, 3, v)
+		if got := storage.At(1, 4, 3); got != v {
+			t.Fatalf("At(1,4,3) = %d after setting %d", got, v)
+		}
+		if got := storage.At(1, 5, 3); got != 11 {
+			t.Fatalf("At(1,5,3) = %d after setting %d below it, want 11", got, v)
+		}
+	}
+	if got := storage.At(1, 2, 3); got != 22 {
+		t.Fatalf("At(1,2,3) = %d, want 22", got)
 	}
 }
