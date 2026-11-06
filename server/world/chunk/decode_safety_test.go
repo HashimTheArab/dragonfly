@@ -80,9 +80,9 @@ func TestDecodePalette_RejectsHostileCounts(t *testing.T) {
 	}
 }
 
-// TestDiskEncodingDecodePalette_BoundsTheCount checks that disk data follows the same count
-// rule as the network encodings. A palette larger than its storage's index width gives indices
-// that do not fit, so writing to the storage later would overwrite a neighbouring block.
+// TestDiskEncodingDecodePalette_BoundsTheCount checks that disk data cannot hold a palette larger
+// than its storage's index width. Such a palette gives indices that do not fit, so writing to the
+// storage later would overwrite a neighbouring block.
 func TestDiskEncodingDecodePalette_BoundsTheCount(t *testing.T) {
 	rejected := []struct {
 		name  string
@@ -90,7 +90,7 @@ func TestDiskEncodingDecodePalette_BoundsTheCount(t *testing.T) {
 		count uint32
 	}{
 		{"beyond the index width", 2, 5},
-		{"beyond the cell count", 16, 4097},
+		{"beyond the widest index width", 16, 65537},
 		{"beyond the signed range", 4, 0xffffffff},
 		{"zero", 4, 0},
 	}
@@ -115,6 +115,26 @@ func TestDiskEncodingDecodePalette_BoundsTheCount(t *testing.T) {
 			t.Fatalf("palette len = %d, Value(3) = %d, want 4 and 44", palette.Len(), got)
 		}
 	})
+}
+
+// TestDiskDecode_ReloadsMoreBiomesThanASectionHasCells checks that a chunk with more distinct
+// biomes in one section than it has cells still loads after saving. Compacting a chunk does not
+// reach its biome storages, so the palette keeps every biome it ever held.
+func TestDiskDecode_ReloadsMoreBiomesThanASectionHasCells(t *testing.T) {
+	r := cube.Range{0, 15}
+	ch := New(testBlockRegistry{air: 0}, r)
+	for biome := uint32(1); biome <= 4097; biome++ {
+		ch.SetBiome(0, 0, 0, biome)
+	}
+	ch.Compact()
+
+	decoded, err := DiskDecode(testBlockRegistry{air: 0}, Encode(ch, DiskEncoding), r)
+	if err != nil {
+		t.Fatalf("a chunk that was just saved did not load: %v", err)
+	}
+	if got := decoded.Biome(0, 0, 0); got != 4097 {
+		t.Fatalf("Biome(0,0,0) = %d, want 4097", got)
+	}
 }
 
 func TestNetworkPersistentEncodingDecodePalette_RejectsUncountedOverflow(t *testing.T) {

@@ -191,7 +191,9 @@ func (diskEncoding) decodePalette(buf *bytes.Buffer, blockSize paletteSize, e pa
 		if err := binary.Read(buf, binary.LittleEndian, &paletteCount); err != nil {
 			return nil, fmt.Errorf("error reading palette entry count: %w", err)
 		}
-		if err := validatePaletteCount(paletteCount, blockSize); err != nil {
+		// Unlike over the network, a saved palette may keep more entries than a storage has cells:
+		// biome storages are not compacted before saving. Only entries the width cannot address are invalid.
+		if err := checkPaletteCount(paletteCount, blockSize, int64(1)<<blockSize); err != nil {
 			return nil, err
 		}
 	}
@@ -240,17 +242,19 @@ func (networkEncoding) decodePalette(buf *bytes.Buffer, blockSize paletteSize, _
 	return palette, nil
 }
 
-// validatePaletteCount checks a palette entry count read from encoded data before it is used to
+// validatePaletteCount checks a palette entry count read off the wire before it is used to
 // size an allocation. A storage's index width and 4096-cell volume cap how many entries
 // it can use, so a larger count cannot describe a real storage and is rejected before allocation.
-// Accepting one would also leave entries whose indices do not fit the storage's width.
 func validatePaletteCount(count int32, blockSize paletteSize) error {
+	return checkPaletteCount(count, blockSize, min(int64(1)<<blockSize, 4096))
+}
+
+// checkPaletteCount checks that a palette entry count is positive and within capacity. A palette larger than
+// its storage's index width would have entries whose indices do not fit, so a later write to the storage
+// would overwrite a neighbouring value.
+func checkPaletteCount(count int32, blockSize paletteSize, capacity int64) error {
 	if count <= 0 {
 		return fmt.Errorf("invalid palette entry count %v", count)
-	}
-	capacity := int64(1) << blockSize
-	if capacity > 4096 {
-		capacity = 4096
 	}
 	if int64(count) > capacity {
 		return fmt.Errorf("palette entry count %v exceeds the %v entries a %v-bit storage can use", count, capacity, blockSize)
