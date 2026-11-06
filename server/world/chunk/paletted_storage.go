@@ -155,6 +155,9 @@ func (storage *PalettedStorage) setPaletteIndex(x, y, z byte, i uint16) {
 // and all values available in the current storage are set in their appropriate locations in the
 // new storage.
 func (storage *PalettedStorage) resize(newPaletteSize paletteSize) {
+	// The palette's size decides when Set widens the storage again, so it must always match
+	// the width of the indices or a later value overflows into its neighbour.
+	storage.palette.size = newPaletteSize
 	if newPaletteSize == paletteSize(storage.bitsPerIndex) {
 		return // Don't resize if the size is already equal.
 	}
@@ -190,12 +193,25 @@ func (storage *PalettedStorage) compactForRuntimeCache() {
 		return
 	}
 
-	if size := paletteSizeFor(storage.palette.Len()); size < storage.palette.size {
+	if size := paletteSizeFor(storage.palette.Len()); size < storage.palette.size && storage.paletteCoversIndices() {
 		storage.resize(size)
-		// The palette's size decides when Set widens the storage again, so it must
-		// shrink with the indices or a later value overflows into its neighbour.
-		storage.palette.size = size
 	}
+}
+
+// paletteCoversIndices checks that every index points to an entry in the Palette. A storage decoded from an
+// untrusted source can hold an index that its Palette does not cover, and such an index might not fit a
+// width chosen from the Palette's length.
+func (storage *PalettedStorage) paletteCoversIndices() bool {
+	for x := byte(0); x < 16; x++ {
+		for y := byte(0); y < 16; y++ {
+			for z := byte(0); z < 16; z++ {
+				if int(storage.paletteIndex(x, y, z)) >= storage.palette.Len() {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 func (storage *PalettedStorage) uniformPaletteIndex() (uint16, bool) {

@@ -141,6 +141,46 @@ func TestPalettedStorageCompactForRuntimeCacheShrinksOversizedMultiValueStorage(
 	}
 }
 
+// TestPalettedStorageCompactForRuntimeCacheKeepsWidthForUncoveredIndex checks that a decoded
+// storage holding an index its palette does not cover stays at its width, because the index
+// would not fit a narrower one and would overflow into the next block.
+func TestPalettedStorageCompactForRuntimeCacheKeepsWidthForUncoveredIndex(t *testing.T) {
+	storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, []uint32{11, 22}))
+	storage.Set(1, 2, 3, 22)
+	storage.setPaletteIndex(1, 15, 0, 5)
+
+	storage.compactForRuntimeCache()
+
+	if got, want := storage.bitsPerIndex, uint16(4); got != want {
+		t.Fatalf("bitsPerIndex = %d, want %d", got, want)
+	}
+	if got := storage.At(1, 15, 0); got != 11 {
+		t.Fatalf("At(1,15,0) = %d, want the fallback value 11", got)
+	}
+	if got := storage.At(1, 1, 1); got != 11 {
+		t.Fatalf("At(1,1,1) = %d, want 11", got)
+	}
+	if got := storage.At(1, 2, 3); got != 22 {
+		t.Fatalf("At(1,2,3) = %d, want 22", got)
+	}
+}
+
+// TestPalettedStorageResizeKeepsPaletteSizeInStep checks that resize alone keeps the palette
+// size equal to the index width, whichever way it moves the width.
+func TestPalettedStorageResizeKeepsPaletteSizeInStep(t *testing.T) {
+	storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, []uint32{11, 22}))
+
+	for _, size := range []paletteSize{1, 2, 1} {
+		storage.resize(size)
+		if got := storage.palette.size; got != size {
+			t.Fatalf("palette size = %d after resizing to %d", got, size)
+		}
+		if got := storage.bitsPerIndex; got != uint16(size) {
+			t.Fatalf("bitsPerIndex = %d after resizing to %d", got, size)
+		}
+	}
+}
+
 type testBlockRegistry struct {
 	air uint32
 }
