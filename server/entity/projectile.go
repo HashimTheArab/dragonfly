@@ -169,6 +169,10 @@ func (lt *ProjectileBehaviour) Tick(e *Ent, tx *world.Tx) *Movement {
 		_ = e.Close()
 		return nil
 	}
+	if _, _, riding := world.Riding(e); riding {
+		e.data.Vel = zeroVec3
+		return nil
+	}
 
 	if lt.collided && lt.tickAttached(e, tx) {
 		if lt.ageCollided > 1200 {

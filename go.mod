@@ -18,6 +18,7 @@ require (
 	github.com/pion/webrtc/v4 v4.2.21-0.20260920133716-91bfc6c2039f
 	github.com/sandertv/gophertunnel v1.62.0
 	github.com/segmentio/fasthash v1.0.3
+	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	golang.org/x/exp v0.0.0-20260611194520-c48552f49976
 	golang.org/x/mod v0.37.0
 	golang.org/x/text v0.38.0

@@ -11,13 +11,16 @@ import (
 type InteractHandler struct{}
 
 // Handle ...
-func (h *InteractHandler) Handle(p packet.Packet, s *Session, _ *world.Tx, c Controllable) error {
+func (h *InteractHandler) Handle(p packet.Packet, s *Session, tx *world.Tx, c Controllable) error {
 	pk := p.(*packet.Interact)
 	pos := c.Position()
 
 	switch pk.ActionType {
 	case packet.InteractActionMouseOverEntity:
 		// We don't need this action.
+	case packet.InteractActionLeaveVehicle:
+		// The client asks to dismount. Its position is ignored: the server places the rider.
+		tx.Dismount(c)
 	case packet.InteractActionOpenInventory:
 		if s.invOpened {
 			// When there is latency, this might end up being sent multiple times. If we send a ContainerOpen

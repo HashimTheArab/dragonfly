@@ -18,8 +18,18 @@ type PlayerAuthInputHandler struct{}
 func (h PlayerAuthInputHandler) Handle(p packet.Packet, s *Session, tx *world.Tx, c Controllable) error {
 	pk := p.(*packet.PlayerAuthInput)
 	s.inputTick.Store(pk.Tick)
-	if err := h.handleMovement(pk, s, c); err != nil {
-		return err
+	if c.Dead() {
+		return nil
+	}
+	riding := tx.HandleRiderInput(c, world.RiderInput{
+		Move: mgl64.Vec2{float64(pk.MoveVector.X()), float64(pk.MoveVector.Y())},
+		Yaw:  float64(pk.Yaw), Pitch: float64(pk.Pitch),
+		Jump: pk.InputData.Load(packet.InputFlagJumping), Sneak: pk.InputData.Load(packet.InputFlagSneaking),
+	})
+	if !riding {
+		if err := h.handleMovement(pk, s, c); err != nil {
+			return err
+		}
 	}
 	return h.handleActions(pk, s, tx, c)
 }
@@ -134,7 +144,8 @@ func (h PlayerAuthInputHandler) handleInputFlags(flags protocol.InputFlags, s *S
 	if flags.Load(packet.InputFlagStopGliding) {
 		c.StopGliding()
 	}
-	if flags.Load(packet.InputFlagStartJumping) {
+	_, _, riding := world.Riding(c)
+	if flags.Load(packet.InputFlagStartJumping) && !riding {
 		c.Jump()
 	}
 	if flags.Load(packet.InputFlagStartCrawling) {
