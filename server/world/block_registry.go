@@ -155,6 +155,11 @@ type BasicBlockRegistry struct {
 	hashes            *intintmap.Map
 	networkhashToRids map[uint32]uint32
 	ridsToNetworkhash []uint32
+	// hashedNetworkIDs is set by UseHashedNetworkIDs: every state's network block hash must then be unique.
+	hashedNetworkIDs bool
+	// networkHashSalts holds, by block name, the NetworkHashSaltProperty value of each custom block whose network
+	// block hashes Finalize perturbed.
+	networkHashSalts map[string]int32
 
 	// stateRuntimeIDs holds a map for looking up the runtime ID of a block by the stateHash it produces.
 	stateRuntimeIDs map[stateHash]uint32
@@ -282,6 +287,35 @@ func (br *BasicBlockRegistry) registerBlockActorLocked(name, id string) {
 	br.blockActorIDs[name] = id
 }
 
+// UseHashedNetworkIDs declares that the registry's states go to clients as network block hashes, as they do for a
+// server that sets StartGame's UseBlockNetworkIDHashes. Finalize then gives every state a unique hash: a custom block
+// with a state whose hash an earlier state already has gets the hidden NetworkHashSaltProperty (see NetworkHashSalt),
+// and a collision between two states that are not custom blocks panics, naming both. Without it, states may share a
+// hash, and HashToRuntimeID resolves a shared hash to the lowest of their runtime IDs.
+//
+// UseHashedNetworkIDs panics on a finalized registry.
+func (br *BasicBlockRegistry) UseHashedNetworkIDs() {
+	br.mu.Lock()
+	defer br.mu.Unlock()
+	if br.finalized {
+		panic("BlockRegistry.UseHashedNetworkIDs called on finalized BlockRegistry")
+	}
+	br.hashedNetworkIDs = true
+}
+
+// NetworkHashSalt returns the NetworkHashSaltProperty value that Finalize gave the custom block name to keep its
+// network block hashes unique, if it gave it one. A client hashes a custom block's states from its definition, so the
+// definition sent to it must declare the property with this one value (customentry.DeclareNetworkHashSalt). The
+// property is in no state the block encodes: it is never saved and never reaches Block implementations.
+func (br *BasicBlockRegistry) NetworkHashSalt(name string) (salt int32, ok bool) {
+	if !br.finalized {
+		panic("BlockRegistry.NetworkHashSalt called on non finalized BlockRegistry")
+	}
+	salt, ok = br.networkHashSalts[name]
+	return
+}
+
+// HashToRuntimeID resolves a network block hash to the lowest runtime ID of a state with that hash.
 func (br *BasicBlockRegistry) HashToRuntimeID(hash uint32) (rid uint32, ok bool) {
 	if !br.finalized {
 		panic("BlockRegistry.HashToRuntimeID called on non finalized BlockRegistry")
@@ -307,13 +341,15 @@ func (br *BasicBlockRegistry) Clone() *BasicBlockRegistry {
 	defer br.mu.Unlock()
 
 	br2 := &BasicBlockRegistry{
-		blockProperties: make(map[string]map[string]any, len(br.blockProperties)),
-		stateRuntimeIDs: make(map[stateHash]uint32, len(br.stateRuntimeIDs)),
-		customBlocks:    make(map[string]CustomBlock, len(br.customBlocks)),
-		blockActorIDs:   maps.Clone(br.blockActorIDs),
-		finalized:       br.finalized,
-		bitSize:         br.bitSize,
-		airRID:          br.airRID,
+		blockProperties:  make(map[string]map[string]any, len(br.blockProperties)),
+		stateRuntimeIDs:  make(map[stateHash]uint32, len(br.stateRuntimeIDs)),
+		customBlocks:     make(map[string]CustomBlock, len(br.customBlocks)),
+		blockActorIDs:    maps.Clone(br.blockActorIDs),
+		finalized:        br.finalized,
+		bitSize:          br.bitSize,
+		airRID:           br.airRID,
+		hashedNetworkIDs: br.hashedNetworkIDs,
+		networkHashSalts: maps.Clone(br.networkHashSalts),
 	}
 
 	for k, v := range br.blockProperties {
@@ -347,9 +383,9 @@ func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) 
 	var netHash uint32
 	if br.finalized {
 		netHash, scratch = networkBlockHash(s.Name, s.Properties, scratch)
-		if other, ok := br.networkhashToRids[netHash]; ok {
+		if other, ok := br.networkhashToRids[netHash]; ok && br.hashedNetworkIDs {
 			otherName, otherProperties := br.blocks[other].EncodeBlock()
-			return scratch, fmt.Errorf("network block hash collision for (%s %+v) and (%s %+v)", s.Name, s.Properties, otherName, otherProperties)
+			return scratch, fmt.Errorf("network block hash %#08x of (%s %+v) is already (%s %+v)'s, and runtime IDs go to clients as network block hashes", netHash, s.Name, s.Properties, otherName, otherProperties)
 		}
 	}
 	if _, ok := br.blockProperties[s.Name]; !ok {
@@ -369,7 +405,9 @@ func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) 
 	}
 	br.blockInfos = append(br.blockInfos, defaultUnknownBlockInfo())
 
-	br.networkhashToRids[netHash] = rid
+	if _, ok := br.networkhashToRids[netHash]; !ok {
+		br.networkhashToRids[netHash] = rid
+	}
 	br.ridsToNetworkhash = append(br.ridsToNetworkhash, netHash)
 	return scratch, nil
 }
@@ -402,6 +440,7 @@ func NewBlockRegistry() BlockRegistry {
 	br.hashes = nil
 	br.networkhashToRids = nil
 	br.ridsToNetworkhash = nil
+	br.networkHashSalts = nil
 	br.blockInfos = nil
 	return br
 }
@@ -523,7 +562,6 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 	br.bitSize = bits.Len64(uint64(len(br.blocks)))
 	br.blockInfos = make([]blockInfo, len(br.blocks))
 	br.hashes = intintmap.New(len(br.blocks), 0.999)
-	br.networkhashToRids = make(map[uint32]uint32, len(br.blocks))
 	br.ridsToNetworkhash = make([]uint32, len(br.blocks))
 	br.stateRuntimeIDs = make(map[stateHash]uint32, len(br.blocks))
 	networkHashScratch := make([]byte, 0, 0xff)
@@ -571,14 +609,10 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 			}
 			br.hashes.Put(h, int64(rid))
 		}
-		var netHash uint32
-		netHash, networkHashScratch = networkBlockHash(name, properties, networkHashScratch)
-		if other, ok := br.networkhashToRids[netHash]; ok {
-			otherName, otherProperties := br.blocks[other].EncodeBlock()
-			panic(fmt.Sprintf("network block hash collision for (%s %+v) and (%s %+v)", name, properties, otherName, otherProperties))
-		}
-		br.networkhashToRids[netHash] = rid
-		br.ridsToNetworkhash[rid] = netHash
+		br.ridsToNetworkhash[rid], networkHashScratch = networkBlockHash(name, properties, networkHashScratch)
+	}
+	if err := br.indexNetworkHashesLocked(); err != nil {
+		panic(err)
 	}
 	if !foundAir {
 		panic("BlockRegistry.Finalize: no minecraft:air block state registered")
