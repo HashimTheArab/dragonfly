@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -20,6 +21,10 @@ import (
 //go:generate python3 generate.py
 //go:embed mapping.json.gz
 var mappingData []byte
+
+// ErrUnsupported marks a well-formed Java block the conversion table cannot map, such as a
+// modded block or one newer than the table. Callers may skip such blocks instead of failing.
+var ErrUnsupported = errors.New("unsupported Java block")
 
 // State holds Java property strings, before conversion to Bedrock property types.
 type State struct {
@@ -103,7 +108,7 @@ func Resolve(registry world.BlockRegistry, state State) (world.BlockState, error
 	if err != nil {
 		return world.BlockState{}, fmt.Errorf("load Java block mapping: %w", err)
 	}
-	// These Java names were renamed after the legacy-ID table was published.
+	// Older Java names for blocks the table lists under their current name.
 	switch state.Name {
 	case "minecraft:grass":
 		state.Name = "minecraft:short_grass"
@@ -113,28 +118,30 @@ func Resolve(registry world.BlockRegistry, state State) (world.BlockState, error
 		state.Name = "minecraft:oak_sign"
 	case "minecraft:wall_sign":
 		state.Name = "minecraft:oak_wall_sign"
+	case "minecraft:chain":
+		state.Name = "minecraft:iron_chain"
 	}
 	defaults, ok := data.Defaults[state.Name]
 	if !ok {
-		return world.BlockState{}, fmt.Errorf("unsupported Java block %q", state.Name)
+		return world.BlockState{}, fmt.Errorf("%w %q", ErrUnsupported, state.Name)
 	}
 	properties := maps.Clone(defaults)
 	for key, value := range state.Properties {
 		if _, ok := defaults[key]; !ok {
-			return world.BlockState{}, fmt.Errorf("unknown Java property %q for %s", key, state.Name)
+			return world.BlockState{}, fmt.Errorf("%w: unknown property %q for %s", ErrUnsupported, key, state.Name)
 		}
 		properties[key] = value
 	}
 	mapped, ok := data.States[(State{Name: state.Name, Properties: properties}).String()]
 	if !ok {
-		return world.BlockState{}, fmt.Errorf("unsupported Java block state %s", state)
+		return world.BlockState{}, fmt.Errorf("%w state %s", ErrUnsupported, state)
 	}
 	bedrock, err := Parse(mapped)
 	if err != nil {
 		return world.BlockState{}, fmt.Errorf("invalid mapped Bedrock state: %w", err)
 	}
 	if bedrock.Name == "minecraft:air" && state.Name != "minecraft:air" && state.Name != "minecraft:cave_air" && state.Name != "minecraft:void_air" {
-		return world.BlockState{}, fmt.Errorf("java block %s has no Bedrock equivalent", state.Name)
+		return world.BlockState{}, fmt.Errorf("%w: %s has no Bedrock equivalent", ErrUnsupported, state.Name)
 	}
 	values := make(map[string]any, len(bedrock.Properties))
 	for key, value := range bedrock.Properties {
@@ -154,7 +161,7 @@ func Resolve(registry world.BlockRegistry, state State) (world.BlockState, error
 	const sourceVersion = 1<<24 | 26<<16 | 30<<8
 	block, ok := world.ResolveBlockState(registry, world.BlockState{Name: bedrock.Name, Properties: values, Version: sourceVersion})
 	if !ok {
-		return world.BlockState{}, fmt.Errorf("mapped Java block %s is unavailable in the Bedrock registry", state)
+		return world.BlockState{}, fmt.Errorf("%w: mapped state %s is unavailable in the Bedrock registry", ErrUnsupported, state)
 	}
 	name, resolved := block.EncodeBlock()
 	return world.BlockState{Name: name, Properties: maps.Clone(resolved), Version: chunk.CurrentBlockVersion}, nil
@@ -168,7 +175,7 @@ func Legacy(registry world.BlockRegistry, id uint16, metadata uint8) (world.Bloc
 	}
 	encoded, ok := data.Legacy[fmt.Sprintf("%d:%d", id, metadata)]
 	if !ok {
-		return world.BlockState{}, fmt.Errorf("unsupported legacy Java block %d:%d", id, metadata)
+		return world.BlockState{}, fmt.Errorf("%w %d:%d (legacy)", ErrUnsupported, id, metadata)
 	}
 	state, err := Parse(encoded)
 	if err != nil {

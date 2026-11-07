@@ -2,7 +2,7 @@
 
 `Parse`, `Resolve`, and `Legacy` convert Java block states into canonical states
 from the caller's Bedrock registry. Unknown names, properties, metadata, and
-states without a Bedrock equivalent return errors. Missing properties use the
+states without a Bedrock equivalent return errors wrapping `ErrUnsupported`. Missing properties use the
 Java block's declared defaults; supplied properties are never discarded.
 
 The embedded table is generated from [PrismarineJS/minecraft-data](https://github.com/PrismarineJS/minecraft-data/tree/abfaadb4c45e2968a98fc927d32f7c648962d8ad),
