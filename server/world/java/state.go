@@ -121,6 +121,7 @@ func Resolve(registry world.BlockRegistry, state State) (world.BlockState, error
 	case "minecraft:chain":
 		state.Name = "minecraft:iron_chain"
 	}
+	state = upgradeProperties(state)
 	defaults, ok := data.Defaults[state.Name]
 	if !ok {
 		return world.BlockState{}, fmt.Errorf("%w %q", ErrUnsupported, state.Name)
@@ -181,12 +182,13 @@ func Legacy(registry world.BlockRegistry, id uint16, metadata uint8) (world.Bloc
 	if err != nil {
 		return world.BlockState{}, err
 	}
-	return Resolve(registry, migrateLegacy(state))
+	return Resolve(registry, state)
 }
 
-// migrateLegacy rewrites property syntax the legacy table records in its
-// pre-flattening form, which the current Java state table no longer accepts.
-func migrateLegacy(state State) State {
+// upgradeProperties rewrites property values from Java versions older than the
+// state table, as found in the legacy table and in older Sponge or Litematica files.
+func upgradeProperties(state State) State {
+	state.Properties = maps.Clone(state.Properties)
 	switch {
 	case state.Name == "minecraft:cauldron":
 		// Filled cauldrons became their own block in Java 1.17.
