@@ -78,7 +78,8 @@ type BlockState struct {
 // states that haven't yet been added.
 type unknownBlock struct {
 	BlockState
-	data map[string]any
+	light stateLight
+	data  map[string]any
 	// placementItem supplies inventory semantics without installing block behaviour.
 	placementItem Item
 }
@@ -126,15 +127,21 @@ func (b unknownBlock) Friction() float64 {
 // LightDiffusionLevel returns how much light the block filters. Without this every unknown
 // block is treated as fully opaque, which darkens anything behind glass or a fence.
 func (b unknownBlock) LightDiffusionLevel() uint8 {
+	if b.light.known {
+		return b.light.dampening
+	}
 	if p, ok := unknownBlockProps[b.Name]; ok {
 		return p.dampening
 	}
 	return 15
 }
 
-// LightEmissionLevel returns the light the block gives off. Blocks whose emission depends on
-// their state report the resting value, since the state is not modelled.
+// LightEmissionLevel returns the light the block's state gives off, or the block's resting
+// value for a state the shared data lacks.
 func (b unknownBlock) LightEmissionLevel() uint8 {
+	if b.light.known {
+		return b.light.emission
+	}
 	if p, ok := unknownBlockProps[b.Name]; ok {
 		return p.emission
 	}

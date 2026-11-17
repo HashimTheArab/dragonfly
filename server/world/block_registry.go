@@ -357,7 +357,7 @@ func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) 
 	}
 
 	rid := uint32(len(br.blocks))
-	br.blocks = append(br.blocks, unknownBlock{BlockState: s})
+	br.blocks = append(br.blocks, newUnknownBlock(s))
 	br.stateRuntimeIDs[h] = rid
 	if !br.finalized {
 		return scratch, nil
@@ -498,7 +498,7 @@ func (br *BasicBlockRegistry) registerBlockStateLocked(s BlockState) {
 		br.blockProperties[s.Name] = s.Properties
 	}
 	rid := uint32(len(br.blocks))
-	br.blocks = append(br.blocks, unknownBlock{BlockState: s})
+	br.blocks = append(br.blocks, newUnknownBlock(s))
 	br.stateRuntimeIDs[h] = rid
 }
 
