@@ -68,7 +68,7 @@ func UnmarshalBlockRegistry(data []byte) (registry BlockRegistry, err error) {
 		}
 		b, known := DefaultBlockRegistry.BlockByName(state.Name, state.Properties)
 		if !known {
-			b = unknownBlock{BlockState: state}
+			b = newUnknownBlock(state)
 		} else if name, properties := b.EncodeBlock(); name != state.Name || !maps.EqualFunc(properties, state.Properties, snapshotPropertyEqual) {
 			return nil, fmt.Errorf("block state does not match registered properties: %s", state.Name)
 		}
