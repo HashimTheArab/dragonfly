@@ -326,12 +326,6 @@ func (chunk *Chunk) BlockLight(x uint8, y int16, z uint8) uint8 {
 	return chunk.SubChunk(y).BlockLight(x&15, uint8(y&15), z&15)
 }
 
-// BlocksAllLight reports whether the block with runtime ID rid keeps out all
-// light, the test HighestLightBlocker uses for a column's highest blocker.
-func BlocksAllLight(br BlockRegistry, rid uint32) bool {
-	return br.FilteringBlock(rid) == 15
-}
-
 // HighestLightBlocker iterates from the highest non-empty sub chunk downwards to find the Y value of the
 // highest block that completely blocks any light from going through. If none is found, the value returned is
 // the minimum height.
@@ -352,7 +346,7 @@ func (chunk *Chunk) highestLightBlocker(x, z uint8, addOne bool) int16 {
 	for index := int16(len(chunk.sub) - 1); index >= 0; index-- {
 		if sub := chunk.sub[index]; !sub.Empty() {
 			for y := 15; y >= 0; y-- {
-				if BlocksAllLight(chunk.br, sub.storages[0].At(x, uint8(y), z)) {
+				if chunk.br.FilteringBlock(sub.storages[0].At(x, uint8(y), z)) == 15 {
 					return int16(y) | chunk.SubY(index) + plus
 				}
 			}

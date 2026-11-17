@@ -36,3 +36,31 @@ func TestUnknownBlockLightFollowsState(t *testing.T) {
 		}
 	}
 }
+
+// The registry's light tables agree with what each block without an
+// implementation reports about its own state, including a state a server
+// adds after the registry is finalized.
+func TestUnknownBlockLightMatchesRegistryTables(t *testing.T) {
+	br := NewBlockRegistry().(*BasicBlockRegistry)
+	br.Finalize()
+	if _, err := br.addCustomBlockState(BlockState{Name: "server:lamp"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for rid, b := range br.Blocks() {
+		u, ok := b.(unknownBlock)
+		if !ok {
+			continue
+		}
+		checked++
+		if got, want := br.LightBlock(uint32(rid)), u.LightEmissionLevel(); got != want {
+			t.Errorf("%s %v: table light %d, block reports %d", u.Name, u.Properties, got, want)
+		}
+		if got, want := br.FilteringBlock(uint32(rid)), u.LightDiffusionLevel(); got != want {
+			t.Errorf("%s %v: table filter %d, block reports %d", u.Name, u.Properties, got, want)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no blocks without an implementation were checked")
+	}
+}

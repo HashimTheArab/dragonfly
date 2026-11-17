@@ -10,12 +10,11 @@ type unknownBlockProperties struct {
 
 var unknownBlockProps = vanillaBlockProperties()
 
-// newUnknownBlock returns the block for state s without an implementation.
-// It carries the light values of s itself, since a block such as a copper
-// bulb or a lava cauldron gives off light in some states only.
-func newUnknownBlock(s BlockState) unknownBlock {
-	b := unknownBlock{BlockState: s}
-	hash, _ := networkBlockHash(s.Name, s.Properties, nil)
+// withStateLight returns b carrying the light values of its own state, found
+// by the state's network hash, since a block such as a copper bulb or a lava
+// cauldron gives off light in some states only. The registry attaches them
+// where it computes that hash.
+func (b unknownBlock) withStateLight(hash uint32) unknownBlock {
 	if state, ok := block.StateByHash(hash); ok {
 		if values, ok := block.PropertiesAt(state.Properties); ok {
 			b.light = stateLight{emission: values.LightEmission, dampening: values.LightDampening, known: true}

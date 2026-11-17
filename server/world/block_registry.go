@@ -357,17 +357,21 @@ func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) 
 	}
 
 	rid := uint32(len(br.blocks))
-	br.blocks = append(br.blocks, newUnknownBlock(s))
-	br.stateRuntimeIDs[h] = rid
 	if !br.finalized {
+		// Finalize attaches the state's light once it hashes the state.
+		br.blocks = append(br.blocks, unknownBlock{BlockState: s})
+		br.stateRuntimeIDs[h] = rid
 		return scratch, nil
 	}
+	b := unknownBlock{BlockState: s}.withStateLight(netHash)
+	br.blocks = append(br.blocks, b)
+	br.stateRuntimeIDs[h] = rid
 
 	if bits.Len64(uint64(len(br.blocks))) != br.bitSize {
 		br.bitSize = bits.Len64(uint64(len(br.blocks)))
 		br.rebuildBlockHashesLocked()
 	}
-	br.blockInfos = append(br.blockInfos, defaultUnknownBlockInfo())
+	br.blockInfos = append(br.blockInfos, blockInfoOf(b))
 
 	br.networkhashToRids[netHash] = rid
 	br.ridsToNetworkhash = append(br.ridsToNetworkhash, netHash)
@@ -387,6 +391,31 @@ func (br *BasicBlockRegistry) rebuildBlockHashesLocked() {
 func defaultUnknownBlockInfo() blockInfo {
 	var info blockInfo
 	info.setLightFilter(15)
+	return info
+}
+
+// blockInfoOf collects the light values and traits b reports about itself.
+func blockInfoOf(b Block) blockInfo {
+	info := defaultUnknownBlockInfo()
+	// Default to fully opaque. Blocks that implement lightDiffuser may override this (e.g., air -> 0, leaves -> 1-14).
+	if diffuser, ok := b.(lightDiffuser); ok {
+		info.setLightFilter(diffuser.LightDiffusionLevel())
+	}
+	if emitter, ok := b.(lightEmitter); ok {
+		info.setLight(emitter.LightEmissionLevel())
+	}
+	if _, ok := b.(NBTer); ok {
+		info.set(blockFlagNBT)
+	}
+	if _, ok := b.(RandomTicker); ok {
+		info.set(blockFlagRandomTick)
+	}
+	if _, ok := b.(Liquid); ok {
+		info.set(blockFlagLiquid)
+	}
+	if _, ok := b.(LiquidDisplacer); ok {
+		info.set(blockFlagLiquidDisplacing)
+	}
 	return info
 }
 
@@ -498,7 +527,7 @@ func (br *BasicBlockRegistry) registerBlockStateLocked(s BlockState) {
 		br.blockProperties[s.Name] = s.Properties
 	}
 	rid := uint32(len(br.blocks))
-	br.blocks = append(br.blocks, newUnknownBlock(s))
+	br.blocks = append(br.blocks, unknownBlock{BlockState: s})
 	br.stateRuntimeIDs[h] = rid
 }
 
@@ -542,27 +571,13 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 		}
 		br.stateRuntimeIDs[h] = rid
 
-		info := defaultUnknownBlockInfo()
-		// Default to fully opaque. Blocks that implement lightDiffuser may override this (e.g., air -> 0, leaves -> 1-14).
-		if diffuser, ok := b.(lightDiffuser); ok {
-			info.setLightFilter(diffuser.LightDiffusionLevel())
+		var netHash uint32
+		netHash, networkHashScratch = networkBlockHash(name, properties, networkHashScratch)
+		if u, ok := b.(unknownBlock); ok {
+			b = u.withStateLight(netHash)
+			br.blocks[idx] = b
 		}
-		if emitter, ok := b.(lightEmitter); ok {
-			info.setLight(emitter.LightEmissionLevel())
-		}
-		if _, ok := b.(NBTer); ok {
-			info.set(blockFlagNBT)
-		}
-		if _, ok := b.(RandomTicker); ok {
-			info.set(blockFlagRandomTick)
-		}
-		if _, ok := b.(Liquid); ok {
-			info.set(blockFlagLiquid)
-		}
-		if _, ok := b.(LiquidDisplacer); ok {
-			info.set(blockFlagLiquidDisplacing)
-		}
-		br.blockInfos[rid] = info
+		br.blockInfos[rid] = blockInfoOf(b)
 
 		if _, hash := b.Hash(); hash != math.MaxUint64 {
 			h := int64(br.BlockHash(b))
@@ -571,8 +586,6 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 			}
 			br.hashes.Put(h, int64(rid))
 		}
-		var netHash uint32
-		netHash, networkHashScratch = networkBlockHash(name, properties, networkHashScratch)
 		if other, ok := br.networkhashToRids[netHash]; ok {
 			otherName, otherProperties := br.blocks[other].EncodeBlock()
 			panic(fmt.Sprintf("network block hash collision for (%s %+v) and (%s %+v)", name, properties, otherName, otherProperties))
