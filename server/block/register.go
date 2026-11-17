@@ -132,6 +132,7 @@ func init() {
 	world.RegisterBlock(Resin{})
 	world.RegisterBlock(Sand{Red: true})
 	world.RegisterBlock(Sand{})
+	world.RegisterBlock(SculkSensor{})
 	world.RegisterBlock(SeaLantern{})
 	world.RegisterBlock(Shelf{})
 	world.RegisterBlock(Shroomlight{})

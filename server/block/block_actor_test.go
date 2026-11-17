@@ -70,6 +70,7 @@ func TestBlockRegistry_ActorMetadataCoversUnimplementedBlocks(t *testing.T) {
 		"minecraft:sticky_piston":              "PistonArm",
 		"minecraft:daylight_detector":          "DaylightDetector",
 		"minecraft:daylight_detector_inverted": "DaylightDetector",
+		"minecraft:sculk_sensor":               "SculkSensor",
 	} {
 		if got, ok := registry.BlockActorID(name); !ok || got != want {
 			t.Errorf("BlockActorID(%q) = %q, %v, want %q", name, got, ok, want)
@@ -188,7 +189,7 @@ func TestBlockRegistry_MetadataOnlyTypesPreserveGameplay(t *testing.T) {
 	registry.RegisterBlockState(world.BlockState{Name: "server:actor"})
 	baseline := registry.(*world.BasicBlockRegistry).Clone()
 	baseline.Finalize()
-	for _, actor := range []world.BlockActor{block.Bell{}, block.Conduit{}, block.FlowerPot{}, block.ChiseledBookshelf{}, block.HangingSign{}, block.Shelf{}, block.Dispenser{}, block.Dropper{}, block.Crafter{}, block.Beehive{}, block.Lodestone{}, block.Cauldron{}, block.Piston{}, block.DaylightDetector{}} {
+	for _, actor := range []world.BlockActor{block.Bell{}, block.Conduit{}, block.FlowerPot{}, block.ChiseledBookshelf{}, block.HangingSign{}, block.Shelf{}, block.Dispenser{}, block.Dropper{}, block.Crafter{}, block.Beehive{}, block.Lodestone{}, block.Cauldron{}, block.Piston{}, block.DaylightDetector{}, block.SculkSensor{}} {
 		if _, ok := actor.(world.Block); ok {
 			t.Fatalf("metadata-only %T implements world.Block", actor)
 		}
