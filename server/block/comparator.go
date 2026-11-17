@@ -27,6 +27,10 @@ func (c Comparator) EncodeBlock() (string, map[string]any) {
 	}
 }
 
+// BlockActorID returns the Bedrock NBT identifier shared by powered and
+// unpowered comparators.
+func (Comparator) BlockActorID() string { return "Comparator" }
+
 // EncodeItem returns the shared item identity of powered and unpowered states.
 func (Comparator) EncodeItem() (string, int16) { return "minecraft:comparator", 0 }
 
