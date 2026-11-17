@@ -49,21 +49,27 @@ func TestBlockRegistry_ActorMetadataCoversUnimplementedBlocks(t *testing.T) {
 	registry := world.NewBlockRegistry()
 	registry.Finalize()
 	for name, want := range map[string]string{
-		"minecraft:trapped_chest":        "Chest",
-		"minecraft:skull":                "Skull",
-		"minecraft:mob_spawner":          "MobSpawner",
-		"minecraft:bell":                 "Bell",
-		"minecraft:conduit":              "Conduit",
-		"minecraft:flower_pot":           "FlowerPot",
-		"minecraft:chiseled_bookshelf":   "ChiseledBookshelf",
-		"minecraft:beehive":              "Beehive",
-		"minecraft:bee_nest":             "Beehive",
-		"minecraft:crafter":              "Crafter",
-		"minecraft:dispenser":            "Dispenser",
-		"minecraft:dropper":              "Dropper",
-		"minecraft:lodestone":            "Lodestone",
-		"minecraft:powered_comparator":   "Comparator",
-		"minecraft:unpowered_comparator": "Comparator",
+		"minecraft:trapped_chest":              "Chest",
+		"minecraft:skull":                      "Skull",
+		"minecraft:mob_spawner":                "MobSpawner",
+		"minecraft:bell":                       "Bell",
+		"minecraft:conduit":                    "Conduit",
+		"minecraft:flower_pot":                 "FlowerPot",
+		"minecraft:chiseled_bookshelf":         "ChiseledBookshelf",
+		"minecraft:beehive":                    "Beehive",
+		"minecraft:bee_nest":                   "Beehive",
+		"minecraft:crafter":                    "Crafter",
+		"minecraft:dispenser":                  "Dispenser",
+		"minecraft:dropper":                    "Dropper",
+		"minecraft:lodestone":                  "Lodestone",
+		"minecraft:powered_comparator":         "Comparator",
+		"minecraft:unpowered_comparator":       "Comparator",
+		"minecraft:noteblock":                  "Music",
+		"minecraft:cauldron":                   "Cauldron",
+		"minecraft:piston":                     "PistonArm",
+		"minecraft:sticky_piston":              "PistonArm",
+		"minecraft:daylight_detector":          "DaylightDetector",
+		"minecraft:daylight_detector_inverted": "DaylightDetector",
 	} {
 		if got, ok := registry.BlockActorID(name); !ok || got != want {
 			t.Errorf("BlockActorID(%q) = %q, %v, want %q", name, got, ok, want)
@@ -182,7 +188,7 @@ func TestBlockRegistry_MetadataOnlyTypesPreserveGameplay(t *testing.T) {
 	registry.RegisterBlockState(world.BlockState{Name: "server:actor"})
 	baseline := registry.(*world.BasicBlockRegistry).Clone()
 	baseline.Finalize()
-	for _, actor := range []world.BlockActor{block.Bell{}, block.Conduit{}, block.FlowerPot{}, block.ChiseledBookshelf{}, block.HangingSign{}, block.Shelf{}, block.Dispenser{}, block.Dropper{}, block.Crafter{}, block.Beehive{}, block.Lodestone{}} {
+	for _, actor := range []world.BlockActor{block.Bell{}, block.Conduit{}, block.FlowerPot{}, block.ChiseledBookshelf{}, block.HangingSign{}, block.Shelf{}, block.Dispenser{}, block.Dropper{}, block.Crafter{}, block.Beehive{}, block.Lodestone{}, block.Cauldron{}, block.Piston{}, block.DaylightDetector{}} {
 		if _, ok := actor.(world.Block); ok {
 			t.Fatalf("metadata-only %T implements world.Block", actor)
 		}

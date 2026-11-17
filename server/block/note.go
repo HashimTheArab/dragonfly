@@ -45,8 +45,11 @@ func (n Note) DecodeNBT(data map[string]any) any {
 }
 
 func (n Note) EncodeNBT() map[string]any {
-	return map[string]any{"note": byte(n.Pitch), "powered": boolByte(n.Powered)}
+	return map[string]any{"id": n.BlockActorID(), "note": byte(n.Pitch), "powered": boolByte(n.Powered)}
 }
+
+// BlockActorID returns the Bedrock NBT identifier for Note.
+func (Note) BlockActorID() string { return "Music" }
 
 func (n Note) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, _ item.User, _ *item.UseContext) bool {
 	if !n.canPlay(pos, tx) {
