@@ -339,26 +339,48 @@ func (chunk *Chunk) HighestLightBlocker(x, z uint8) int16 {
 	return chunk.highestLightBlocker(x, z, false)
 }
 
+// HighestLightBlockerBelow returns the Y value of the highest block below
+// below that completely blocks any light from going through, the way
+// HighestLightBlocker does for the whole column. If none is found, the value
+// returned is the minimum height.
+func (chunk *Chunk) HighestLightBlockerBelow(x, z uint8, below int16) int16 {
+	y, _ := chunk.highestLightBlockerBelow(x, z, below)
+	return y
+}
+
 // highestLightBlocker iterates from the highest non-empty sub chunk downwards
 // to find the Y value of the highest block that completely blocks any light
 // from going through. If none is found, the value returned is the minimum
 // height. If addOne is true, one is added to the Y returned if a block was
 // found.
 func (chunk *Chunk) highestLightBlocker(x, z uint8, addOne bool) int16 {
-	var plus int16
-	if addOne {
-		plus++
+	y, found := chunk.highestLightBlockerBelow(x, z, int16(chunk.r[1])+1)
+	if found && addOne {
+		y++
 	}
-	for index := int16(len(chunk.sub) - 1); index >= 0; index-- {
-		if sub := chunk.sub[index]; !sub.Empty() {
-			for y := 15; y >= 0; y-- {
-				if BlocksAllLight(chunk.br, sub.storages[0].At(x, uint8(y), z)) {
-					return int16(y) | chunk.SubY(index) + plus
-				}
+	return y
+}
+
+// highestLightBlockerBelow walks down from below, skipping empty sub chunks,
+// to the highest block that blocks all light, and reports whether it found
+// one. Without one it returns the minimum height.
+func (chunk *Chunk) highestLightBlockerBelow(x, z uint8, below int16) (int16, bool) {
+	below = min(below, int16(chunk.r[1])+1)
+	for y := below - 1; y >= int16(chunk.r[0]); {
+		index := chunk.SubIndex(y)
+		bottom := chunk.SubY(index)
+		sub := chunk.sub[index]
+		if sub.Empty() {
+			y = bottom - 1
+			continue
+		}
+		for ; y >= bottom; y-- {
+			if BlocksAllLight(chunk.br, sub.storages[0].At(x, uint8(y-bottom), z)) {
+				return y, true
 			}
 		}
 	}
-	return int16(chunk.r[0])
+	return int16(chunk.r[0]), false
 }
 
 // HighestBlock iterates from the highest non-empty sub chunk downwards to find the Y value of the highest

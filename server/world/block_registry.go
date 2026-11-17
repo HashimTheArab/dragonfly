@@ -357,7 +357,11 @@ func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) 
 	}
 
 	rid := uint32(len(br.blocks))
-	br.blocks = append(br.blocks, newUnknownBlock(s))
+	if br.finalized {
+		br.blocks = append(br.blocks, newUnknownBlockWithHash(s, netHash))
+	} else {
+		br.blocks = append(br.blocks, newUnknownBlock(s))
+	}
 	br.stateRuntimeIDs[h] = rid
 	if !br.finalized {
 		return scratch, nil

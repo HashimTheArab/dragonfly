@@ -14,8 +14,14 @@ var unknownBlockProps = vanillaBlockProperties()
 // It carries the light values of s itself, since a block such as a copper
 // bulb or a lava cauldron gives off light in some states only.
 func newUnknownBlock(s BlockState) unknownBlock {
-	b := unknownBlock{BlockState: s}
 	hash, _ := networkBlockHash(s.Name, s.Properties, nil)
+	return newUnknownBlockWithHash(s, hash)
+}
+
+// newUnknownBlockWithHash is newUnknownBlock for a state whose network hash
+// the caller has already computed.
+func newUnknownBlockWithHash(s BlockState, hash uint32) unknownBlock {
+	b := unknownBlock{BlockState: s}
 	if state, ok := block.StateByHash(hash); ok {
 		if values, ok := block.PropertiesAt(state.Properties); ok {
 			b.light = stateLight{emission: values.LightEmission, dampening: values.LightDampening, known: true}
