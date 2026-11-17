@@ -2,6 +2,8 @@ package recipe
 
 import (
 	"math"
+	"math/rand/v2"
+	"slices"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/item"
@@ -183,5 +185,107 @@ func TestDecodeNetworkCraftingPattern_RespectsSymmetry(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// namedTestItems are the items resolveNamedTestItem knows. The planks are
+// members of the vanilla "minecraft:planks" tag; the others are not.
+var namedTestItems = []string{"minecraft:oak_planks", "minecraft:spruce_planks", "minecraft:stick", "minecraft:cobblestone"}
+
+// resolveNamedTestItem resolves metadata 0 of namedTestItems, modelling a session palette.
+func resolveNamedTestItem(name string, meta int16) (world.Item, bool) {
+	if meta != 0 || !slices.Contains(namedTestItems, name) {
+		return nil, false
+	}
+	return gridTestItem{name, 0}, true
+}
+
+func TestNetworkCraftingPatternMayMatch_Scope(t *testing.T) {
+	stick := protocol.ItemDescriptorCount{Descriptor: &protocol.DefaultItemDescriptor{Name: "minecraft:stick"}, Count: 1}
+	planks := protocol.ItemDescriptorCount{Descriptor: &protocol.ItemTagItemDescriptor{Tag: "minecraft:planks"}, Count: 1}
+	empty := protocol.ItemDescriptorCount{Descriptor: &protocol.InvalidItemDescriptor{}}
+	output := []protocol.ItemStack{{ItemType: protocol.ItemType{NetworkID: 1}, Count: 1}}
+	shaped := func(block string, in ...protocol.ItemDescriptorCount) *protocol.ShapedRecipe {
+		return &protocol.ShapedRecipe{Width: int32(len(in)), Height: 1, Input: in, Output: output, Block: block}
+	}
+	for _, tt := range []struct {
+		name  string
+		r     any
+		names []string
+		want  bool
+	}{
+		{name: "named ingredient present", r: shaped("crafting_table", stick, empty), names: []string{"minecraft:stick"}, want: true},
+		{name: "named ingredient missing", r: shaped("crafting_table", stick), names: []string{"minecraft:cobblestone"}},
+		{name: "one of two names missing", r: &protocol.ShapelessRecipe{Input: []protocol.ItemDescriptorCount{stick, planks}, Output: output, Block: "crafting_table"}, names: []string{"minecraft:oak_planks"}},
+		{name: "tag member present", r: shaped("crafting_table", planks, stick), names: []string{"minecraft:stick", "minecraft:spruce_planks"}, want: true},
+		{name: "tag member missing", r: shaped("crafting_table", planks), names: []string{"minecraft:stick"}},
+		{name: "other workstation", r: shaped("stonecutter", stick), names: []string{"minecraft:stick"}},
+		{name: "unsupported kind", r: &protocol.MultiRecipe{}, names: namedTestItems},
+		{name: "unsupported descriptor", r: shaped("crafting_table", protocol.ItemDescriptorCount{Descriptor: &protocol.MoLangItemDescriptor{Expression: "true"}, Count: 1}), names: namedTestItems},
+		{name: "typed nil recipe", r: (*protocol.ShapedRecipe)(nil), names: namedTestItems},
+	} {
+		if got := NetworkCraftingPatternMayMatch(tt.r, tt.names); got != tt.want {
+			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+// TestNetworkCraftingPatternMayMatch_NeverRejectsAMatch checks the predicate
+// against decoding and matching: whenever a recipe matches a grid, the
+// predicate accepts the grid's item names.
+func TestNetworkCraftingPatternMayMatch_NeverRejectsAMatch(t *testing.T) {
+	rng := rand.New(rand.NewPCG(5, 6))
+	output := []protocol.ItemStack{{ItemType: protocol.ItemType{NetworkID: 1}, Count: 1}}
+	descriptor := func() protocol.ItemDescriptorCount {
+		switch rng.IntN(6) {
+		case 0:
+			return protocol.ItemDescriptorCount{Descriptor: &protocol.ItemTagItemDescriptor{Tag: "minecraft:planks"}, Count: 1}
+		case 1:
+			return protocol.ItemDescriptorCount{Descriptor: &protocol.InvalidItemDescriptor{}}
+		case 2:
+			return protocol.ItemDescriptorCount{Descriptor: &protocol.DefaultItemDescriptor{Name: namedTestItems[rng.IntN(len(namedTestItems))], MetadataValue: math.MaxInt16}, Count: 1}
+		default:
+			return protocol.ItemDescriptorCount{Descriptor: &protocol.DefaultItemDescriptor{Name: namedTestItems[rng.IntN(len(namedTestItems))]}, Count: 1}
+		}
+	}
+	matches, rejected := 0, 0
+	for range 3000 {
+		input := make([]protocol.ItemDescriptorCount, 1+rng.IntN(4))
+		for i := range input {
+			input[i] = descriptor()
+		}
+		var r any = &protocol.ShapelessRecipe{Input: input, Output: output, Block: "crafting_table"}
+		if width := 1 + rng.IntN(2); rng.IntN(2) == 0 && len(input)%width == 0 && len(input)/width <= 2 {
+			r = &protocol.ShapedRecipe{Width: int32(width), Height: int32(len(input) / width), Input: input, Output: output, Block: "crafting_table"}
+		}
+		pattern, ok := DecodeNetworkCraftingPattern(r, resolveNamedTestItem)
+		grid := make([]item.Stack, 4)
+		var names []string
+		for range 1 + rng.IntN(3) {
+			name := namedTestItems[rng.IntN(len(namedTestItems))]
+			grid[rng.IntN(len(grid))] = item.NewStack(gridTestItem{name, 0}, 64)
+		}
+		for _, stack := range grid {
+			if !stack.Empty() {
+				name, _ := stack.Item().EncodeItem()
+				names = append(names, name)
+			}
+		}
+		may := NetworkCraftingPatternMayMatch(r, names)
+		if !may {
+			rejected++
+		}
+		if !ok {
+			continue
+		}
+		if _, matched := pattern.Match(grid, 1); matched {
+			matches++
+			if !may {
+				t.Fatalf("predicate rejected a matching recipe %+v for %v", r, names)
+			}
+		}
+	}
+	if matches < 50 || rejected < 500 {
+		t.Fatalf("too few cases exercised: %d matches, %d rejections", matches, rejected)
 	}
 }

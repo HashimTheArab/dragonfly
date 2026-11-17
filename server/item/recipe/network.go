@@ -2,6 +2,7 @@ package recipe
 
 import (
 	"math"
+	"slices"
 
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
@@ -58,33 +59,36 @@ func DecodeNetworkIngredient(in protocol.ItemDescriptorCount, resolve func(strin
 	}
 }
 
-// DecodeNetworkCraftingPattern decodes only ordinary crafting-table shaped or
-// shapeless recipes with a single non-empty result. It retains that wire result without resolving it.
-// r must be a *protocol.ShapedRecipe or *protocol.ShapelessRecipe. Dynamic,
-// user-data, chemistry and other workstation recipes are unsupported.
-func DecodeNetworkCraftingPattern(r any, resolve func(string, int16) (world.Item, bool)) (CraftingPattern, bool) {
-	var input []protocol.ItemDescriptorCount
-	var output []protocol.ItemStack
+// networkCraftingRecipe returns the parts of an ordinary crafting-table shaped
+// or shapeless recipe, the only kinds DecodeNetworkCraftingPattern supports.
+func networkCraftingRecipe(r any) (input []protocol.ItemDescriptorCount, output []protocol.ItemStack, shape Shape, assumeSymmetry, ok bool) {
 	var block string
-	var shape Shape
-	var assumeSymmetry bool
 	switch r := r.(type) {
 	case *protocol.ShapedRecipe:
 		if r == nil || r.Width < 1 || r.Width > 3 || r.Height < 1 || r.Height > 3 {
-			return CraftingPattern{}, false
+			return nil, nil, Shape{}, false, false
 		}
 		input, output, block = r.Input, r.Output, r.Block
 		shape = NewShape(int(r.Width), int(r.Height))
 		assumeSymmetry = r.AssumeSymmetry
 	case *protocol.ShapelessRecipe:
 		if r == nil {
-			return CraftingPattern{}, false
+			return nil, nil, Shape{}, false, false
 		}
 		input, output, block = r.Input, r.Output, r.Block
 	default:
-		return CraftingPattern{}, false
+		return nil, nil, Shape{}, false, false
 	}
-	if block != "crafting_table" || len(output) != 1 || output[0].Count == 0 || output[0].NetworkID == 0 || len(input) == 0 || len(input) > 9 {
+	return input, output, shape, assumeSymmetry, block == "crafting_table"
+}
+
+// DecodeNetworkCraftingPattern decodes only ordinary crafting-table shaped or
+// shapeless recipes with a single non-empty result. It retains that wire result without resolving it.
+// r must be a *protocol.ShapedRecipe or *protocol.ShapelessRecipe. Dynamic,
+// user-data, chemistry and other workstation recipes are unsupported.
+func DecodeNetworkCraftingPattern(r any, resolve func(string, int16) (world.Item, bool)) (CraftingPattern, bool) {
+	input, output, shape, assumeSymmetry, ok := networkCraftingRecipe(r)
+	if !ok || len(output) != 1 || output[0].Count == 0 || output[0].NetworkID == 0 || len(input) == 0 || len(input) > 9 {
 		return CraftingPattern{}, false
 	}
 	p := CraftingPattern{Input: make([]Item, len(input)), Shape: shape, AssumeSymmetry: assumeSymmetry, Output: output}
@@ -99,4 +103,36 @@ func DecodeNetworkCraftingPattern(r any, resolve func(string, int16) (world.Item
 		return CraftingPattern{}, false
 	}
 	return p, true
+}
+
+// NetworkCraftingPatternMayMatch reports whether r may decode, through
+// DecodeNetworkCraftingPattern, to a pattern that matches a grid holding only
+// items with the given names. It resolves no items and allocates nothing, so
+// callers can use it to skip recipes before decoding: false means no such grid
+// matches r, true means decoding and matching must decide. A named ingredient
+// decodes only to the item with that name, and a tag matches only its members.
+func NetworkCraftingPatternMayMatch(r any, names []string) bool {
+	input, _, _, _, ok := networkCraftingRecipe(r)
+	if !ok {
+		return false
+	}
+	for _, in := range input {
+		switch d := in.Descriptor.(type) {
+		case *protocol.InvalidItemDescriptor:
+			if d == nil {
+				return false
+			}
+		case *protocol.DefaultItemDescriptor:
+			if d == nil || !slices.Contains(names, d.Name) {
+				return false
+			}
+		case *protocol.ItemTagItemDescriptor:
+			if d == nil || !slices.ContainsFunc(names, NewItemTag(d.Tag, 1).Contains) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
