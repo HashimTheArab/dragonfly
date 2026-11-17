@@ -3,6 +3,7 @@ package block_test
 import (
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block"
@@ -48,13 +49,28 @@ func TestBlockRegistry_ActorMetadataCoversUnimplementedBlocks(t *testing.T) {
 	registry := world.NewBlockRegistry()
 	registry.Finalize()
 	for name, want := range map[string]string{
-		"minecraft:trapped_chest":      "Chest",
-		"minecraft:skull":              "Skull",
-		"minecraft:mob_spawner":        "MobSpawner",
-		"minecraft:bell":               "Bell",
-		"minecraft:conduit":            "Conduit",
-		"minecraft:flower_pot":         "FlowerPot",
-		"minecraft:chiseled_bookshelf": "ChiseledBookshelf",
+		"minecraft:trapped_chest":              "Chest",
+		"minecraft:skull":                      "Skull",
+		"minecraft:mob_spawner":                "MobSpawner",
+		"minecraft:bell":                       "Bell",
+		"minecraft:conduit":                    "Conduit",
+		"minecraft:flower_pot":                 "FlowerPot",
+		"minecraft:chiseled_bookshelf":         "ChiseledBookshelf",
+		"minecraft:beehive":                    "Beehive",
+		"minecraft:bee_nest":                   "Beehive",
+		"minecraft:crafter":                    "Crafter",
+		"minecraft:dispenser":                  "Dispenser",
+		"minecraft:dropper":                    "Dropper",
+		"minecraft:lodestone":                  "Lodestone",
+		"minecraft:powered_comparator":         "Comparator",
+		"minecraft:unpowered_comparator":       "Comparator",
+		"minecraft:noteblock":                  "Music",
+		"minecraft:cauldron":                   "Cauldron",
+		"minecraft:piston":                     "PistonArm",
+		"minecraft:sticky_piston":              "PistonArm",
+		"minecraft:daylight_detector":          "DaylightDetector",
+		"minecraft:daylight_detector_inverted": "DaylightDetector",
+		"minecraft:sculk_sensor":               "SculkSensor",
 	} {
 		if got, ok := registry.BlockActorID(name); !ok || got != want {
 			t.Errorf("BlockActorID(%q) = %q, %v, want %q", name, got, ok, want)
@@ -67,6 +83,24 @@ func TestBlockRegistry_ActorMetadataCoversUnimplementedBlocks(t *testing.T) {
 	for _, name := range chests {
 		if got, ok := registry.BlockActorID(name); !ok || got != "Chest" {
 			t.Errorf("BlockActorID(%q) = %q, %v, want Chest", name, got, ok)
+		}
+	}
+	// Every wood's hanging sign and shelf shares one actor, as every copper
+	// chest does.
+	for suffix, want := range map[string]string{"_hanging_sign": "HangingSign", "_shelf": "Shelf"} {
+		woods := 0
+		for _, b := range registry.Blocks() {
+			name, _ := b.EncodeBlock()
+			if !strings.HasSuffix(name, suffix) {
+				continue
+			}
+			woods++
+			if got, ok := registry.BlockActorID(name); !ok || got != want {
+				t.Errorf("BlockActorID(%q) = %q, %v, want %s", name, got, ok, want)
+			}
+		}
+		if woods < 12 {
+			t.Errorf("%s states seen for %d woods, want every wood", suffix, woods)
 		}
 	}
 	for _, name := range []string{"minecraft:stone", "minecraft:copper_chestplate", "server:missing", ""} {
@@ -155,7 +189,7 @@ func TestBlockRegistry_MetadataOnlyTypesPreserveGameplay(t *testing.T) {
 	registry.RegisterBlockState(world.BlockState{Name: "server:actor"})
 	baseline := registry.(*world.BasicBlockRegistry).Clone()
 	baseline.Finalize()
-	for _, actor := range []world.BlockActor{block.Bell{}, block.Conduit{}, block.FlowerPot{}, block.ChiseledBookshelf{}} {
+	for _, actor := range []world.BlockActor{block.Bell{}, block.Conduit{}, block.FlowerPot{}, block.ChiseledBookshelf{}, block.HangingSign{}, block.Shelf{}, block.Dispenser{}, block.Dropper{}, block.Crafter{}, block.Beehive{}, block.Lodestone{}, block.Cauldron{}, block.Piston{}, block.DaylightDetector{}, block.SculkSensor{}} {
 		if _, ok := actor.(world.Block); ok {
 			t.Fatalf("metadata-only %T implements world.Block", actor)
 		}
