@@ -188,6 +188,13 @@ func (s Sign) EncodeBlock() (name string, properties map[string]any) {
 
 // DecodeNBT ...
 func (s Sign) DecodeNBT(data map[string]any) any {
+	return s.WithNBT(data)
+}
+
+// WithNBT returns s with the text, colours and wax state that data holds, read
+// as DecodeNBT reads them. Unlike DecodeNBT, it returns a Sign, so reading a
+// sign's data allocates nothing.
+func (s Sign) WithNBT(data map[string]any) Sign {
 	if nbtconv.String(data, "Text") != "" {
 		// The NBT format changed in 1.19.80 to have separate data for each side of the sign. The old format must still
 		// be supported for backwards compatibility.
