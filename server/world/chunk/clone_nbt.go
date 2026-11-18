@@ -43,7 +43,7 @@ func cloneNBT(value any) any {
 		return copied
 	}
 	switch rv := reflect.ValueOf(value); rv.Kind() {
-	case reflect.Interface, reflect.Map, reflect.Slice:
+	case reflect.Map, reflect.Slice:
 		return cloneNBTValue(rv).Interface()
 	default:
 		return value
