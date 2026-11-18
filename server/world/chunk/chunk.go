@@ -107,6 +107,18 @@ func (chunk *Chunk) SetBlockEntityData(pos cube.Pos, data map[string]any) {
 	if data != nil && pos.OutOfBounds(chunk.r) {
 		return
 	}
+	chunk.SetOwnedBlockEntityData(pos, CloneBlockEntityData(data))
+}
+
+// SetOwnedBlockEntityData stores raw NBT at the position passed as
+// SetBlockEntityData does, but keeps data itself instead of a copy. The chunk
+// takes ownership: the caller must not modify data, or any map or list it
+// holds, after the call. Use it for data built for this chunk alone, such as a
+// fresh decode. Nil deletes the entry.
+func (chunk *Chunk) SetOwnedBlockEntityData(pos cube.Pos, data map[string]any) {
+	if data != nil && pos.OutOfBounds(chunk.r) {
+		return
+	}
 
 	chunk.blockEntitiesMu.Lock()
 	defer chunk.blockEntitiesMu.Unlock()
@@ -124,7 +136,7 @@ func (chunk *Chunk) SetBlockEntityData(pos cube.Pos, data map[string]any) {
 	if chunk.blockEntities == nil {
 		chunk.blockEntities = make(map[cube.Pos]map[string]any, 1)
 	}
-	chunk.blockEntities[pos] = CloneBlockEntityData(data)
+	chunk.blockEntities[pos] = data
 }
 
 // ClearBlockEntityDataInRange clears raw block entity NBT entries within the inclusive position range passed.

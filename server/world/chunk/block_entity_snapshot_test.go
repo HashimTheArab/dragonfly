@@ -177,3 +177,45 @@ func TestBlockEntitySnapshotPreservesDecodedNBT(t *testing.T) {
 		t.Fatalf("snapshot changed decoded NBT: got %#v want %#v", got, decoded)
 	}
 }
+
+// ownedDataSink makes the baseline's maps escape, as stored ones do.
+var ownedDataSink map[string]any
+
+// TestSetOwnedBlockEntityDataKeepsTheMapWithoutCopying checks that the owned
+// setter stores data without copying it, reads still hand out copies, and nil
+// and out-of-range positions behave as SetBlockEntityData's do.
+func TestSetOwnedBlockEntityDataKeepsTheMapWithoutCopying(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	ch := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	pos := cube.Pos{1, 64, 1}
+	newData := func() map[string]any {
+		return map[string]any{
+			"id":        "Sign",
+			"FrontText": map[string]any{"Text": "Base below", "SignTextColor": int32(-16777216)},
+			"BackText":  map[string]any{"Text": "", "SignTextColor": int32(-16777216)},
+		}
+	}
+	ch.SetOwnedBlockEntityData(pos, newData())
+	allocs := testing.AllocsPerRun(100, func() { ch.SetOwnedBlockEntityData(pos, newData()) }) -
+		testing.AllocsPerRun(100, func() { ownedDataSink = newData() })
+	if allocs > 0 {
+		t.Fatalf("storing owned data allocated %v times beyond building it, want 0", allocs)
+	}
+
+	data := newData()
+	ch.SetOwnedBlockEntityData(pos, data)
+	output, ok := ch.BlockEntityData(pos)
+	if !ok || !reflect.DeepEqual(output, data) {
+		t.Fatalf("BlockEntityData() = %v, %v; want %v", output, ok, data)
+	}
+	output["FrontText"].(map[string]any)["Text"] = "changed"
+	if again, _ := ch.BlockEntityData(pos); again["FrontText"].(map[string]any)["Text"] != "Base below" {
+		t.Fatal("a read exposed the owned data")
+	}
+
+	ch.SetOwnedBlockEntityData(cube.Pos{1, world.Overworld.Range().Max() + 1, 1}, newData())
+	ch.SetOwnedBlockEntityData(pos, nil)
+	if got := ch.BlockEntities(); len(got) != 0 {
+		t.Fatalf("BlockEntities() = %v after deleting and an out-of-range store, want none", got)
+	}
+}
