@@ -9,7 +9,45 @@ func CloneBlockEntityData(data map[string]any) map[string]any {
 	if data == nil {
 		return nil
 	}
-	return cloneNBTValue(reflect.ValueOf(data)).Interface().(map[string]any)
+	return cloneCompound(data)
+}
+
+// cloneCompound copies an untyped compound, the shape the NBT decoder produces.
+func cloneCompound(data map[string]any) map[string]any {
+	copied := make(map[string]any, len(data))
+	for k, v := range data {
+		copied[k] = cloneNBT(v)
+	}
+	return copied
+}
+
+// cloneNBT detaches one NBT value. Untyped compounds and lists are copied
+// directly and every other value that holds no container is returned as is, so
+// scalars keep the interface they arrived in instead of being boxed again.
+// Other container types go through cloneNBTValue to keep their concrete type.
+func cloneNBT(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		if v == nil {
+			return value
+		}
+		return cloneCompound(v)
+	case []any:
+		if v == nil {
+			return value
+		}
+		copied := make([]any, len(v))
+		for i, e := range v {
+			copied[i] = cloneNBT(e)
+		}
+		return copied
+	}
+	switch rv := reflect.ValueOf(value); rv.Kind() {
+	case reflect.Interface, reflect.Map, reflect.Slice:
+		return cloneNBTValue(rv).Interface()
+	default:
+		return value
+	}
 }
 
 // cloneNBTValue detaches containers while preserving concrete list types.
