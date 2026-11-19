@@ -92,7 +92,13 @@ func CanStoreInShulkerBox(s item.Stack, _ int) bool {
 }
 
 func (s ShulkerBox) Model() world.BlockModel {
-	return model.Shulker{Facing: s.Facing, Progress: s.progress.Load()}
+	// A shulker box made without NewShulkerBox, such as a registered block
+	// state, has no lid progress yet, and its lid is closed.
+	var progress int32
+	if s.progress != nil {
+		progress = s.progress.Load()
+	}
+	return model.Shulker{Facing: s.Facing, Progress: progress}
 }
 
 func (s ShulkerBox) WithName(a ...any) world.Item {
