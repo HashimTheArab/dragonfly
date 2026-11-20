@@ -335,13 +335,9 @@ func customBlockMaps(value any, field string) ([]map[string]any, error) {
 // more as 0.
 func multiBlockPartValues(trait map[string]any) ([]any, error) {
 	enabledStates, _ := trait["enabled_states"].(map[string]any)
-	flag, ok := enabledStates["multi_block"]
-	if !ok {
+	// The client reads the flag only as a byte, and any other tag as off.
+	if flag, _ := enabledStates["multi_block"].(uint8); flag == 0 {
 		return nil, nil
-	}
-	enabled, err := customBlockTraitEnabled(flag)
-	if err != nil || !enabled {
-		return nil, err
 	}
 	parts, ok := trait["part_count"].(uint8)
 	if !ok || parts == 0 {
