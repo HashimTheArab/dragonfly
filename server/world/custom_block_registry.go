@@ -2,6 +2,7 @@ package world
 
 import (
 	"fmt"
+	"math/bits"
 	"sort"
 	"strings"
 
@@ -28,12 +29,92 @@ var traitLookup = map[string][]any{
 	},
 }
 
-const maxCustomBlockStates = 1 << 16
+// maxCustomBlockStates bounds the custom states one registry holds, against a hostile palette. The
+// client has no such cap; it only warns past 65536 permutations.
+const maxCustomBlockStates = 1 << 18
 
+// customBlockStateSpace is a custom block's states laid out in permutation bits as the client lays
+// them out: each state takes the bits of its largest value index, the first added the lowest. The
+// client keeps only the low 16 bits, so a state reaching past them never leaves its first value.
 type customBlockStateSpace struct {
-	name       string
-	properties []string
-	values     [][]any
+	name   string
+	states []customBlockState
+	// spare is the bits below 16 that no state keeps; each value of them repeats every state.
+	spare uint32
+}
+
+type customBlockState struct {
+	name   string
+	values []any
+	kept   bool // within the low 16 bits
+}
+
+func newCustomBlockStateSpace(name string, names []string, values [][]any) (customBlockStateSpace, error) {
+	space := customBlockStateSpace{name: name}
+	start := uint32(0)
+	for i, stateName := range names {
+		n := uint32(max(1, bits.Len(uint(len(values[i])-1))))
+		// The client's mask, in its 32-bit arithmetic: zero for a state past bit 16, until the
+		// shift wraps for a block of more than 32 bits.
+		mask := (0xffff << ((16 - n) & 31) & 0xffff) >> ((16 - (start + n)) & 31)
+		kept := start+n <= 16
+		if !kept && mask != 0 {
+			return space, fmt.Errorf("states need %d bits or more, which the client cannot lay out", start+n)
+		}
+		if start < 16 && !kept {
+			space.spare = 16 - start
+		}
+		space.states = append(space.states, customBlockState{stateName, values[i], kept})
+		start += n
+	}
+	return space, nil
+}
+
+// count returns how many permutations the client gives the block.
+func (s customBlockStateSpace) count() int {
+	count := 1 << s.spare
+	for _, state := range s.states {
+		if state.kept {
+			count *= len(state.values)
+		}
+	}
+	return count
+}
+
+// forEach yields the block's permutations in the client's order, by permutation index.
+func (s customBlockStateSpace) forEach(yield func(map[string]any) error) error {
+	properties := make(map[string]any, len(s.states))
+	var kept []customBlockState
+	for _, state := range s.states {
+		if state.kept {
+			kept = append(kept, state)
+		} else {
+			properties[state.name] = state.values[0]
+		}
+	}
+	var visit func(int) error
+	visit = func(index int) error {
+		if index < 0 {
+			state := make(map[string]any, len(properties))
+			for name, value := range properties {
+				state[name] = value
+			}
+			return yield(state)
+		}
+		for _, value := range kept[index].values {
+			properties[kept[index].name] = value
+			if err := visit(index - 1); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for range 1 << s.spare {
+		if err := visit(len(kept) - 1); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // NewCustomBlockRegistry returns an independent registry with default block runtime IDs preserved and custom block
@@ -54,36 +135,37 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 		return fmt.Errorf("unsupported block registry type %T", registry)
 	}
 	spaces := make([]customBlockStateSpace, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries))
 	total := 0
 	for _, entry := range entries {
 		if namespace, _, _ := strings.Cut(entry.Name, ":"); namespace == "minecraft" {
 			continue
 		}
+		if _, ok := seen[entry.Name]; ok || basicRegistry.hasBlock(entry.Name) {
+			continue
+		}
+		seen[entry.Name] = struct{}{}
 
 		propertyNames, propertyValues, err := customBlockPropertySpace(entry)
 		if err != nil {
 			return fmt.Errorf("custom block %s: %w", entry.Name, err)
 		}
-		count := 1
-		for _, values := range propertyValues {
-			if count > (maxCustomBlockStates-total)/len(values) {
-				return fmt.Errorf("custom block %s: states exceed limit of %d", entry.Name, maxCustomBlockStates)
-			}
-			count *= len(values)
+		space, err := newCustomBlockStateSpace(entry.Name, propertyNames, propertyValues)
+		if err != nil {
+			return fmt.Errorf("custom block %s: %w", entry.Name, err)
 		}
-		if count > maxCustomBlockStates-total {
-			return fmt.Errorf("custom block %s: states exceed limit of %d", entry.Name, maxCustomBlockStates)
+		total += space.count()
+		if total > maxCustomBlockStates {
+			return fmt.Errorf("custom block %s: custom states reach %d, over the limit of %d", entry.Name, total, maxCustomBlockStates)
 		}
-		total += count
-		spaces = append(spaces, customBlockStateSpace{entry.Name, propertyNames, propertyValues})
+		spaces = append(spaces, space)
 	}
 
 	scratch := make([]byte, 0, 0xff)
 	for _, space := range spaces {
-		err := forEachCustomBlockState(space.properties, space.values, func(properties map[string]any) error {
-			state := BlockState{Name: space.name, Properties: properties}
+		err := space.forEach(func(properties map[string]any) error {
 			var stateErr error
-			scratch, stateErr = basicRegistry.addCustomBlockState(state, scratch)
+			scratch, stateErr = basicRegistry.addCustomBlockState(BlockState{Name: space.name, Properties: properties}, scratch)
 			return stateErr
 		})
 		if err != nil {
@@ -125,6 +207,17 @@ func customBlockPropertySpace(entry protocol.BlockEntry) ([]string, [][]any, err
 		return nil, nil, err
 	}
 	for _, trait := range traits {
+		if trait["name"] == "minecraft:multi_block" {
+			values, err := multiBlockPartValues(trait)
+			if err != nil {
+				return nil, nil, fmt.Errorf("trait minecraft:multi_block: %w", err)
+			}
+			if values != nil {
+				traitNames = append(traitNames, "minecraft:multi_block_part")
+				traitValues = append(traitValues, values)
+			}
+			continue
+		}
 		enabledStates, ok := trait["enabled_states"].(map[string]any)
 		if !ok {
 			// minecraft:connection is the one trait whose enabled_states arrives as a
@@ -235,28 +328,31 @@ func customBlockMaps(value any, field string) ([]map[string]any, error) {
 	}
 }
 
-// forEachCustomBlockState yields every combination of the values passed in the order the client
-// gives them runtime IDs: by permutation index, in which the first state varies fastest.
-func forEachCustomBlockState(names []string, valueSets [][]any, yield func(map[string]any) error) error {
-	properties := make(map[string]any, len(names))
-	var visit func(int) error
-	visit = func(index int) error {
-		if index < 0 {
-			state := make(map[string]any, len(properties))
-			for name, value := range properties {
-				state[name] = value
-			}
-			return yield(state)
-		}
-		for _, value := range valueSets[index] {
-			properties[names[index]] = value
-			if err := visit(index - 1); err != nil {
-				return err
-			}
-		}
-		return nil
+// multiBlockPartValues returns the values of minecraft:multi_block_part, one per part, or nil if
+// the trait does not enable it. The client stores the part as an int and writes a part of 4 or
+// more as 0.
+func multiBlockPartValues(trait map[string]any) ([]any, error) {
+	enabledStates, _ := trait["enabled_states"].(map[string]any)
+	flag, ok := enabledStates["multi_block"]
+	if !ok {
+		return nil, nil
 	}
-	return visit(len(names) - 1)
+	enabled, err := customBlockTraitEnabled(flag)
+	if err != nil || !enabled {
+		return nil, err
+	}
+	parts, ok := trait["part_count"].(uint8)
+	if !ok || parts == 0 {
+		return nil, fmt.Errorf("expected part_count to be a byte above 0, got %v", trait["part_count"])
+	}
+	values := make([]any, parts)
+	for i := range values {
+		values[i] = int32(0)
+		if i < 4 {
+			values[i] = int32(i)
+		}
+	}
+	return values, nil
 }
 
 func customBlockTraitEnabled(v any) (bool, error) {
