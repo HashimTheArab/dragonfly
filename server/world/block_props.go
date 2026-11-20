@@ -16,7 +16,8 @@ var unknownBlockProps = vanillaBlockProperties()
 func newUnknownBlock(s BlockState) unknownBlock {
 	b := unknownBlock{BlockState: s}
 	hash, _ := networkBlockHash(s.Name, s.Properties, nil)
-	if state, ok := block.StateByHash(hash); ok {
+	// A custom state can share a vanilla state's hash, so the name must match too.
+	if state, ok := block.StateByHash(hash); ok && vanillaStateNamed(state, s.Name) {
 		if values, ok := block.PropertiesAt(state.Properties); ok {
 			b.light = stateLight{emission: values.LightEmission, dampening: values.LightDampening, known: true}
 		}
@@ -52,4 +53,10 @@ func vanillaBlockProperties() map[string]unknownBlockProperties {
 		properties[definition.Name] = previous
 	}
 	return properties
+}
+
+// vanillaStateNamed reports whether the vanilla state belongs to the block named.
+func vanillaStateNamed(state block.State, name string) bool {
+	b, ok := block.BlockAt(state.Block)
+	return ok && b.Name == name
 }

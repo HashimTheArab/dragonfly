@@ -353,7 +353,8 @@ func repeatableState(b Block) bool {
 }
 
 // addCustomBlockState appends a state of a custom block. A block of more permutation bits than the
-// client keeps repeats states, which each take a runtime ID; a state's lookup finds the first.
+// client keeps repeats states, which each take a runtime ID; a state's lookup finds the last, the
+// one its network hash resolves to.
 // skipKnown skips a state already registered, for a block the registry held before.
 func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, skipKnown bool, scratch []byte) ([]byte, error) {
 	br.mu.Lock()
@@ -368,9 +369,7 @@ func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, skipKnown bool, 
 	}
 	rid := uint32(len(br.blocks))
 	br.blocks = append(br.blocks, newUnknownBlock(s))
-	if _, ok := br.stateRuntimeIDs[h]; !ok {
-		br.stateRuntimeIDs[h] = rid
-	}
+	br.stateRuntimeIDs[h] = rid
 	if !br.finalized {
 		return scratch, nil
 	}
@@ -575,11 +574,11 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 			br.airRID = rid
 			foundAir = true
 		}
-		if _, ok := br.stateRuntimeIDs[h]; !ok {
-			br.stateRuntimeIDs[h] = rid
-		} else if !repeatableState(b) {
+		if _, ok := br.stateRuntimeIDs[h]; ok && !repeatableState(b) {
 			panic(fmt.Sprintf("cannot register the same state twice (%s %+v)", name, properties))
 		}
+		// A repeated state resolves to its last runtime ID, as its network hash does.
+		br.stateRuntimeIDs[h] = rid
 
 		info := defaultUnknownBlockInfo()
 		// Default to fully opaque. Blocks that implement lightDiffuser may override this (e.g., air -> 0, leaves -> 1-14).
