@@ -7,6 +7,7 @@ import (
 	"math/bits"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/brentp/intintmap"
@@ -344,9 +345,17 @@ func (br *BasicBlockRegistry) hasBlock(name string) bool {
 	return ok
 }
 
+// repeatableState reports whether b may hold a state another runtime ID holds too: a state of a
+// server's custom block, whose permutation bits the client cuts to 16.
+func repeatableState(b Block) bool {
+	u, ok := b.(unknownBlock)
+	return ok && !strings.HasPrefix(u.Name, "minecraft:")
+}
+
 // addCustomBlockState appends a state of a custom block. A block of more permutation bits than the
 // client keeps repeats states, which each take a runtime ID; a state's lookup finds the first.
-func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) ([]byte, error) {
+// skipKnown skips a state already registered, for a block the registry held before.
+func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, skipKnown bool, scratch []byte) ([]byte, error) {
 	br.mu.Lock()
 	defer br.mu.Unlock()
 
@@ -354,6 +363,9 @@ func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) 
 		br.blockProperties[s.Name] = s.Properties
 	}
 	h := stateHash{name: s.Name, properties: hashProperties(s.Properties)}
+	if _, ok := br.stateRuntimeIDs[h]; ok && skipKnown {
+		return scratch, nil
+	}
 	rid := uint32(len(br.blocks))
 	br.blocks = append(br.blocks, newUnknownBlock(s))
 	if _, ok := br.stateRuntimeIDs[h]; !ok {
@@ -565,7 +577,7 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 		}
 		if _, ok := br.stateRuntimeIDs[h]; !ok {
 			br.stateRuntimeIDs[h] = rid
-		} else if _, repeated := b.(unknownBlock); !repeated {
+		} else if !repeatableState(b) {
 			panic(fmt.Sprintf("cannot register the same state twice (%s %+v)", name, properties))
 		}
 

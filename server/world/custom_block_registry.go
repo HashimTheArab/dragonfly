@@ -41,6 +41,7 @@ type customBlockStateSpace struct {
 	states []customBlockState
 	// spare is the bits below 16 that no state keeps; each value of them repeats every state.
 	spare uint32
+	known bool // the registry already held the block, so only its missing states are added
 }
 
 type customBlockState struct {
@@ -141,7 +142,7 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 		if namespace, _, _ := strings.Cut(entry.Name, ":"); namespace == "minecraft" {
 			continue
 		}
-		if _, ok := seen[entry.Name]; ok || basicRegistry.hasBlock(entry.Name) {
+		if _, ok := seen[entry.Name]; ok {
 			continue
 		}
 		seen[entry.Name] = struct{}{}
@@ -158,6 +159,7 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 		if total > maxCustomBlockStates {
 			return fmt.Errorf("custom block %s: custom states reach %d, over the limit of %d", entry.Name, total, maxCustomBlockStates)
 		}
+		space.known = basicRegistry.hasBlock(entry.Name)
 		spaces = append(spaces, space)
 	}
 
@@ -165,7 +167,7 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 	for _, space := range spaces {
 		err := space.forEach(func(properties map[string]any) error {
 			var stateErr error
-			scratch, stateErr = basicRegistry.addCustomBlockState(BlockState{Name: space.name, Properties: properties}, scratch)
+			scratch, stateErr = basicRegistry.addCustomBlockState(BlockState{Name: space.name, Properties: properties}, space.known, scratch)
 			return stateErr
 		})
 		if err != nil {

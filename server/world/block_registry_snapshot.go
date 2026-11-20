@@ -62,17 +62,10 @@ func UnmarshalBlockRegistry(data []byte) (registry BlockRegistry, err error) {
 		customBlocks:    make(map[string]CustomBlock),
 		blockActorIDs:   maps.Clone(DefaultBlockRegistry.blockActorIDs),
 	}
-	seen := make(map[stateHash]struct{}, len(snapshot.States))
 	for i, state := range snapshot.States {
 		if !ValidBlockPropertyValues(state.Properties) {
 			return nil, fmt.Errorf("invalid properties for %s", state.Name)
 		}
-		// A snapshot cannot tell a repeated custom state from corruption, so it rejects both.
-		h := stateHash{name: state.Name, properties: hashProperties(state.Properties)}
-		if _, ok := seen[h]; ok {
-			return nil, fmt.Errorf("block state %s %v appears twice", state.Name, state.Properties)
-		}
-		seen[h] = struct{}{}
 		b, known := DefaultBlockRegistry.BlockByName(state.Name, state.Properties)
 		if !known {
 			b = newUnknownBlock(state)
