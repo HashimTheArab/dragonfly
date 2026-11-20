@@ -29,9 +29,10 @@ var traitLookup = map[string][]any{
 	},
 }
 
-// maxCustomBlockStates bounds the custom states one registry holds, against a hostile palette. The
-// client has no such cap; it only warns past 65536 permutations.
-const maxCustomBlockStates = 1 << 18
+// maxCustomBlockCost bounds the memory of one registry's custom states, about 100 MB, against a
+// hostile palette. A state costs about 3 units and each of its properties 1, at about 70 B a unit.
+// The client has no such cap; it only warns past 65536 permutations.
+const maxCustomBlockCost = 1_500_000
 
 // customBlockStateSpace is a custom block's states laid out in permutation bits as the client lays
 // them out: each state takes the bits of its largest value index, the first added the lowest. The
@@ -69,6 +70,11 @@ func newCustomBlockStateSpace(name string, names []string, values [][]any) (cust
 		start += n
 	}
 	return space, nil
+}
+
+// cost returns the memory units the block's permutations take in a registry.
+func (s customBlockStateSpace) cost() int {
+	return s.count() * (3 + len(s.states))
 }
 
 // count returns how many permutations the client gives the block.
@@ -137,7 +143,7 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 	}
 	spaces := make([]customBlockStateSpace, 0, len(entries))
 	seen := make(map[string]struct{}, len(entries))
-	total := 0
+	states, cost := 0, 0
 	for _, entry := range entries {
 		if namespace, _, _ := strings.Cut(entry.Name, ":"); namespace == "minecraft" {
 			continue
@@ -155,9 +161,10 @@ func AddCustomBlocks(registry BlockRegistry, entries []protocol.BlockEntry) erro
 		if err != nil {
 			return fmt.Errorf("custom block %s: %w", entry.Name, err)
 		}
-		total += space.count()
-		if total > maxCustomBlockStates {
-			return fmt.Errorf("custom block %s: custom states reach %d, over the limit of %d", entry.Name, total, maxCustomBlockStates)
+		states += space.count()
+		cost += space.cost()
+		if cost > maxCustomBlockCost {
+			return fmt.Errorf("custom block %s: %d custom states cost %d units, over the limit of %d", entry.Name, states, cost, maxCustomBlockCost)
 		}
 		space.known = basicRegistry.hasBlock(entry.Name)
 		spaces = append(spaces, space)
