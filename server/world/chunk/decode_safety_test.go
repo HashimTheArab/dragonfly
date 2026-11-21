@@ -27,6 +27,113 @@ func TestPalette_ValueToleratesAnUncoveredIndex(t *testing.T) {
 	}
 }
 
+// TestPalettedStorageCompact_ToleratesAnUncoveredIndex checks that compacting follows the same
+// rule as Palette.Value: an index the palette does not cover means the first entry.
+func TestPalettedStorageCompact_ToleratesAnUncoveredIndex(t *testing.T) {
+	storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, []uint32{11, 22}))
+	storage.Set(1, 2, 3, 22)
+	storage.setPaletteIndex(1, 15, 0, 5)
+
+	storage.compact()
+
+	if got, want := storage.bitsPerIndex, uint16(1); got != want {
+		t.Fatalf("bitsPerIndex = %d, want %d", got, want)
+	}
+	if got := storage.At(1, 15, 0); got != 11 {
+		t.Fatalf("At(1,15,0) = %d, want the fallback value 11", got)
+	}
+	if got := storage.At(1, 1, 1); got != 11 {
+		t.Fatalf("At(1,1,1) = %d, want 11", got)
+	}
+	if got := storage.At(1, 2, 3); got != 22 {
+		t.Fatalf("At(1,2,3) = %d, want 22", got)
+	}
+}
+
+// TestPalettedStorageCompact_RewritesAnUncoveredIndex checks a storage that compact would not
+// otherwise rewrite, because every entry is used and its width already fits. If the index stayed,
+// the cell would change to the next value added to the palette.
+func TestPalettedStorageCompact_RewritesAnUncoveredIndex(t *testing.T) {
+	storage := newPalettedStorage(make([]uint32, paletteSize(2).uint32s()), newPalette(2, []uint32{11, 22, 33}))
+	storage.Set(1, 2, 3, 22)
+	storage.Set(1, 2, 4, 33)
+	storage.setPaletteIndex(1, 15, 0, 3)
+
+	storage.compact()
+
+	if got := storage.paletteIndex(1, 15, 0); int(got) >= storage.palette.Len() {
+		t.Fatalf("index %d is still outside a palette of %d", got, storage.palette.Len())
+	}
+	storage.Set(0, 0, 0, 44)
+	for _, c := range []struct {
+		x, y, z byte
+		want    uint32
+	}{{0, 0, 0, 44}, {1, 15, 0, 11}, {1, 2, 3, 22}, {1, 2, 4, 33}} {
+		if got := storage.At(c.x, c.y, c.z); got != c.want {
+			t.Fatalf("At(%d,%d,%d) = %d, want %d", c.x, c.y, c.z, got, c.want)
+		}
+	}
+}
+
+// TestPalettedStorageCompact_KeepsTheFirstEntryForAnUncoveredIndex checks a storage where only
+// the uncovered index refers to the first entry, so compact must not treat that entry as unused.
+func TestPalettedStorageCompact_KeepsTheFirstEntryForAnUncoveredIndex(t *testing.T) {
+	storage := newPalettedStorage(make([]uint32, paletteSize(2).uint32s()), newPalette(2, []uint32{11, 22, 33}))
+	fillStorage(storage, 22)
+	storage.Set(1, 2, 3, 33)
+	storage.setPaletteIndex(1, 15, 0, 3)
+
+	storage.compact()
+
+	if got := storage.At(1, 15, 0); got != 11 {
+		t.Fatalf("At(1,15,0) = %d, want the first entry 11", got)
+	}
+	if got := storage.At(1, 2, 3); got != 33 {
+		t.Fatalf("At(1,2,3) = %d, want 33", got)
+	}
+	if got := storage.At(0, 0, 0); got != 22 {
+		t.Fatalf("At(0,0,0) = %d, want 22", got)
+	}
+}
+
+// TestPalettedStorage_CompactLeavesAnOptimalStorageAlone checks that a storage with nothing to
+// fix keeps its indices rather than being rewritten on every save.
+func TestPalettedStorage_CompactLeavesAnOptimalStorageAlone(t *testing.T) {
+	storage := newPalettedStorage(make([]uint32, paletteSize(2).uint32s()), newPalette(2, []uint32{11, 22, 33}))
+	storage.Set(1, 2, 3, 22)
+	storage.Set(1, 2, 4, 33)
+	indices := &storage.indices[0]
+
+	storage.compact()
+
+	if &storage.indices[0] != indices {
+		t.Fatal("compact rewrote a storage with nothing to fix")
+	}
+}
+
+// TestPalettedStorage_PaletteIndexPointsToTheValueAtReturns checks that scanners can use the
+// result on a slice with one element per palette entry, even for an uncovered index.
+func TestPalettedStorage_PaletteIndexPointsToTheValueAtReturns(t *testing.T) {
+	storage := newPalettedStorage(make([]uint32, paletteSize(4).uint32s()), newPalette(4, []uint32{11, 22}))
+	storage.Set(1, 2, 3, 22)
+	storage.setPaletteIndex(1, 15, 0, 5)
+	// The first index past the end of the palette.
+	storage.setPaletteIndex(1, 14, 0, 2)
+
+	for _, c := range []struct {
+		x, y, z byte
+		want    uint16
+	}{{1, 15, 0, 0}, {1, 14, 0, 0}, {1, 2, 3, 1}, {0, 0, 0, 0}} {
+		got := storage.PaletteIndex(c.x, c.y, c.z)
+		if got != c.want {
+			t.Fatalf("PaletteIndex(%d,%d,%d) = %d, want %d", c.x, c.y, c.z, got, c.want)
+		}
+		if value := storage.palette.values[got]; value != storage.At(c.x, c.y, c.z) {
+			t.Fatalf("PaletteIndex(%d,%d,%d) points to %d, but At returns %d", c.x, c.y, c.z, value, storage.At(c.x, c.y, c.z))
+		}
+	}
+}
+
 // The count is read off the wire and used to size an allocation, so it must be bounded
 // before that allocation happens rather than failing later on a short entry read.
 func TestDecodePalette_RejectsHostileCounts(t *testing.T) {
@@ -194,10 +301,22 @@ func FuzzDecodeSubChunkRuntimeOperations(f *testing.F) {
 	})
 }
 
+// uncoveredIndexPayload returns a network sub-chunk holding an index its palette does not cover. A
+// fuzzer is unlikely to find one, because the smallest such storage takes over a kilobyte of valid data.
+func uncoveredIndexPayload() []byte {
+	storage := newPalettedStorage(make([]uint32, paletteSize(2).uint32s()), newPalette(2, []uint32{1, 2, 3}))
+	storage.Set(1, 2, 3, 2)
+	storage.setPaletteIndex(1, 15, 0, 3)
+	ch := New(testBlockRegistry{}, cube.Range{0, 127})
+	ch.sub[0].storages = []*PalettedStorage{storage}
+	return EncodeSubChunk(ch, NetworkEncoding, 0)
+}
+
 func FuzzNetworkDecodeRuntimeOperations(f *testing.F) {
 	f.Add([]byte{}, byte(0))
 	f.Add([]byte{1, 0xff}, byte(1))
 	f.Add([]byte{9, 0, 0}, byte(1))
+	f.Add(uncoveredIndexPayload(), byte(1))
 
 	f.Fuzz(func(t *testing.T, payload []byte, count byte) {
 		if len(payload) > 1<<20 {
@@ -214,6 +333,7 @@ func FuzzNetworkDecodeRuntimeOperations(f *testing.F) {
 		_ = ch.Clone()
 		_ = ch.HeightMap()
 		ch.SetBlock(0, 0, 0, 0, 1)
+		ch.Compact()
 		_ = Encode(ch, NetworkEncoding)
 	})
 }
