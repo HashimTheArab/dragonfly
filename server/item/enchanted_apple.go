@@ -9,6 +9,9 @@ import (
 // EnchantedApple is a rare variant of the golden apple that has stronger effects.
 type EnchantedApple struct{}
 
+// HasHarmfulEffects reports that this food applies no adverse effects.
+func (EnchantedApple) HasHarmfulEffects() bool { return false }
+
 // AlwaysConsumable ...
 func (EnchantedApple) AlwaysConsumable() bool {
 	return true

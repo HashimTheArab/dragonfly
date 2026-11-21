@@ -12,6 +12,9 @@ type RottenFlesh struct {
 	defaultFood
 }
 
+// HasHarmfulEffects includes the chance of causing hunger.
+func (RottenFlesh) HasHarmfulEffects() bool { return true }
+
 // Consume ...
 func (RottenFlesh) Consume(_ *world.Tx, c Consumer) Stack {
 	c.Saturate(4, 0.8)

@@ -11,6 +11,9 @@ import (
 // restores hunger, removes any active poison and returns an empty glass bottle.
 type HoneyBottle struct{}
 
+// HasHarmfulEffects reports that this food applies no adverse effects.
+func (HoneyBottle) HasHarmfulEffects() bool { return false }
+
 // MaxCount ...
 func (HoneyBottle) MaxCount() int {
 	return 16

@@ -76,6 +76,14 @@ type Consumable interface {
 	Consume(tx *world.Tx, c Consumer) Stack
 }
 
+// Food is a consumable meal that describes whether eating it can apply adverse
+// effects. A chance-based adverse effect still makes HasHarmfulEffects true.
+// Drinks that do not provide food, such as potions and milk, are not Food.
+type Food interface {
+	Consumable
+	HasHarmfulEffects() bool
+}
+
 // Consumer represents a User that is able to consume Consumable items.
 type Consumer interface {
 	User
@@ -214,6 +222,9 @@ func (nopReleasable) Requirements() []Stack {
 
 // defaultFood represents a consumable item with a default consumption duration.
 type defaultFood struct{}
+
+// HasHarmfulEffects reports whether eating the food can apply adverse effects.
+func (defaultFood) HasHarmfulEffects() bool { return false }
 
 // AlwaysConsumable ...
 func (defaultFood) AlwaysConsumable() bool {

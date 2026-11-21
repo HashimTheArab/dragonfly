@@ -31,6 +31,9 @@ func (p Potato) AlwaysConsumable() bool {
 	return false
 }
 
+// HasHarmfulEffects reports that eating an ordinary potato applies no adverse effects.
+func (Potato) HasHarmfulEffects() bool { return false }
+
 // ConsumeDuration ...
 func (p Potato) ConsumeDuration() time.Duration {
 	return item.DefaultConsumeDuration
