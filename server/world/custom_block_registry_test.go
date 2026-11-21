@@ -2,13 +2,14 @@ package world
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
-func TestAddCustomBlocksRejectsExcessStates(t *testing.T) {
+// TestAddCustomBlocksKeepsTheClientsLow16Bits lays out a block of 17 permutation bits as the client
+// does: only the low 16 bits vary, so the last property keeps its first value.
+func TestAddCustomBlocksKeepsTheClientsLow16Bits(t *testing.T) {
 	properties := make([]any, 17)
 	for i := range properties {
 		properties[i] = map[string]any{
@@ -16,12 +17,23 @@ func TestAddCustomBlocksRejectsExcessStates(t *testing.T) {
 			"enum": []any{false, true},
 		}
 	}
-	_, err := NewCustomBlockRegistry([]protocol.BlockEntry{{
+	DefaultBlockRegistry.Finalize()
+	registry := DefaultBlockRegistry.Clone()
+	base := registry.BlockCount()
+	if err := AddCustomBlocks(registry, []protocol.BlockEntry{{
 		Name:       "test:block",
 		Properties: map[string]any{"properties": properties},
-	}})
-	if err == nil || !strings.Contains(err.Error(), "exceed limit") {
-		t.Fatalf("NewCustomBlockRegistry() error = %v, want state limit error", err)
+	}}); err != nil {
+		t.Fatalf("AddCustomBlocks() error = %v", err)
+	}
+	if got := registry.BlockCount() - base; got != 1<<16 {
+		t.Fatalf("states = %d, want %d", got, 1<<16)
+	}
+	for _, rid := range []uint32{0, 1 << 15, 1<<16 - 1} {
+		_, state, _ := registry.RuntimeIDToState(uint32(base) + rid)
+		if state["test:property_16"] != false {
+			t.Fatalf("state %d has test:property_16 = %v, want false", rid, state["test:property_16"])
+		}
 	}
 }
 

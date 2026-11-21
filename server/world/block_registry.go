@@ -7,6 +7,7 @@ import (
 	"math/bits"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/brentp/intintmap"
@@ -336,26 +337,36 @@ func (br *BasicBlockRegistry) Clone() *BasicBlockRegistry {
 	return br2
 }
 
-func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) ([]byte, error) {
+// hasBlock reports whether the registry holds a state of the block named.
+func (br *BasicBlockRegistry) hasBlock(name string) bool {
+	br.mu.Lock()
+	defer br.mu.Unlock()
+	_, ok := br.blockProperties[name]
+	return ok
+}
+
+// repeatableState reports whether b may hold a state another runtime ID holds too: a state of a
+// server's custom block, whose permutation bits the client cuts to 16.
+func repeatableState(b Block) bool {
+	u, ok := b.(unknownBlock)
+	return ok && !strings.HasPrefix(u.Name, "minecraft:")
+}
+
+// addCustomBlockState appends a state of a custom block. A block of more permutation bits than the
+// client keeps repeats states, which each take a runtime ID; a state's lookup finds the last, the
+// one its network hash resolves to.
+// skipKnown skips a state already registered, for a block the registry held before.
+func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, skipKnown bool, scratch []byte) ([]byte, error) {
 	br.mu.Lock()
 	defer br.mu.Unlock()
 
-	h := stateHash{name: s.Name, properties: hashProperties(s.Properties)}
-	if _, ok := br.stateRuntimeIDs[h]; ok {
-		return scratch, nil
-	}
-	var netHash uint32
-	if br.finalized {
-		netHash, scratch = networkBlockHash(s.Name, s.Properties, scratch)
-		if other, ok := br.networkhashToRids[netHash]; ok {
-			otherName, otherProperties := br.blocks[other].EncodeBlock()
-			return scratch, fmt.Errorf("network block hash collision for (%s %+v) and (%s %+v)", s.Name, s.Properties, otherName, otherProperties)
-		}
-	}
 	if _, ok := br.blockProperties[s.Name]; !ok {
 		br.blockProperties[s.Name] = s.Properties
 	}
-
+	h := stateHash{name: s.Name, properties: hashProperties(s.Properties)}
+	if _, ok := br.stateRuntimeIDs[h]; ok && skipKnown {
+		return scratch, nil
+	}
 	rid := uint32(len(br.blocks))
 	br.blocks = append(br.blocks, newUnknownBlock(s))
 	br.stateRuntimeIDs[h] = rid
@@ -368,10 +379,36 @@ func (br *BasicBlockRegistry) addCustomBlockState(s BlockState, scratch []byte) 
 		br.rebuildBlockHashesLocked()
 	}
 	br.blockInfos = append(br.blockInfos, defaultUnknownBlockInfo())
-
-	br.networkhashToRids[netHash] = rid
-	br.ridsToNetworkhash = append(br.ridsToNetworkhash, netHash)
+	br.ridsToNetworkhash = append(br.ridsToNetworkhash, 0)
+	scratch = br.assignNetworkHashLocked(rid, s.Name, s.Properties, scratch)
 	return scratch, nil
+}
+
+// assignNetworkHashLocked gives rid the network ID the client's hashed palette gives it, assigned
+// in runtime ID order: its state hash, or the next free one past a hash another block took. A
+// state of the same block takes the hash over.
+func (br *BasicBlockRegistry) assignNetworkHashLocked(rid uint32, name string, properties map[string]any, scratch []byte) []byte {
+	var netHash uint32
+	netHash, scratch = networkBlockHash(name, properties, scratch)
+	if name != "minecraft:unknown" {
+		for {
+			other, ok := br.networkhashToRids[netHash]
+			if !ok {
+				break
+			}
+			if otherName, _ := br.blocks[other].EncodeBlock(); otherName == name {
+				break
+			}
+			if netHash > 0xfffffffc {
+				netHash = 0
+				continue
+			}
+			netHash++
+		}
+	}
+	br.networkhashToRids[netHash] = rid
+	br.ridsToNetworkhash[rid] = netHash
+	return scratch
 }
 
 func (br *BasicBlockRegistry) rebuildBlockHashesLocked() {
@@ -537,9 +574,10 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 			br.airRID = rid
 			foundAir = true
 		}
-		if _, ok := br.stateRuntimeIDs[h]; ok {
+		if _, ok := br.stateRuntimeIDs[h]; ok && !repeatableState(b) {
 			panic(fmt.Sprintf("cannot register the same state twice (%s %+v)", name, properties))
 		}
+		// A repeated state resolves to its last runtime ID, as its network hash does.
 		br.stateRuntimeIDs[h] = rid
 
 		info := defaultUnknownBlockInfo()
@@ -571,14 +609,7 @@ func (br *BasicBlockRegistry) finalizeLocked() {
 			}
 			br.hashes.Put(h, int64(rid))
 		}
-		var netHash uint32
-		netHash, networkHashScratch = networkBlockHash(name, properties, networkHashScratch)
-		if other, ok := br.networkhashToRids[netHash]; ok {
-			otherName, otherProperties := br.blocks[other].EncodeBlock()
-			panic(fmt.Sprintf("network block hash collision for (%s %+v) and (%s %+v)", name, properties, otherName, otherProperties))
-		}
-		br.networkhashToRids[netHash] = rid
-		br.ridsToNetworkhash[rid] = netHash
+		networkHashScratch = br.assignNetworkHashLocked(rid, name, properties, networkHashScratch)
 	}
 	if !foundAir {
 		panic("BlockRegistry.Finalize: no minecraft:air block state registered")
