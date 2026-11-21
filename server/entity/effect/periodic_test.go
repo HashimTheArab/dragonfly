@@ -20,9 +20,9 @@ func (p *pulseTarget) Health() float64 { return p.health }
 func (p *pulseTarget) Heal(n float64, _ world.HealingSource) float64 { p.health += n; return n }
 
 // Hurt records the periodic damage amount.
-func (p *pulseTarget) Hurt(n float64, _ world.DamageSource) (float64, bool) {
+func (p *pulseTarget) Hurt(n float64, _ world.DamageSource) (float64, world.HurtResult) {
 	p.health -= n
-	return n, true
+	return n, world.HurtAccepted
 }
 
 func TestFiniteEffectPulsesRetainRemainingDuration(t *testing.T) {
