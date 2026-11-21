@@ -186,23 +186,25 @@ func (diskEncoding) encodePalette(buf *bytes.Buffer, p *Palette, e paletteEncodi
 	}
 }
 func (diskEncoding) decodePalette(buf *bytes.Buffer, blockSize paletteSize, e paletteEncoding) (*Palette, error) {
-	paletteCount := uint32(1)
+	paletteCount := int32(1)
 	if blockSize != 0 {
 		if err := binary.Read(buf, binary.LittleEndian, &paletteCount); err != nil {
 			return nil, fmt.Errorf("error reading palette entry count: %w", err)
+		}
+		// Unlike over the network, a saved palette may keep more entries than a storage has cells:
+		// biome storages are not compacted before saving. Only entries the width cannot address are invalid.
+		if err := checkPaletteCount(paletteCount, blockSize, int64(1)<<blockSize); err != nil {
+			return nil, err
 		}
 	}
 
 	var err error
 	palette := newPalette(blockSize, make([]uint32, paletteCount))
-	for i := uint32(0); i < paletteCount; i++ {
+	for i := int32(0); i < paletteCount; i++ {
 		palette.values[i], err = e.decode(buf)
 		if err != nil {
 			return nil, err
 		}
-	}
-	if paletteCount == 0 {
-		return palette, fmt.Errorf("invalid palette entry count: found 0, but palette with %v bits per block must have at least 1 value", blockSize)
 	}
 	return palette, nil
 }
@@ -244,12 +246,15 @@ func (networkEncoding) decodePalette(buf *bytes.Buffer, blockSize paletteSize, _
 // size an allocation. A storage's index width and 4096-cell volume cap how many entries
 // it can use, so a larger count cannot describe a real storage and is rejected before allocation.
 func validatePaletteCount(count int32, blockSize paletteSize) error {
+	return checkPaletteCount(count, blockSize, min(int64(1)<<blockSize, 4096))
+}
+
+// checkPaletteCount checks that a palette entry count is positive and within capacity. A palette larger than
+// its storage's index width would have entries whose indices do not fit, so a later write to the storage
+// would overwrite a neighbouring value.
+func checkPaletteCount(count int32, blockSize paletteSize, capacity int64) error {
 	if count <= 0 {
 		return fmt.Errorf("invalid palette entry count %v", count)
-	}
-	capacity := int64(1) << blockSize
-	if capacity > 4096 {
-		capacity = 4096
 	}
 	if int64(count) > capacity {
 		return fmt.Errorf("palette entry count %v exceeds the %v entries a %v-bit storage can use", count, capacity, blockSize)
