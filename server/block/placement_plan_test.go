@@ -185,6 +185,8 @@ func TestBlock_PlanPlacementLeavesGrowthToTheWorld(t *testing.T) {
 	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Carrot{crop: crop{Growth: 7}}, WheatSeeds{}, opts); ok {
 		t.Fatal("growth relaxed the kind of crop")
 	}
+}
+
 func TestBlock_PlanPlacementDerivesPlacedFenceConnections(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}
