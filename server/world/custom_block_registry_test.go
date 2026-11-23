@@ -185,7 +185,8 @@ func TestAddCustomBlocks_UnknownBitmaskTraitErrors(t *testing.T) {
 // Trait states take the client's values in the client's order: south, west, north, east for
 // minecraft:cardinal_direction, down, up, north, south, west, east for
 // minecraft:facing_direction and minecraft:block_face, all serialized as strings, the same order
-// vanilla's own block states list them in (block_states.nbt).
+// vanilla's own block states list them in (block_states.nbt). minecraft:sixteen_way_rotation is
+// the ints 0 to 15.
 func TestAddCustomBlocksTraitStateOrder(t *testing.T) {
 	facing := []any{"down", "up", "north", "south", "west", "east"}
 	for _, test := range []struct {
@@ -194,6 +195,10 @@ func TestAddCustomBlocksTraitStateOrder(t *testing.T) {
 	}{
 		{"minecraft:placement_direction", "cardinal_direction", []any{"south", "west", "north", "east"}},
 		{"minecraft:placement_direction", "facing_direction", facing},
+		{"minecraft:placement_direction", "sixteen_way_rotation", []any{
+			int32(0), int32(1), int32(2), int32(3), int32(4), int32(5), int32(6), int32(7),
+			int32(8), int32(9), int32(10), int32(11), int32(12), int32(13), int32(14), int32(15),
+		}},
 		{"minecraft:placement_position", "block_face", facing},
 		{"minecraft:placement_position", "vertical_half", []any{"bottom", "top"}},
 	} {

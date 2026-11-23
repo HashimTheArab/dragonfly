@@ -27,6 +27,10 @@ var traitLookup = map[string][]any{
 	"minecraft:corner_and_cardinal_direction": {
 		"none", "inner_left", "inner_right", "outer_left", "outer_right",
 	},
+	"minecraft:sixteen_way_rotation": {
+		int32(0), int32(1), int32(2), int32(3), int32(4), int32(5), int32(6), int32(7),
+		int32(8), int32(9), int32(10), int32(11), int32(12), int32(13), int32(14), int32(15),
+	},
 }
 
 // maxCustomBlockCost bounds the memory of one registry's custom states, about 100 MB, against a
