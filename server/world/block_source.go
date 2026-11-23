@@ -40,12 +40,18 @@ type AmbientStater interface {
 // wanted holds it: placing a block chooses neither. wanted takes actual's
 // ambient state and then derives against src before the runtime IDs compare.
 func MatchesBuiltState(registry BlockRegistry, src BlockSource, pos cube.Pos, wanted, actual Block) bool {
+	if registry == nil || wanted == nil || actual == nil {
+		return false
+	}
 	if ambient, ok := wanted.(AmbientStater); ok {
 		if b, ok := ambient.WithAmbientState(actual); ok {
 			wanted = b
 		}
 	}
 	if deriver, ok := wanted.(StateDeriver); ok {
+		if src == nil {
+			return false
+		}
 		wanted = deriver.DeriveState(pos, src)
 	}
 	wantedName, wantedProperties := wanted.EncodeBlock()
