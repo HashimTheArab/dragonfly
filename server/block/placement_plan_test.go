@@ -277,8 +277,16 @@ func TestBlock_PlanUsePlacementEmptiesABucket(t *testing.T) {
 	if !ok || plan.Clicked != target.Side(cube.FaceDown) {
 		t.Fatalf("bucket plan = %+v, %v; want a click on the block below", plan, ok)
 	}
+	// The server's bucket leaves a flowing source, which the world settles.
+	if len(plan.Changes) != 1 || plan.Changes[0].Pos != target || !world.MatchesBuiltState(world.DefaultBlockRegistry, src, target, water, plan.Changes[0].Block) {
+		t.Fatalf("bucket writes %+v, want water at the target", plan.Changes)
+	}
 	if _, ok := PlanUsePlacement(src, world.DefaultBlockRegistry, user, target, Lava{Still: true, Depth: 8}, bucket, PlacementPlanOptions{Reach: 5}); ok {
 		t.Fatal("a water bucket planned lava")
+	}
+	nether := newPlacementTestSource(world.Nether, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Netherrack{}})
+	if _, ok := PlanUsePlacement(nether, world.DefaultBlockRegistry, user, target, water, bucket, PlacementPlanOptions{Reach: 5}); ok {
+		t.Fatal("planned water in the Nether, where it evaporates")
 	}
 }
 
@@ -312,6 +320,14 @@ func TestBlock_PlanScaffoldStartsASidewaysRow(t *testing.T) {
 	}
 	if _, _, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, func(cube.Pos) bool { return false }, opts); ok {
 		t.Fatal("placed a scaffold where none is allowed")
+	}
+	// A block a scaffold holds up falls or breaks once it is removed.
+	above := target.Side(cube.FaceUp)
+	for _, held := range []world.Block{Sand{}, Torch{Facing: cube.FaceDown, Type: NormalFire()}} {
+		opts.Expected = func(pos cube.Pos) (world.Block, bool) { return held, pos == above }
+		if cell, _, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, above, held, held, Dirt{}, nil, opts); ok {
+			t.Fatalf("scaffold at %v holds up %T", cell, held)
+		}
 	}
 }
 

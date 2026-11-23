@@ -2,6 +2,7 @@ package block
 
 import (
 	"math"
+	"slices"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/block/cube/trace"
@@ -68,9 +69,14 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose Place
 
 // PlanUsePlacement finds a support click that places required at target by
 // using used on the support beside it, such as a water bucket emptied against
-// a neighbouring block. It applies PlanPlacement's rules.
+// a neighbouring block. It applies PlanPlacement's rules, and never plans water
+// in a dimension where it evaporates.
 func PlanUsePlacement(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required world.Block, used item.UsableOnBlock, opts PlacementPlanOptions) (PlacementPlan, bool) {
-	if used == nil {
+	if used == nil || src == nil {
+		return PlacementPlan{}, false
+	}
+	if _, water := required.(Water); water && src.Dimension().WaterEvaporates() {
+		// Water poured here evaporates at once, which prediction cannot see.
 		return PlacementPlan{}, false
 	}
 	return planSupportClick(src, registry, pose, target, required, used, opts)
@@ -81,7 +87,8 @@ func PlanUsePlacement(src PlacementSource, registry world.BlockRegistry, pose Pl
 // beside target that allowed admits and opts.Expected does not, where scaffold
 // can be placed now and from which a click then places required. It returns
 // that cell and the plan placing scaffold there; the caller removes the
-// scaffold once required is built.
+// scaffold once required is built, so a scaffold required needs to stay up,
+// such as the block under sand or a torch, is never planned.
 func PlanScaffold(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required, material, scaffold world.Block, allowed func(cube.Pos) bool, opts PlacementPlanOptions) (cube.Pos, PlacementPlan, bool) {
 	if src == nil || material == nil || scaffold == nil {
 		return cube.Pos{}, PlacementPlan{}, false
@@ -99,18 +106,45 @@ func PlanScaffold(src PlacementSource, registry world.BlockRegistry, pose Placem
 				continue
 			}
 		}
+		// The caller's limits on faces and writes are for required, not the scaffold.
 		scaffoldOpts := opts
-		scaffoldOpts.Expected, scaffoldOpts.RequireYawInvariant = nil, false
+		scaffoldOpts.Expected, scaffoldOpts.RequireYawInvariant, scaffoldOpts.Faces, scaffoldOpts.Accept = nil, false, nil, nil
 		plan, ok := planSupportClick(src, registry, pose, cell, scaffold, scaffold, scaffoldOpts)
 		if !ok {
 			continue
 		}
 		after := &placementView{src: src, changes: plan.Changes, known: true}
-		if _, ok := planSupportClick(after, registry, pose, target, required, material, opts); ok {
+		placed, ok := planSupportClick(after, registry, pose, target, required, material, opts)
+		if ok && standsWithout(src, slices.Concat(plan.Changes, placed.Changes), target, cell) {
 			return cell, plan, true
 		}
 	}
 	return cube.Pos{}, PlacementPlan{}, false
+}
+
+// standsWithout reports whether the block changes leave at target stays as it
+// is when removed is emptied, running its neighbour update against the result.
+// A block whose update cannot be predicted does not count as standing.
+func standsWithout(src PlacementSource, changes []PredictedBlockChange, target, removed cube.Pos) (stands bool) {
+	view := &placementView{src: src, changes: append(changes, PredictedBlockChange{Pos: removed, Block: Air{}}), known: true}
+	ticker, ok := view.Block(target).(world.NeighbourUpdateTicker)
+	if !ok {
+		return view.known
+	}
+	written := len(view.changes)
+	defer func() {
+		if recover() != nil {
+			// A break or fall reaches the world past the block writes.
+			stands = false
+		}
+	}()
+	world.RunBlockTransaction(view, func(tx *world.Tx) { ticker.NeighbourUpdateTick(target, removed, tx) })
+	for _, change := range view.changes[written:] {
+		if change.Pos == target {
+			return false
+		}
+	}
+	return view.known
 }
 
 // planSupportClick plans a click on a support beside target, trying aimed
@@ -125,10 +159,11 @@ func planSupportClick(src PlacementSource, registry world.BlockRegistry, pose Pl
 	}
 	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
 	clicked := func(face cube.Face) cube.Pos { return target.Side(face.Opposite()) }
-	if plan, ok := planClick(src, registry, pose, target, required, use, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false); ok || !opts.FreeAim {
+	var memo clickMemo
+	if plan, ok := planClick(src, registry, pose, target, required, use, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false, &memo); ok || !opts.FreeAim {
 		return plan, ok
 	}
-	return planClick(src, registry, pose, target, required, use, faces, opts, clicked, supportAim(src, eye, opts.Reach, true), true)
+	return planClick(src, registry, pose, target, required, use, faces, opts, clicked, supportAim(src, eye, opts.Reach, true), true, &memo)
 }
 
 // PlanItemUse finds a click on target itself that turns it into required when
@@ -146,10 +181,11 @@ func PlanItemUse(src PlacementSource, registry world.BlockRegistry, pose Placeme
 	}
 	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
 	clicked := func(cube.Face) cube.Pos { return target }
-	if plan, ok := planClick(src, registry, pose, target, required, used, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false); ok || !opts.FreeAim {
+	var memo clickMemo
+	if plan, ok := planClick(src, registry, pose, target, required, used, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false, &memo); ok || !opts.FreeAim {
 		return plan, ok
 	}
-	return planClick(src, registry, pose, target, required, used, faces, opts, clicked, supportAim(src, eye, opts.Reach, true), true)
+	return planClick(src, registry, pose, target, required, used, faces, opts, clicked, supportAim(src, eye, opts.Reach, true), true, &memo)
 }
 
 // clickAim admits a face of clicked and returns how to aim at sample points
@@ -198,10 +234,26 @@ func planRotations(aimed cube.Rotation, freeYaw bool) []cube.Rotation {
 	return rotations
 }
 
+// clickMemo records, for each face and click sample an aimed pass predicted,
+// whether that placement read the user's facing. A free-aim pass then skips
+// clicks whose writes another facing cannot change.
+type clickMemo [6][3]clickTried
+
+// clickTried is what an aimed pass learnt about one click.
+type clickTried uint8
+
+const (
+	clickUntried clickTried = iota
+	// clickFacingFree was predicted without reading the user's facing.
+	clickFacingFree
+	// clickFacingRead was predicted and read the user's facing.
+	clickFacingRead
+)
+
 // planClick searches faces for a reachable, visible click on the block
 // clicked returns for each face, aimed through aim, predicting what using use
-// there writes.
-func planClick(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required world.Block, use any, faces []cube.Face, opts PlacementPlanOptions, clickedFor func(cube.Face) cube.Pos, aim clickAim, freeYaw bool) (PlacementPlan, bool) {
+// there writes. An aimed pass records into memo what a freeYaw pass reads.
+func planClick(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required world.Block, use any, faces []cube.Face, opts PlacementPlanOptions, clickedFor func(cube.Face) cube.Pos, aim clickAim, freeYaw bool, memo *clickMemo) (PlacementPlan, bool) {
 	if src == nil || registry == nil || required == nil || opts.Reach <= 0 || math.IsInf(opts.Reach, 0) || math.IsNaN(opts.Reach) {
 		return PlacementPlan{}, false
 	}
@@ -237,19 +289,38 @@ func planClick(src PlacementSource, registry world.BlockRegistry, pose Placement
 		if !ok {
 			continue
 		}
-		for _, sample := range placementClickOffsets(face) {
+		for i, sample := range placementClickOffsets(face) {
+			tried := &memo[face][i]
+			if freeYaw && *tried == clickFacingFree {
+				// The aimed pass predicted this click, and no facing changes it.
+				continue
+			}
 			aimedRotation, offset, ok := aimAt(sample)
 			if !ok {
 				continue
 			}
-			for _, rotation := range planRotations(aimedRotation, freeYaw) {
-				aimed := pose
-				aimed.Rotation = rotation
-				changes, known := predictPlacementWithLimits(src, &aimed, clicked, face, offset, use, limits)
-				if !known || !match.changes(changes) {
+			for j, rotation := range planRotations(aimedRotation, freeYaw) {
+				if j == 0 && freeYaw && *tried == clickFacingRead {
+					// The aimed pass already predicted the aimed facing.
 					continue
 				}
-				if opts.RequireYawInvariant && !placementYawInvariant(match, aimed, clicked, face, offset, use, limits, opts.Accept) {
+				aimed := pose
+				aimed.Rotation = rotation
+				changes, known, rotated := predictPlacementWithLimits(src, &aimed, clicked, face, offset, use, limits)
+				if !freeYaw {
+					*tried = clickFacingFree
+					if rotated {
+						*tried = clickFacingRead
+					}
+				}
+				if !known || !match.changes(changes) {
+					if !rotated {
+						// Every other facing writes the same.
+						break
+					}
+					continue
+				}
+				if opts.RequireYawInvariant && rotated && !placementYawInvariant(match, aimed, clicked, face, offset, use, limits, opts.Accept) {
 					continue
 				}
 				if opts.Accept != nil && !opts.Accept(changes) {
@@ -393,7 +464,7 @@ func placementYawInvariant(match placementMatch, pose PlacementPose, clicked cub
 	for quarterTurn := 1; quarterTurn < 4; quarterTurn++ {
 		turned := pose
 		turned.Rotation[0] += float64(quarterTurn * 90)
-		changes, known := predictPlacementWithLimits(match.src, &turned, clicked, face, offset, use, limits)
+		changes, known, _ := predictPlacementWithLimits(match.src, &turned, clicked, face, offset, use, limits)
 		if !known || !match.changes(changes) || accept != nil && !accept(changes) {
 			return false
 		}
