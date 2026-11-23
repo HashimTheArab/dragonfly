@@ -185,6 +185,22 @@ func TestBlock_PlanPlacementLeavesGrowthToTheWorld(t *testing.T) {
 	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Carrot{crop: crop{Growth: 7}}, WheatSeeds{}, opts); ok {
 		t.Fatal("growth relaxed the kind of crop")
 	}
+func TestBlock_PlanPlacementDerivesPlacedFenceConnections(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 64, 2.5}, EyeHeight: 1.62}
+	fence := WoodFence{Wood: OakWood()}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{
+		target.Side(cube.FaceDown): Stone{},
+		target.Side(cube.FaceEast): fence,
+	})
+	plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, fence, fence, PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceUp}})
+	if !ok {
+		t.Fatal("no plan for a fence beside a fence")
+	}
+	connected := fence
+	connected.Connections = calculateConnections(fence.Model().(connector), &placementView{src: src, changes: plan.Changes, known: true}, target)
+	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: connected})
 }
 
 func TestBlock_PlanPlacementFreeAim(t *testing.T) {
