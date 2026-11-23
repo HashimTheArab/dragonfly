@@ -38,6 +38,11 @@ type PlacementPlanOptions struct {
 	// Accept admits otherwise valid writes against caller-owned reservations.
 	// It must not change the source or mutate the supplied changes.
 	Accept func([]PredictedBlockChange) bool
+	// ClickReplaceable lets PlanPlacement click the target cell itself when no
+	// support face works, aiming at a face of the cell the eye sees. A block's
+	// placement rules place it in a clicked cell it can replace, so the click
+	// needs no neighbouring block. It does not apply to PlanItemUse.
+	ClickReplaceable bool
 }
 
 // PlanPlacement finds a support click that places required at target using
@@ -63,7 +68,69 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose Place
 			faces = append(faces, side.Opposite())
 		}
 	}
-	return planClick(src, registry, pose, target, required, material, faces, opts, func(face cube.Face) cube.Pos { return target.Side(face.Opposite()) })
+	if plan, ok := planClick(src, registry, pose, target, required, material, faces, opts, func(face cube.Face) cube.Pos { return target.Side(face.Opposite()) }); ok || !opts.ClickReplaceable {
+		return plan, ok
+	}
+	return planReplaceableClick(src, registry, pose, target, required, material, opts)
+}
+
+// planReplaceableClick plans a click on target itself while it is a cell the
+// material may replace, such as air, aiming at each face the eye sees. The
+// cell has no model to aim at, so the aim goes straight to the face point.
+func planReplaceableClick(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required, material world.Block, opts PlacementPlanOptions) (PlacementPlan, bool) {
+	if src == nil || registry == nil || required == nil || opts.Reach <= 0 || math.IsInf(opts.Reach, 0) || math.IsNaN(opts.Reach) || target.OutOfBounds(src.Range()) {
+		return PlacementPlan{}, false
+	}
+	current, loaded := src.BlockLoaded(target)
+	if !loaded || current == nil || !world.CanReplace(current, material) {
+		return PlacementPlan{}, false
+	}
+	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
+	if !placementWithinReach(eye, target.Vec3Centre(), opts.Reach) {
+		return PlacementPlan{}, false
+	}
+	limits := placementLimits{reach: opts.Reach, actors: opts.Actors}
+	match := placementMatch{src: src, registry: registry, target: target, required: required, expected: opts.Expected}
+	faces := opts.Faces
+	if faces == nil {
+		faces = cube.Faces()
+	}
+	for _, face := range faces {
+		if face < cube.FaceDown || face > cube.FaceEast {
+			continue
+		}
+		// Only a face turned towards the eye can be the first face a look hits.
+		normal := cube.Pos{}.Side(face).Vec3()
+		if eye.Sub(target.Vec3Centre().Add(normal.Mul(0.5))).Dot(normal) <= 0 {
+			continue
+		}
+		for _, sample := range placementClickOffsets(face) {
+			point := target.Vec3().Add(sample)
+			d := point.Sub(eye)
+			rotation := cube.Rotation{
+				float64(float32(mgl64.RadToDeg(math.Atan2(-d[0], d[2])))),
+				float64(float32(mgl64.RadToDeg(-math.Atan2(d[1], math.Hypot(d[0], d[2]))))),
+			}
+			offset := mgl64.Vec3{float64(float32(sample[0])), float64(float32(sample[1])), float64(float32(sample[2]))}
+			if eye.Sub(point).LenSqr() > opts.Reach*opts.Reach || !placementVisible(src, eye, point, target) {
+				continue
+			}
+			aimed := pose
+			aimed.Rotation = rotation
+			changes, known := predictPlacementWithLimits(src, &aimed, target, face, offset, material, limits)
+			if !known || !match.changes(changes) {
+				continue
+			}
+			if opts.RequireYawInvariant && !placementYawInvariant(match, aimed, target, face, offset, material, limits, opts.Accept) {
+				continue
+			}
+			if opts.Accept != nil && !opts.Accept(changes) {
+				continue
+			}
+			return PlacementPlan{Clicked: target, Face: face, Offset: offset, Rotation: rotation, Changes: changes}, true
+		}
+	}
+	return PlacementPlan{}, false
 }
 
 // PlanItemUse finds a click on target itself that turns it into required when

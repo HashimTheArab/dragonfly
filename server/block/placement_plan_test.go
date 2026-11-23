@@ -184,6 +184,32 @@ func TestBlock_PlanPlacementLeavesGrowthToTheWorld(t *testing.T) {
 	}
 }
 
+func TestBlock_PlanPlacementClickReplaceable(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 66, 0}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 64, 2.5}, EyeHeight: 1.62}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{})
+	opts := PlacementPlanOptions{Reach: 5}
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts); ok {
+		t.Fatal("planned a block with nothing to attach to")
+	}
+	opts.ClickReplaceable = true
+	plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts)
+	if !ok || plan.Clicked != target {
+		t.Fatalf("replaceable click plan = %+v, %v; want a click on the target", plan, ok)
+	}
+	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: Stone{}})
+	// The aim still decides directional state.
+	stairs := Stairs{Block: Stone{}, Facing: plan.Rotation.Direction()}
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, stairs, Stairs{Block: Stone{}}, opts); !ok {
+		t.Fatal("no replaceable click for the aimed stair facing")
+	}
+	occupied := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target: Dirt{}})
+	if _, ok := PlanPlacement(occupied, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts); ok {
+		t.Fatal("clicked an occupied cell")
+	}
+}
+
 func TestBlock_PlanPlacementActorRules(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}
