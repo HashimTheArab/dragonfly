@@ -42,7 +42,10 @@ type PlacementPlanOptions struct {
 // PlanPlacement finds a support click that places required at target using
 // material when the player at pose turns to face it. Placement is predicted with
 // that facing, so directional states match what the server receives. Every
-// primary write must match Expected and occupy known terrain. Writes may merge
+// primary write must match Expected and occupy known terrain. State a block
+// derives from its neighbours, such as a stair's corner, is compared as the
+// wanted block derives it in the terrain the click leaves: the click cannot
+// choose it, and it changes again as the neighbours do. Writes may merge
 // into or update existing blocks, such as completing a double slab, when the
 // block's own placement behaviour does so. Reach is checked from the eye to the
 // clicked block's centre and to each placed cell's centre, and actor obstruction
@@ -68,7 +71,7 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose Place
 	}
 	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
 	limits := placementLimits{reach: opts.Reach, actors: opts.Actors}
-	match := placementMatch{src: src, registry: registry, target: target, requiredID: requiredID, expected: opts.Expected}
+	match := placementMatch{src: src, registry: registry, target: target, required: required, expected: opts.Expected}
 	faces := opts.Faces
 	if faces == nil {
 		faces = make([]cube.Face, 0, len(cube.Faces()))
@@ -187,16 +190,17 @@ func placementVisible(src PlacementSource, eye, hit mgl64.Vec3, clicked cube.Pos
 
 // placementMatch validates predicted writes against one PlanPlacement request.
 type placementMatch struct {
-	src        PlacementSource
-	registry   world.BlockRegistry
-	target     cube.Pos
-	requiredID uint32
-	expected   func(cube.Pos) (world.Block, bool)
+	src      PlacementSource
+	registry world.BlockRegistry
+	target   cube.Pos
+	required world.Block
+	expected func(cube.Pos) (world.Block, bool)
 }
 
 // changes validates all layers and matches every primary write against the
 // requested target and the caller's expected state.
 func (m placementMatch) changes(changes []PredictedBlockChange) bool {
+	after := &placementView{src: m.src, changes: changes, known: true}
 	matched := false
 	for _, change := range changes {
 		if change.Pos.OutOfBounds(m.src.Range()) || change.Block == nil {
@@ -218,7 +222,7 @@ func (m placementMatch) changes(changes []PredictedBlockChange) bool {
 		if change.Pos == m.target {
 			// Expected may cover neighbouring cells, but it cannot relax the
 			// requested target state.
-			if actualID != m.requiredID {
+			if !world.MatchesDerivedState(m.registry, after, change.Pos, m.required, actualID) {
 				return false
 			}
 			matched = true
@@ -230,10 +234,7 @@ func (m placementMatch) changes(changes []PredictedBlockChange) bool {
 			continue
 		}
 		wanted, found := m.expected(change.Pos)
-		if !found || wanted == nil {
-			return false
-		}
-		if wantedID, ok := placementRuntimeID(m.registry, wanted); !ok || wantedID != actualID {
+		if !found || wanted == nil || !world.MatchesDerivedState(m.registry, after, change.Pos, wanted, actualID) {
 			return false
 		}
 	}

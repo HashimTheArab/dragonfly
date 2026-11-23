@@ -115,6 +115,37 @@ func TestBlock_PlanPlacementExactStatesAndYaw(t *testing.T) {
 	}
 }
 
+func TestBlock_PlanPlacementDerivesNeighbourState(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 64, 2.5}, EyeHeight: 1.62}
+	opts := PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceUp}}
+	facing := cube.Rotation{135, 0}.Direction()
+	// The stair in front of the target turns it into an outer corner.
+	front := Stairs{Block: Stone{}, Facing: facing.RotateRight()}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{
+		target.Side(cube.FaceDown): Stone{},
+		target.Side(facing.Face()): front,
+	})
+	placed := Stairs{Block: Stone{}, Facing: facing, Corner: OuterRightStairsCorner()}
+	for _, corner := range StairsCorners() {
+		required := Stairs{Block: Stone{}, Facing: facing, Corner: corner}
+		plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, required, Stairs{Block: Stone{}}, opts)
+		if !ok {
+			t.Fatalf("no plan for a %v stair, whose corner its neighbours decide", corner)
+		}
+		assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: placed})
+	}
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stairs{Block: Stone{}, Facing: facing.Opposite()}, Stairs{Block: Stone{}}, opts); ok {
+		t.Fatal("derived state relaxed the stair's facing")
+	}
+	expected := func(pos cube.Pos) (world.Block, bool) { return Stairs{Block: Stone{}, Facing: facing}, pos == target }
+	opts.Expected = expected
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stairs{Block: Stone{}, Facing: facing}, Stairs{Block: Stone{}}, opts); !ok {
+		t.Fatal("an expected stair did not derive its corner")
+	}
+}
+
 func TestBlock_PlanPlacementActorRules(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}

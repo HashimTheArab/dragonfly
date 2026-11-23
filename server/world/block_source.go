@@ -24,6 +24,20 @@ type StateDeriver interface {
 	DeriveState(pos cube.Pos, src BlockSource) Block
 }
 
+// MatchesDerivedState reports whether actualID is the runtime ID of wanted at
+// pos once wanted derives its state against src. Derived state, such as a
+// stair's corner, follows the blocks around pos rather than wanted, so a
+// caller comparing a built or predicted block with a wanted one compares it
+// here.
+func MatchesDerivedState(registry BlockRegistry, src BlockSource, pos cube.Pos, wanted Block, actualID uint32) bool {
+	if deriver, ok := wanted.(StateDeriver); ok {
+		wanted = deriver.DeriveState(pos, src)
+	}
+	name, properties := wanted.EncodeBlock()
+	wantedID, ok := registry.StateToRuntimeID(name, properties)
+	return ok && wantedID == actualID
+}
+
 // worldSource is a wrapper around a world transaction that implements BlockSource.
 type worldSource struct{ tx *Tx }
 
