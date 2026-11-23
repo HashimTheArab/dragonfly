@@ -24,18 +24,35 @@ type StateDeriver interface {
 	DeriveState(pos cube.Pos, src BlockSource) Block
 }
 
-// MatchesDerivedState reports whether actualID is the runtime ID of wanted at
-// pos once wanted derives its state against src. Derived state, such as a
-// stair's corner, follows the blocks around pos rather than wanted, so a
-// caller comparing a built or predicted block with a wanted one compares it
-// here.
-func MatchesDerivedState(registry BlockRegistry, src BlockSource, pos cube.Pos, wanted Block, actualID uint32) bool {
+// AmbientStater is implemented by Blocks with state that changes on its own
+// after they are placed, such as the growth of a crop or the moisture of
+// farmland, rather than through how they were placed.
+type AmbientStater interface {
+	Block
+	// WithAmbientState returns the Block with the ambient state of other copied
+	// in. It returns false when other is a different kind of block.
+	WithAmbientState(other Block) (Block, bool)
+}
+
+// MatchesBuiltState reports whether actual, built at pos in src, is wanted.
+// Neither the state wanted derives from its neighbours, such as a stair's
+// corner, nor its ambient state, such as a crop's growth, is compared as
+// wanted holds it: placing a block chooses neither. wanted takes actual's
+// ambient state and then derives against src before the runtime IDs compare.
+func MatchesBuiltState(registry BlockRegistry, src BlockSource, pos cube.Pos, wanted, actual Block) bool {
+	if ambient, ok := wanted.(AmbientStater); ok {
+		if b, ok := ambient.WithAmbientState(actual); ok {
+			wanted = b
+		}
+	}
 	if deriver, ok := wanted.(StateDeriver); ok {
 		wanted = deriver.DeriveState(pos, src)
 	}
-	name, properties := wanted.EncodeBlock()
-	wantedID, ok := registry.StateToRuntimeID(name, properties)
-	return ok && wantedID == actualID
+	wantedName, wantedProperties := wanted.EncodeBlock()
+	actualName, actualProperties := actual.EncodeBlock()
+	wantedID, wantedKnown := registry.StateToRuntimeID(wantedName, wantedProperties)
+	actualID, actualKnown := registry.StateToRuntimeID(actualName, actualProperties)
+	return wantedKnown && actualKnown && wantedID == actualID
 }
 
 // worldSource is a wrapper around a world transaction that implements BlockSource.

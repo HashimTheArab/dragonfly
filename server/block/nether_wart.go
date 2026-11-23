@@ -84,3 +84,13 @@ func allNetherWart() (wart []world.Block) {
 	}
 	return
 }
+
+// WithAmbientState ...
+func (n NetherWart) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(NetherWart)
+	if !ok {
+		return n, false
+	}
+	n.Age = other.Age
+	return n, true
+}

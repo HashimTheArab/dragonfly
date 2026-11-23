@@ -85,3 +85,13 @@ func allBeetroot() (beetroot []world.Block) {
 	}
 	return
 }
+
+// WithAmbientState ...
+func (s BeetrootSeeds) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(BeetrootSeeds)
+	if !ok {
+		return s, false
+	}
+	s.Growth = other.Growth
+	return s, true
+}

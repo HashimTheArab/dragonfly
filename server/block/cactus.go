@@ -119,3 +119,13 @@ func (DamageSource) ReducedByResistance() bool { return true }
 func (DamageSource) ReducedByArmour() bool     { return true }
 func (DamageSource) Fire() bool                { return false }
 func (DamageSource) IgnoreTotem() bool         { return false }
+
+// WithAmbientState ...
+func (c Cactus) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(Cactus)
+	if !ok {
+		return c, false
+	}
+	c.Age = other.Age
+	return c, true
+}

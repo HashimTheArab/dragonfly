@@ -111,3 +111,13 @@ func allFarmland() (b []world.Block) {
 	}
 	return
 }
+
+// WithAmbientState ...
+func (f Farmland) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(Farmland)
+	if !ok {
+		return f, false
+	}
+	f.Hydration = other.Hydration
+	return f, true
+}

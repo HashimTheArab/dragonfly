@@ -119,3 +119,13 @@ func allPotato() (potato []world.Block) {
 	}
 	return
 }
+
+// WithAmbientState ...
+func (p Potato) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(Potato)
+	if !ok {
+		return p, false
+	}
+	p.Growth = other.Growth
+	return p, true
+}

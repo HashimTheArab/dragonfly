@@ -105,3 +105,13 @@ func allCarrots() (carrots []world.Block) {
 	}
 	return
 }
+
+// WithAmbientState ...
+func (c Carrot) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(Carrot)
+	if !ok {
+		return c, false
+	}
+	c.Growth = other.Growth
+	return c, true
+}

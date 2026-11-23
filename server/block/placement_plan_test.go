@@ -146,6 +146,44 @@ func TestBlock_PlanPlacementDerivesNeighbourState(t *testing.T) {
 	}
 }
 
+func TestBlock_PlanItemUseTillsWithAHoe(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 64, 2.5}, EyeHeight: 1.62}
+	opts := PlacementPlanOptions{Reach: 5}
+	hoe := item.Hoe{Tier: item.ToolTierIron}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target: Dirt{}})
+	// Moisture comes from nearby water after tilling, so a wanted moisture is not compared.
+	plan, ok := PlanItemUse(src, world.DefaultBlockRegistry, user, target, Farmland{Hydration: 7}, hoe, opts)
+	if !ok || plan.Clicked != target || plan.Face != cube.FaceUp {
+		t.Fatalf("hoe plan = %+v, %v; want a click on the dirt's top face", plan, ok)
+	}
+	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: Farmland{}})
+	if _, ok := PlanItemUse(src, world.DefaultBlockRegistry, user, target, Dirt{Coarse: true}, hoe, opts); ok {
+		t.Fatal("planned a hoe use for a block tilling cannot make")
+	}
+	covered := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target: Dirt{}, target.Side(cube.FaceUp): Stone{}})
+	if _, ok := PlanItemUse(covered, world.DefaultBlockRegistry, user, target, Farmland{}, hoe, opts); ok {
+		t.Fatal("tilled dirt with a block above it")
+	}
+}
+
+func TestBlock_PlanPlacementLeavesGrowthToTheWorld(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 65, 0}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 64, 2.5}, EyeHeight: 1.62}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Farmland{}})
+	opts := PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceUp}}
+	plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, WheatSeeds{crop: crop{Growth: 7}}, WheatSeeds{}, opts)
+	if !ok {
+		t.Fatal("no seed plan for a grown wheat the crop grows into")
+	}
+	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: WheatSeeds{}})
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Carrot{crop: crop{Growth: 7}}, WheatSeeds{}, opts); ok {
+		t.Fatal("growth relaxed the kind of crop")
+	}
+}
+
 func TestBlock_PlanPlacementActorRules(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}

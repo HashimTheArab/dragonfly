@@ -116,3 +116,14 @@ func allMelonStems() (stems []world.Block) {
 	}
 	return
 }
+
+// WithAmbientState ...
+func (m MelonSeeds) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(MelonSeeds)
+	if !ok {
+		return m, false
+	}
+	m.Growth = other.Growth
+	m.Direction = other.Direction
+	return m, true
+}
