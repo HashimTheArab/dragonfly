@@ -3,14 +3,14 @@ package world
 import (
 	"fmt"
 	"math/bits"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
-// traitLookup holds the values of each trait state in the order the client enumerates them: the
-// order of its Direction and Facing enums, which vanilla's own block states share.
+// traitLookup holds the values of each trait state in the order the client enumerates them.
 var traitLookup = map[string][]any{
 	"minecraft:facing_direction": {
 		"down", "up", "north", "south", "west", "east",
@@ -24,8 +24,12 @@ var traitLookup = map[string][]any{
 	"minecraft:block_face": {
 		"down", "up", "north", "south", "west", "east",
 	},
-	"minecraft:corner_and_cardinal_direction": {
+	"minecraft:corner": {
 		"none", "inner_left", "inner_right", "outer_left", "outer_right",
+	},
+	"minecraft:sixteen_way_rotation": {
+		int32(0), int32(1), int32(2), int32(3), int32(4), int32(5), int32(6), int32(7),
+		int32(8), int32(9), int32(10), int32(11), int32(12), int32(13), int32(14), int32(15),
 	},
 }
 
@@ -269,6 +273,14 @@ func customBlockPropertySpace(entry protocol.BlockEntry) ([]string, [][]any, err
 			}
 			if !enabled {
 				continue
+			}
+			// The flag adds the cardinal direction too, if its own flag has not.
+			if k == "minecraft:corner_and_cardinal_direction" {
+				k = "minecraft:corner"
+				if cardinal := "minecraft:cardinal_direction"; !slices.Contains(traitNames, cardinal) {
+					traitNames = append(traitNames, cardinal)
+					traitValues = append(traitValues, traitLookup[cardinal])
+				}
 			}
 			v, ok := traitLookup[k]
 			if !ok {

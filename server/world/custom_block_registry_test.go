@@ -2,6 +2,7 @@ package world
 
 import (
 	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
@@ -182,10 +183,7 @@ func TestAddCustomBlocks_UnknownBitmaskTraitErrors(t *testing.T) {
 	}
 }
 
-// Trait states take the client's values in the client's order: south, west, north, east for
-// minecraft:cardinal_direction, down, up, north, south, west, east for
-// minecraft:facing_direction and minecraft:block_face, all serialized as strings, the same order
-// vanilla's own block states list them in (block_states.nbt).
+// Trait states take the client's value types and order.
 func TestAddCustomBlocksTraitStateOrder(t *testing.T) {
 	facing := []any{"down", "up", "north", "south", "west", "east"}
 	for _, test := range []struct {
@@ -194,6 +192,10 @@ func TestAddCustomBlocksTraitStateOrder(t *testing.T) {
 	}{
 		{"minecraft:placement_direction", "cardinal_direction", []any{"south", "west", "north", "east"}},
 		{"minecraft:placement_direction", "facing_direction", facing},
+		{"minecraft:placement_direction", "sixteen_way_rotation", []any{
+			int32(0), int32(1), int32(2), int32(3), int32(4), int32(5), int32(6), int32(7),
+			int32(8), int32(9), int32(10), int32(11), int32(12), int32(13), int32(14), int32(15),
+		}},
 		{"minecraft:placement_position", "block_face", facing},
 		{"minecraft:placement_position", "vertical_half", []any{"bottom", "top"}},
 	} {
@@ -218,6 +220,67 @@ func TestAddCustomBlocksTraitStateOrder(t *testing.T) {
 				_, properties, _ := registry.RuntimeIDToState(base + uint32(i))
 				if got := properties["minecraft:"+test.state]; got != want {
 					t.Errorf("state %d = %v, want %v", i, got, want)
+				}
+			}
+		})
+	}
+}
+
+// placement_direction states are laid out lowest bits first in the order the client adds them.
+func TestAddCustomBlocksPlacementDirectionStates(t *testing.T) {
+	type state struct {
+		name   string
+		values []any
+	}
+	cardinal := state{"minecraft:cardinal_direction", []any{"south", "west", "north", "east"}}
+	corner := state{"minecraft:corner", []any{"none", "inner_left", "inner_right", "outer_left", "outer_right"}}
+	facing := state{"minecraft:facing_direction", []any{"down", "up", "north", "south", "west", "east"}}
+	rotation := state{"minecraft:sixteen_way_rotation", nil}
+	for i := range int32(16) {
+		rotation.values = append(rotation.values, i)
+	}
+	for _, test := range []struct {
+		name  string
+		flags map[string]any
+		want  []state
+	}{
+		{"corner", map[string]any{"cardinal_direction": uint8(0), "corner_and_cardinal_direction": uint8(1)}, []state{cardinal, corner}},
+		{"all", map[string]any{
+			"cardinal_direction":            uint8(1),
+			"corner_and_cardinal_direction": uint8(1),
+			"facing_direction":              uint8(1),
+			"sixteen_way_rotation":          uint8(1),
+		}, []state{cardinal, corner, facing, rotation}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			DefaultBlockRegistry.Finalize()
+			registry := DefaultBlockRegistry.Clone()
+			base := registry.BlockCount()
+			entry := protocol.BlockEntry{
+				Name: "dragonfly:test_block",
+				Properties: map[string]any{"traits": []any{map[string]any{
+					"name":           "minecraft:placement_direction",
+					"enabled_states": test.flags,
+				}}},
+			}
+			if err := AddCustomBlocks(registry, []protocol.BlockEntry{entry}); err != nil {
+				t.Fatalf("AddCustomBlocks() error = %v", err)
+			}
+			count := 1
+			for _, s := range test.want {
+				count *= len(s.values)
+			}
+			if got := registry.BlockCount() - base; got != count {
+				t.Fatalf("states = %d, want %d", got, count)
+			}
+			for i := range count {
+				want, index := make(map[string]any, len(test.want)), i
+				for _, s := range test.want {
+					want[s.name] = s.values[index%len(s.values)]
+					index /= len(s.values)
+				}
+				if _, got, _ := registry.RuntimeIDToState(uint32(base + i)); !maps.Equal(got, want) {
+					t.Fatalf("state %d = %v, want %v", i, got, want)
 				}
 			}
 		})
