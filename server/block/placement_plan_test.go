@@ -171,6 +171,37 @@ func TestBlock_PlanItemUseTillsWithAHoe(t *testing.T) {
 	}
 }
 
+// State a block changes on its own, such as a plant's age or a wire's power,
+// never decides whether it was built as wanted; what a click chooses does.
+func TestBlock_MatchesBuiltStateIgnoresOnlyAmbientState(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	src := newPlacementTestSource(world.Overworld, nil)
+	pos := cube.Pos{0, 64, 0}
+	for _, test := range []struct {
+		name           string
+		wanted, actual world.Block
+		match          bool
+	}{
+		{name: "kelp age", wanted: Kelp{Age: 0}, actual: Kelp{Age: 17}, match: true},
+		{name: "cocoa age", wanted: CocoaBean{Facing: cube.North}, actual: CocoaBean{Facing: cube.North, Age: 2}, match: true},
+		{name: "cocoa facing", wanted: CocoaBean{Facing: cube.North}, actual: CocoaBean{Facing: cube.South, Age: 2}},
+		{name: "berry bush age", wanted: SweetBerryBush{}, actual: SweetBerryBush{Age: 3}, match: true},
+		{name: "wire power", wanted: RedstoneWire{Power: 15}, actual: RedstoneWire{}.DeriveState(pos, src), match: true},
+		{name: "other block", wanted: Kelp{}, actual: SweetBerryBush{}},
+		{name: "nil wanted", actual: Kelp{}},
+		{name: "nil actual", wanted: Kelp{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := world.MatchesBuiltState(world.DefaultBlockRegistry, src, pos, test.wanted, test.actual); got != test.match {
+				t.Fatalf("MatchesBuiltState = %v, want %v", got, test.match)
+			}
+		})
+	}
+	if TillsInto(world.DefaultBlockRegistry, src, pos, Dirt{}, nil) {
+		t.Fatal("dirt tills into nothing")
+	}
+}
+
 func TestBlock_PlanPlacementLeavesGrowthToTheWorld(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 65, 0}
@@ -201,7 +232,7 @@ func TestBlock_PlanPlacementDerivesPlacedFenceConnections(t *testing.T) {
 		t.Fatal("no plan for a fence beside a fence")
 	}
 	connected := fence
-	connected.Connections = calculateConnections(fence.Model().(connector), &placementView{src: src, changes: plan.Changes, known: true}, target)
+	connected.Connections = Connections{east: true}
 	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: connected})
 }
 

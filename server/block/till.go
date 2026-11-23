@@ -10,7 +10,7 @@ import (
 // compared through world.MatchesBuiltState, such as dirt that becomes farmland.
 func TillsInto(registry world.BlockRegistry, src world.BlockSource, pos cube.Pos, from, wanted world.Block) bool {
 	tillable, ok := from.(item.Tillable)
-	if !ok {
+	if !ok || wanted == nil {
 		return false
 	}
 	result, ok := tillable.Till()
