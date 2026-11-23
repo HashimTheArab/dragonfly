@@ -78,17 +78,17 @@ func PlanUsePlacement(src PlacementSource, registry world.BlockRegistry, pose Pl
 
 // PlanScaffold finds a temporary block for a target no click can place yet,
 // such as the first log of a sideways row with nothing along its axis: a cell
-// beside target, outside every cell opts.Expected admits, where scaffold can
-// be placed now and from which a click then places required. It returns that
-// cell and the plan placing scaffold there; the caller removes the scaffold
-// once required is built.
-func PlanScaffold(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required, material, scaffold world.Block, opts PlacementPlanOptions) (cube.Pos, PlacementPlan, bool) {
+// beside target that allowed admits and opts.Expected does not, where scaffold
+// can be placed now and from which a click then places required. It returns
+// that cell and the plan placing scaffold there; the caller removes the
+// scaffold once required is built.
+func PlanScaffold(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required, material, scaffold world.Block, allowed func(cube.Pos) bool, opts PlacementPlanOptions) (cube.Pos, PlacementPlan, bool) {
 	if src == nil || material == nil || scaffold == nil {
 		return cube.Pos{}, PlacementPlan{}, false
 	}
 	for _, face := range cube.Faces() {
 		cell := target.Side(face)
-		if cell.OutOfBounds(src.Range()) {
+		if cell.OutOfBounds(src.Range()) || allowed != nil && !allowed(cell) {
 			continue
 		}
 		if current, loaded := src.BlockLoaded(cell); !loaded || current == nil || !world.CanReplace(current, scaffold) {

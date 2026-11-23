@@ -269,15 +269,18 @@ func TestBlock_PlanScaffoldStartsASidewaysRow(t *testing.T) {
 	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, opts); ok {
 		t.Fatal("planned a sideways log with nothing along its axis")
 	}
-	if _, _, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, opts); ok {
+	if _, _, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, nil, opts); ok {
 		t.Fatal("a scaffold beside the log cannot set its axis, and along it lies the build")
 	}
 	// Outside the build the row's ends take a scaffold.
 	end := func(pos cube.Pos) (world.Block, bool) { return log, pos == target }
 	opts.Expected = end
-	cell, plan, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, opts)
+	cell, plan, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, nil, opts)
 	if !ok || cell.X() != 0 || cell.Y() != 65 || plan.Changes[0].Pos != cell {
 		t.Fatalf("scaffold = %v, %+v, %v; want one along the log's axis", cell, plan, ok)
+	}
+	if _, _, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, func(cube.Pos) bool { return false }, opts); ok {
+		t.Fatal("placed a scaffold where none is allowed")
 	}
 }
 
