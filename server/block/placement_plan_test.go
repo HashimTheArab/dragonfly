@@ -159,6 +159,9 @@ func TestBlock_PlanItemUseTillsWithAHoe(t *testing.T) {
 		t.Fatalf("hoe plan = %+v, %v; want a click on the dirt's top face", plan, ok)
 	}
 	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: Farmland{}})
+	if !TillsInto(world.DefaultBlockRegistry, src, target, Dirt{}, Farmland{Hydration: 7}) || TillsInto(world.DefaultBlockRegistry, src, target, Stone{}, Farmland{}) {
+		t.Fatal("TillsInto disagrees with the hoe")
+	}
 	if _, ok := PlanItemUse(src, world.DefaultBlockRegistry, user, target, Dirt{Coarse: true}, hoe, opts); ok {
 		t.Fatal("planned a hoe use for a block tilling cannot make")
 	}
