@@ -38,11 +38,13 @@ type PlacementPlanOptions struct {
 	// Accept admits otherwise valid writes against caller-owned reservations.
 	// It must not change the source or mutate the supplied changes.
 	Accept func([]PredictedBlockChange) bool
-	// ClickReplaceable lets PlanPlacement click the target cell itself when no
-	// support face works, aiming at a face of the cell the eye sees. A block's
-	// placement rules place it in a clicked cell it can replace, so the click
-	// needs no neighbouring block. It does not apply to PlanItemUse.
-	ClickReplaceable bool
+	// FreeAim lets a plan, when no aimed click works, click any face of a
+	// loaded support within reach, such as the top of a wall above the eye or
+	// a face behind other blocks, and face any horizontal direction while
+	// doing so, so directional blocks such as stairs take the facing they need.
+	// The clicked block must still be a real support: servers refuse a click
+	// on air, but check only its reach.
+	FreeAim bool
 }
 
 // PlanPlacement finds a support click that places required at target using
@@ -69,12 +71,11 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose Place
 		}
 	}
 	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
-	if plan, ok := planClick(src, registry, pose, target, required, material, faces, opts, func(face cube.Face) cube.Pos { return target.Side(face.Opposite()) }, supportAim(src, eye, opts.Reach)); ok || !opts.ClickReplaceable {
+	clicked := func(face cube.Face) cube.Pos { return target.Side(face.Opposite()) }
+	if plan, ok := planClick(src, registry, pose, target, required, material, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false); ok || !opts.FreeAim {
 		return plan, ok
 	}
-	// A block's placement rules place it in a clicked cell it can replace, so
-	// the target itself may be clicked with nothing beside it.
-	return planClick(src, registry, pose, target, required, material, cube.Faces(), opts, func(cube.Face) cube.Pos { return target }, replaceableAim(src, eye, target, opts.Reach))
+	return planClick(src, registry, pose, target, required, material, faces, opts, clicked, supportAim(src, eye, opts.Reach, true), true)
 }
 
 // PlanItemUse finds a click on target itself that turns it into required when
@@ -91,7 +92,11 @@ func PlanItemUse(src PlacementSource, registry world.BlockRegistry, pose Placeme
 		faces = []cube.Face{cube.FaceUp, cube.FaceNorth, cube.FaceSouth, cube.FaceWest, cube.FaceEast, cube.FaceDown}
 	}
 	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
-	return planClick(src, registry, pose, target, required, used, faces, opts, func(cube.Face) cube.Pos { return target }, supportAim(src, eye, opts.Reach))
+	clicked := func(cube.Face) cube.Pos { return target }
+	if plan, ok := planClick(src, registry, pose, target, required, used, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false); ok || !opts.FreeAim {
+		return plan, ok
+	}
+	return planClick(src, registry, pose, target, required, used, faces, opts, clicked, supportAim(src, eye, opts.Reach, true), true)
 }
 
 // clickAim admits a face of clicked and returns how to aim at sample points
@@ -99,46 +104,51 @@ func PlanItemUse(src PlacementSource, registry world.BlockRegistry, pose Placeme
 type clickAim func(clicked cube.Pos, face cube.Face) (func(sample mgl64.Vec3) (cube.Rotation, mgl64.Vec3, bool), bool)
 
 // supportAim aims at the model of a loaded block a click may place against.
-func supportAim(src PlacementSource, eye mgl64.Vec3, reach float64) clickAim {
+// A blind aim turns straight to the sample point without requiring the look to
+// reach it first through the terrain.
+func supportAim(src PlacementSource, eye mgl64.Vec3, reach float64, blind bool) clickAim {
 	return func(clicked cube.Pos, face cube.Face) (func(mgl64.Vec3) (cube.Rotation, mgl64.Vec3, bool), bool) {
 		support, loaded := src.BlockLoaded(clicked)
 		if !loaded || !CanClickToPlace(support) {
 			return nil, false
 		}
-		return func(sample mgl64.Vec3) (cube.Rotation, mgl64.Vec3, bool) {
-			return placementAim(src, eye, reach, clicked, face, support, sample)
-		}, true
-	}
-}
-
-// replaceableAim aims straight at a face of target the eye sees. The cell has
-// no model to aim at, so a look reaching the face point clicks it.
-func replaceableAim(src PlacementSource, eye mgl64.Vec3, target cube.Pos, reach float64) clickAim {
-	return func(_ cube.Pos, face cube.Face) (func(mgl64.Vec3) (cube.Rotation, mgl64.Vec3, bool), bool) {
-		normal := cube.Pos{}.Side(face).Vec3()
-		if eye.Sub(target.Vec3Centre().Add(normal.Mul(0.5))).Dot(normal) <= 0 {
-			return nil, false
+		if !blind {
+			return func(sample mgl64.Vec3) (cube.Rotation, mgl64.Vec3, bool) {
+				return placementAim(src, eye, reach, clicked, face, support, sample)
+			}, true
 		}
 		return func(sample mgl64.Vec3) (cube.Rotation, mgl64.Vec3, bool) {
-			point := target.Vec3().Add(sample)
+			point := clicked.Vec3().Add(sample)
+			if eye.Sub(point).LenSqr() > reach*reach {
+				return cube.Rotation{}, mgl64.Vec3{}, false
+			}
 			d := point.Sub(eye)
 			rotation := cube.Rotation{
 				float64(float32(mgl64.RadToDeg(math.Atan2(-d[0], d[2])))),
 				float64(float32(mgl64.RadToDeg(-math.Atan2(d[1], math.Hypot(d[0], d[2]))))),
 			}
-			offset := mgl64.Vec3{float64(float32(sample[0])), float64(float32(sample[1])), float64(float32(sample[2]))}
-			if eye.Sub(point).LenSqr() > reach*reach || !placementVisible(src, eye, point, target) {
-				return cube.Rotation{}, mgl64.Vec3{}, false
-			}
-			return rotation, offset, true
+			return rotation, mgl64.Vec3{float64(float32(sample[0])), float64(float32(sample[1])), float64(float32(sample[2]))}, true
 		}, true
 	}
+}
+
+// planRotations lists the facings a click is tried with: the aimed one, and
+// with freeYaw also each horizontal direction at the aimed pitch.
+func planRotations(aimed cube.Rotation, freeYaw bool) []cube.Rotation {
+	if !freeYaw {
+		return []cube.Rotation{aimed}
+	}
+	rotations := []cube.Rotation{aimed}
+	for _, yaw := range []float64{0, 90, 180, -90} {
+		rotations = append(rotations, cube.Rotation{yaw, aimed[1]})
+	}
+	return rotations
 }
 
 // planClick searches faces for a reachable, visible click on the block
 // clicked returns for each face, aimed through aim, predicting what using use
 // there writes.
-func planClick(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required world.Block, use any, faces []cube.Face, opts PlacementPlanOptions, clickedFor func(cube.Face) cube.Pos, aim clickAim) (PlacementPlan, bool) {
+func planClick(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required world.Block, use any, faces []cube.Face, opts PlacementPlanOptions, clickedFor func(cube.Face) cube.Pos, aim clickAim, freeYaw bool) (PlacementPlan, bool) {
 	if src == nil || registry == nil || required == nil || opts.Reach <= 0 || math.IsInf(opts.Reach, 0) || math.IsNaN(opts.Reach) {
 		return PlacementPlan{}, false
 	}
@@ -175,23 +185,25 @@ func planClick(src PlacementSource, registry world.BlockRegistry, pose Placement
 			continue
 		}
 		for _, sample := range placementClickOffsets(face) {
-			rotation, offset, ok := aimAt(sample)
+			aimedRotation, offset, ok := aimAt(sample)
 			if !ok {
 				continue
 			}
-			aimed := pose
-			aimed.Rotation = rotation
-			changes, known := predictPlacementWithLimits(src, &aimed, clicked, face, offset, use, limits)
-			if !known || !match.changes(changes) {
-				continue
+			for _, rotation := range planRotations(aimedRotation, freeYaw) {
+				aimed := pose
+				aimed.Rotation = rotation
+				changes, known := predictPlacementWithLimits(src, &aimed, clicked, face, offset, use, limits)
+				if !known || !match.changes(changes) {
+					continue
+				}
+				if opts.RequireYawInvariant && !placementYawInvariant(match, aimed, clicked, face, offset, use, limits, opts.Accept) {
+					continue
+				}
+				if opts.Accept != nil && !opts.Accept(changes) {
+					continue
+				}
+				return PlacementPlan{Clicked: clicked, Face: face, Offset: offset, Rotation: rotation, Changes: changes}, true
 			}
-			if opts.RequireYawInvariant && !placementYawInvariant(match, aimed, clicked, face, offset, use, limits, opts.Accept) {
-				continue
-			}
-			if opts.Accept != nil && !opts.Accept(changes) {
-				continue
-			}
-			return PlacementPlan{Clicked: clicked, Face: face, Offset: offset, Rotation: rotation, Changes: changes}, true
 		}
 	}
 	return PlacementPlan{}, false

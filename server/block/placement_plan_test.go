@@ -187,29 +187,33 @@ func TestBlock_PlanPlacementLeavesGrowthToTheWorld(t *testing.T) {
 	}
 }
 
-func TestBlock_PlanPlacementClickReplaceable(t *testing.T) {
+func TestBlock_PlanPlacementFreeAim(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
-	target := cube.Pos{0, 66, 0}
-	user := PlacementPose{Position: mgl64.Vec3{2.5, 64, 2.5}, EyeHeight: 1.62}
-	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{})
-	opts := PlacementPlanOptions{Reach: 5}
+	// A wall top above the eye: its top face cannot be seen from the ground.
+	wall := cube.Pos{0, 66, 0}
+	target := wall.Side(cube.FaceUp)
+	user := PlacementPose{Position: mgl64.Vec3{0.5, 64, 2.5}, EyeHeight: 1.62}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{wall: Stone{}, wall.Side(cube.FaceDown): Stone{}, wall.Side(cube.FaceDown).Side(cube.FaceDown): Stone{}})
+	opts := PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceUp}}
 	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts); ok {
-		t.Fatal("planned a block with nothing to attach to")
+		t.Fatal("planned a click on a face the eye cannot see")
 	}
-	opts.ClickReplaceable = true
+	opts.FreeAim = true
 	plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts)
-	if !ok || plan.Clicked != target {
-		t.Fatalf("replaceable click plan = %+v, %v; want a click on the target", plan, ok)
+	if !ok || plan.Clicked != wall || plan.Face != cube.FaceUp {
+		t.Fatalf("blind plan = %+v, %v; want the wall's top face", plan, ok)
 	}
 	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: Stone{}})
-	// The aim still decides directional state.
-	stairs := Stairs{Block: Stone{}, Facing: plan.Rotation.Direction()}
-	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, stairs, Stairs{Block: Stone{}}, opts); !ok {
-		t.Fatal("no replaceable click for the aimed stair facing")
+	// A stair facing away from the click still plans, facing the way it needs.
+	for _, facing := range []cube.Direction{cube.North, cube.East, cube.South, cube.West} {
+		plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stairs{Block: Stone{}, Facing: facing}, Stairs{Block: Stone{}}, opts)
+		if !ok || plan.Rotation.Direction() != facing {
+			t.Fatalf("free-aim %v stair plan = %+v, %v", facing, plan.Rotation, ok)
+		}
 	}
-	occupied := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target: Dirt{}})
-	if _, ok := PlanPlacement(occupied, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts); ok {
-		t.Fatal("clicked an occupied cell")
+	// A block with nothing beside it still has nothing to click: servers refuse clicks on air.
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, cube.Pos{3, 67, 0}, Stone{}, Stone{}, PlacementPlanOptions{Reach: 5, FreeAim: true}); ok {
+		t.Fatal("planned a block with nothing to click")
 	}
 }
 
