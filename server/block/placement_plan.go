@@ -160,7 +160,7 @@ func planSupportClick(src PlacementSource, registry world.BlockRegistry, pose Pl
 	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
 	clicked := func(face cube.Face) cube.Pos { return target.Side(face.Opposite()) }
 	var memo clickMemo
-	if plan, ok := planClick(src, registry, pose, target, required, use, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false, &memo); ok || !opts.FreeAim {
+	if plan, ok := planClick(src, registry, pose, target, required, use, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false, &memo); ok || !opts.FreeAim || !memo.freeAimMayDiffer(src, faces, clicked, eye, opts.Reach) {
 		return plan, ok
 	}
 	return planClick(src, registry, pose, target, required, use, faces, opts, clicked, supportAim(src, eye, opts.Reach, true), true, &memo)
@@ -182,7 +182,7 @@ func PlanItemUse(src PlacementSource, registry world.BlockRegistry, pose Placeme
 	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
 	clicked := func(cube.Face) cube.Pos { return target }
 	var memo clickMemo
-	if plan, ok := planClick(src, registry, pose, target, required, used, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false, &memo); ok || !opts.FreeAim {
+	if plan, ok := planClick(src, registry, pose, target, required, used, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false, &memo); ok || !opts.FreeAim || !memo.freeAimMayDiffer(src, faces, clicked, eye, opts.Reach) {
 		return plan, ok
 	}
 	return planClick(src, registry, pose, target, required, used, faces, opts, clicked, supportAim(src, eye, opts.Reach, true), true, &memo)
@@ -222,16 +222,13 @@ func supportAim(src PlacementSource, eye mgl64.Vec3, reach float64, blind bool) 
 }
 
 // planRotations lists the facings a click is tried with: the aimed one, and
-// with freeYaw also each horizontal direction at the aimed pitch.
-func planRotations(aimed cube.Rotation, freeYaw bool) []cube.Rotation {
+// with freeYaw also each horizontal direction at the aimed pitch. It returns
+// how many of the five are used.
+func planRotations(aimed cube.Rotation, freeYaw bool) ([5]cube.Rotation, int) {
 	if !freeYaw {
-		return []cube.Rotation{aimed}
+		return [5]cube.Rotation{aimed}, 1
 	}
-	rotations := []cube.Rotation{aimed}
-	for _, yaw := range []float64{0, 90, 180, -90} {
-		rotations = append(rotations, cube.Rotation{yaw, aimed[1]})
-	}
-	return rotations
+	return [5]cube.Rotation{aimed, {0, aimed[1]}, {90, aimed[1]}, {180, aimed[1]}, {-90, aimed[1]}}, 5
 }
 
 // clickMemo records, for each face and click sample an aimed pass predicted,
@@ -249,6 +246,32 @@ const (
 	// clickFacingRead was predicted and read the user's facing.
 	clickFacingRead
 )
+
+// freeAimMayDiffer reports whether a free-aim pass could find a click the
+// aimed pass recorded in m did not: a clickable face in reach with a click
+// sample the aimed pass never predicted, or one whose placement read the
+// user's facing.
+func (m *clickMemo) freeAimMayDiffer(src PlacementSource, faces []cube.Face, clickedFor func(cube.Face) cube.Pos, eye mgl64.Vec3, reach float64) bool {
+	for _, face := range faces {
+		if face < cube.FaceDown || face > cube.FaceEast {
+			continue
+		}
+		clicked := clickedFor(face)
+		if clicked.OutOfBounds(src.Range()) || !placementWithinReach(eye, clicked.Vec3Centre(), reach) {
+			continue
+		}
+		if support, loaded := src.BlockLoaded(clicked); !loaded || !CanClickToPlace(support) {
+			continue
+		}
+		_, samples := placementClickOffsets(face)
+		for i := range samples {
+			if m[face][i] != clickFacingFree {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // planClick searches faces for a reachable, visible click on the block
 // clicked returns for each face, aimed through aim, predicting what using use
@@ -289,7 +312,8 @@ func planClick(src PlacementSource, registry world.BlockRegistry, pose Placement
 		if !ok {
 			continue
 		}
-		for i, sample := range placementClickOffsets(face) {
+		offsets, samples := placementClickOffsets(face)
+		for i, sample := range offsets[:samples] {
 			tried := &memo[face][i]
 			if freeYaw && *tried == clickFacingFree {
 				// The aimed pass predicted this click, and no facing changes it.
@@ -299,7 +323,8 @@ func planClick(src PlacementSource, registry world.BlockRegistry, pose Placement
 			if !ok {
 				continue
 			}
-			for j, rotation := range planRotations(aimedRotation, freeYaw) {
+			rotations, facings := planRotations(aimedRotation, freeYaw)
+			for j, rotation := range rotations[:facings] {
 				if j == 0 && freeYaw && *tried == clickFacingRead {
 					// The aimed pass already predicted the aimed facing.
 					continue
@@ -373,15 +398,16 @@ func placementRuntimeID(registry world.BlockRegistry, b world.Block) (uint32, bo
 }
 
 // placementClickOffsets returns aim targets at the face centre and both vertical
-// halves for click-sensitive canonical placement rules such as slab orientation.
-func placementClickOffsets(face cube.Face) []mgl64.Vec3 {
+// halves for click-sensitive canonical placement rules such as slab
+// orientation, and how many of the three a face uses.
+func placementClickOffsets(face cube.Face) ([3]mgl64.Vec3, int) {
 	centre := cube.Pos{}.Side(face).Vec3().Mul(0.5).Add(mgl64.Vec3{0.5, 0.5, 0.5})
 	if face == cube.FaceUp || face == cube.FaceDown {
-		return []mgl64.Vec3{centre}
+		return [3]mgl64.Vec3{centre}, 1
 	}
 	lower, upper := centre, centre
 	lower[1], upper[1] = 0.25, 0.75
-	return []mgl64.Vec3{centre, lower, upper}
+	return [3]mgl64.Vec3{centre, lower, upper}, 3
 }
 
 // placementVisibilitySource distinguishes unknown terrain from authentic air
