@@ -201,7 +201,7 @@ func TestBlock_PlanPlacementDerivesPlacedFenceConnections(t *testing.T) {
 		t.Fatal("no plan for a fence beside a fence")
 	}
 	connected := fence
-	connected.Connections = calculateConnections(fence.Model().(connector), &placementView{src: src, changes: plan.Changes, known: true}, target)
+	connected.Connections = Connections{east: true}
 	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: connected})
 }
 
