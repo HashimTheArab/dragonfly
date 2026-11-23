@@ -246,3 +246,14 @@ func (LavaDamageSource) ReducedByResistance() bool { return true }
 func (LavaDamageSource) ReducedByArmour() bool     { return true }
 func (LavaDamageSource) Fire() bool                { return true }
 func (LavaDamageSource) IgnoreTotem() bool         { return false }
+
+// WithAmbientState ...
+func (l Lava) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(Lava)
+	if !ok {
+		return l, false
+	}
+	// A source turns between still and flowing on its own as it is ticked.
+	l.Still = other.Still
+	return l, true
+}

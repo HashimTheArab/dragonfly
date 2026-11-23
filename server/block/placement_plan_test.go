@@ -235,6 +235,52 @@ func TestBlock_PlanPlacementFreeAim(t *testing.T) {
 	}
 }
 
+func TestBlock_PlanUsePlacementEmptiesABucket(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 64, 2.5}, EyeHeight: 1.62}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
+	water := Water{Still: true, Depth: 8}
+	bucket := item.Bucket{Content: item.LiquidBucketContent(water)}
+	plan, ok := PlanUsePlacement(src, world.DefaultBlockRegistry, user, target, water, bucket, PlacementPlanOptions{Reach: 5})
+	if !ok || plan.Clicked != target.Side(cube.FaceDown) {
+		t.Fatalf("bucket plan = %+v, %v; want a click on the block below", plan, ok)
+	}
+	if _, ok := PlanUsePlacement(src, world.DefaultBlockRegistry, user, target, Lava{Still: true, Depth: 8}, bucket, PlacementPlanOptions{Reach: 5}); ok {
+		t.Fatal("a water bucket planned lava")
+	}
+}
+
+func TestBlock_PlanScaffoldStartsASidewaysRow(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 65, 0}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 65, 2.5}, EyeHeight: 1.62}
+	ground := map[cube.Pos]world.Block{}
+	for x := -3; x <= 3; x++ {
+		for z := -3; z <= 3; z++ {
+			ground[cube.Pos{x, 64, z}] = Stone{}
+		}
+	}
+	src := newPlacementTestSource(world.Overworld, ground)
+	log := Log{Wood: OakWood(), Axis: cube.Z}
+	// The row along Z is in the build; the cells beside it are not.
+	row := func(pos cube.Pos) (world.Block, bool) { return log, pos.X() == 0 && pos.Y() == 65 }
+	opts := PlacementPlanOptions{Reach: 5, FreeAim: true, Expected: row}
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, opts); ok {
+		t.Fatal("planned a sideways log with nothing along its axis")
+	}
+	if _, _, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, opts); ok {
+		t.Fatal("a scaffold beside the log cannot set its axis, and along it lies the build")
+	}
+	// Outside the build the row's ends take a scaffold.
+	end := func(pos cube.Pos) (world.Block, bool) { return log, pos == target }
+	opts.Expected = end
+	cell, plan, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, opts)
+	if !ok || cell.X() != 0 || cell.Y() != 65 || plan.Changes[0].Pos != cell {
+		t.Fatalf("scaffold = %v, %+v, %v; want one along the log's axis", cell, plan, ok)
+	}
+}
+
 func TestBlock_PlanPlacementActorRules(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}

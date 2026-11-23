@@ -63,6 +63,59 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose Place
 	if material == nil {
 		return PlacementPlan{}, false
 	}
+	return planSupportClick(src, registry, pose, target, required, material, opts)
+}
+
+// PlanUsePlacement finds a support click that places required at target by
+// using used on the support beside it, such as a water bucket emptied against
+// a neighbouring block. It applies PlanPlacement's rules.
+func PlanUsePlacement(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required world.Block, used item.UsableOnBlock, opts PlacementPlanOptions) (PlacementPlan, bool) {
+	if used == nil {
+		return PlacementPlan{}, false
+	}
+	return planSupportClick(src, registry, pose, target, required, used, opts)
+}
+
+// PlanScaffold finds a temporary block for a target no click can place yet,
+// such as the first log of a sideways row with nothing along its axis: a cell
+// beside target, outside every cell opts.Expected admits, where scaffold can
+// be placed now and from which a click then places required. It returns that
+// cell and the plan placing scaffold there; the caller removes the scaffold
+// once required is built.
+func PlanScaffold(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required, material, scaffold world.Block, opts PlacementPlanOptions) (cube.Pos, PlacementPlan, bool) {
+	if src == nil || material == nil || scaffold == nil {
+		return cube.Pos{}, PlacementPlan{}, false
+	}
+	for _, face := range cube.Faces() {
+		cell := target.Side(face)
+		if cell.OutOfBounds(src.Range()) {
+			continue
+		}
+		if current, loaded := src.BlockLoaded(cell); !loaded || current == nil || !world.CanReplace(current, scaffold) {
+			continue
+		}
+		if opts.Expected != nil {
+			if _, inside := opts.Expected(cell); inside {
+				continue
+			}
+		}
+		scaffoldOpts := opts
+		scaffoldOpts.Expected, scaffoldOpts.RequireYawInvariant = nil, false
+		plan, ok := planSupportClick(src, registry, pose, cell, scaffold, scaffold, scaffoldOpts)
+		if !ok {
+			continue
+		}
+		after := &placementView{src: src, changes: plan.Changes, known: true}
+		if _, ok := planSupportClick(after, registry, pose, target, required, material, opts); ok {
+			return cell, plan, true
+		}
+	}
+	return cube.Pos{}, PlacementPlan{}, false
+}
+
+// planSupportClick plans a click on a support beside target, trying aimed
+// clicks before free-aim ones when opts allows them.
+func planSupportClick(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required world.Block, use any, opts PlacementPlanOptions) (PlacementPlan, bool) {
 	faces := opts.Faces
 	if faces == nil {
 		faces = make([]cube.Face, 0, len(cube.Faces()))
@@ -72,10 +125,10 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose Place
 	}
 	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
 	clicked := func(face cube.Face) cube.Pos { return target.Side(face.Opposite()) }
-	if plan, ok := planClick(src, registry, pose, target, required, material, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false); ok || !opts.FreeAim {
+	if plan, ok := planClick(src, registry, pose, target, required, use, faces, opts, clicked, supportAim(src, eye, opts.Reach, false), false); ok || !opts.FreeAim {
 		return plan, ok
 	}
-	return planClick(src, registry, pose, target, required, material, faces, opts, clicked, supportAim(src, eye, opts.Reach, true), true)
+	return planClick(src, registry, pose, target, required, use, faces, opts, clicked, supportAim(src, eye, opts.Reach, true), true)
 }
 
 // PlanItemUse finds a click on target itself that turns it into required when
