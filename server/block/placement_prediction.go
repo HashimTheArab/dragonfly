@@ -108,6 +108,11 @@ func predictPlacementWithLimits(src PlacementSource, pose *PlacementPose, clicke
 		if !ok {
 			return
 		}
+		// Player.UseItemOnBlock derives a placed block's neighbour state, such
+		// as a fence's connections, before placing it.
+		if deriver, ok := placed.(world.StateDeriver); ok {
+			placed = deriver.DeriveState(pos, tx)
+		}
 		place(tx, pos, placed, u, ctx)
 	})
 	if view.refused {
