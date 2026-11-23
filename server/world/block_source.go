@@ -1,6 +1,10 @@
 package world
 
-import "github.com/df-mc/dragonfly/server/block/cube"
+import (
+	"math"
+
+	"github.com/df-mc/dragonfly/server/block/cube"
+)
 
 // BlockSource represents a source for obtaining blocks.
 type BlockSource interface {
@@ -43,16 +47,39 @@ func MatchesBuiltState(registry BlockRegistry, src BlockSource, pos cube.Pos, wa
 	if registry == nil || wanted == nil || actual == nil {
 		return false
 	}
-	if ambient, ok := wanted.(AmbientStater); ok {
+	ambient, isAmbient := wanted.(AmbientStater)
+	_, isDeriver := wanted.(StateDeriver)
+	wantedBase, wantedHash := wanted.Hash()
+	actualBase, actualHash := actual.Hash()
+	hashed := wantedHash != math.MaxUint64 && actualHash != math.MaxUint64
+	if hashed {
+		// Neither ambient nor derived state changes the kind of block, and a
+		// block with neither matches only its own state.
+		if wantedBase != actualBase {
+			return false
+		}
+		if wantedHash == actualHash {
+			return true
+		}
+		if !isAmbient && !isDeriver {
+			return false
+		}
+	}
+	if isAmbient {
 		if b, ok := ambient.WithAmbientState(actual); ok {
 			wanted = b
 		}
 	}
-	if deriver, ok := wanted.(StateDeriver); ok {
+	if isDeriver {
 		if src == nil {
 			return false
 		}
-		wanted = deriver.DeriveState(pos, src)
+		wanted = wanted.(StateDeriver).DeriveState(pos, src)
+	}
+	if hashed {
+		if base, hash := wanted.Hash(); hash != math.MaxUint64 {
+			return base == actualBase && hash == actualHash
+		}
 	}
 	wantedName, wantedProperties := wanted.EncodeBlock()
 	actualName, actualProperties := actual.EncodeBlock()
