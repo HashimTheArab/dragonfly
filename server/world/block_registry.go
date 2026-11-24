@@ -766,6 +766,13 @@ func validBlockPropertyValue(value any) bool {
 // numeric properties such as a stair's direction alone. Properties the palette
 // does not declare at all are dropped, since no registered state carries them.
 func (br *BasicBlockRegistry) ResolveBlockState(state BlockState) (Block, bool) {
+	if state.Version >= chunk.CurrentBlockVersion {
+		// A current state naming a registered state exactly has nothing to
+		// upgrade or coerce.
+		if b, ok := br.BlockByName(state.Name, state.Properties); ok {
+			return b, true
+		}
+	}
 	properties := maps.Clone(state.Properties)
 	if properties == nil {
 		properties = make(map[string]any)
