@@ -344,6 +344,12 @@ func planClick(src PlacementSource, registry world.BlockRegistry, pose Placement
 			if !ok {
 				continue
 			}
+			if !freeYaw && placementNearSample(offset, sample) {
+				// A hit a rounding off the sample clicks the sample itself:
+				// the very click a free-aim pass sends, so its prediction
+				// stands for that click.
+				offset = placementWireOffset(sample)
+			}
 			rotations, facings := planRotations(aimedRotation, freeYaw)
 			for j, rotation := range rotations[:facings] {
 				if j == 0 && freeYaw && *tried == clickFacingRead {
@@ -414,6 +420,14 @@ func placementAim(src PlacementSource, eye mgl64.Vec3, reach float64, clicked cu
 // place differently.
 func placementSameSpot(offset, sample mgl64.Vec3) bool {
 	return placementWireOffset(offset) == placementWireOffset(sample)
+}
+
+// placementNearSample reports whether an aimed hit landed on sample within
+// the rounding of the aim's float32 rotation.
+func placementNearSample(offset, sample mgl64.Vec3) bool {
+	const epsilon = 1e-4
+	d := offset.Sub(sample)
+	return math.Abs(d[0]) < epsilon && math.Abs(d[1]) < epsilon && math.Abs(d[2]) < epsilon
 }
 
 // placementWireOffset rounds a click offset to the precision the wire sends.
