@@ -274,15 +274,26 @@ func TestBlock_PlanPlacementFreeAim(t *testing.T) {
 	if _, ok := PlanPlacement(fenced, world.DefaultBlockRegistry, viewer, slab, top, Slab{Block: Planks{Wood: OakWood()}}, PlacementPlanOptions{Reach: 5, FreeAim: true, Faces: []cube.Face{cube.FaceEast}}); !ok {
 		t.Fatal("no free-aim plan for a top slab against a fence post")
 	}
-	// An aimed click a rounding above a face's centre sends a different
-	// offset than the centre itself, and a slab picks its half from it: the
-	// free-aim pass still tries the exact centre for a bottom slab.
+	// An aimed click a rounding off a face's centre sends a different offset
+	// than the centre itself, and a slab picks its half from it: both clicks
+	// are tried, so a bottom slab plans at the centre and a top slab from a
+	// hit that rounded above it, here with the upper sample out of reach.
 	stone := cube.Pos{0, 64, 0}
 	bottom := Slab{Block: Planks{Wood: OakWood()}}
-	above := PlacementPose{Position: mgl64.Vec3{1.15, 69.44 - 1.62, 0.5}, EyeHeight: 1.62}
 	lone := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{stone: Stone{}})
-	if _, ok := PlanPlacement(lone, world.DefaultBlockRegistry, above, stone.Side(cube.FaceEast), bottom, bottom, PlacementPlanOptions{Reach: 5, FreeAim: true, Faces: []cube.Face{cube.FaceEast}}); !ok {
-		t.Fatal("no free-aim plan for a bottom slab at a face's centre")
+	for _, test := range []struct {
+		eye  mgl64.Vec3
+		slab Slab
+	}{
+		{eye: mgl64.Vec3{1.15, 69.44, 0.5}, slab: bottom},
+		{eye: mgl64.Vec3{1.15, 59.55, 0.5}, slab: Slab{Block: Planks{Wood: OakWood()}, Top: true}},
+	} {
+		pose := PlacementPose{Position: test.eye.Sub(mgl64.Vec3{0, 1.62, 0}), EyeHeight: 1.62}
+		for _, freeAim := range []bool{false, true} {
+			if _, ok := PlanPlacement(lone, world.DefaultBlockRegistry, pose, stone.Side(cube.FaceEast), test.slab, bottom, PlacementPlanOptions{Reach: 5, FreeAim: freeAim, Faces: []cube.Face{cube.FaceEast}}); !ok {
+				t.Fatalf("no plan for top=%v from %v (free aim %v)", test.slab.Top, test.eye, freeAim)
+			}
+		}
 	}
 	// Free aim never reads a missing source.
 	if _, ok := PlanPlacement(nil, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, PlacementPlanOptions{Reach: 5, FreeAim: true}); ok {

@@ -344,43 +344,47 @@ func planClick(src PlacementSource, registry world.BlockRegistry, pose Placement
 			if !ok {
 				continue
 			}
-			if !freeYaw && placementNearSample(offset, sample) {
-				// A hit a rounding off the sample clicks the sample itself:
-				// the very click a free-aim pass sends, so its prediction
-				// stands for that click.
-				offset = placementWireOffset(sample)
+			candidates, count := [2]mgl64.Vec3{offset}, 1
+			if !freeYaw && placementNearSample(offset, sample) && !placementSameSpot(offset, sample) {
+				// A hit a rounding off the sample is another click on the
+				// wire, and a slab picks its half from that difference: the
+				// sample's own click, the one a free-aim pass sends, is tried
+				// too, so the memo records exactly that click.
+				candidates[1], count = placementWireOffset(sample), 2
 			}
-			rotations, facings := planRotations(aimedRotation, freeYaw)
-			for j, rotation := range rotations[:facings] {
-				if j == 0 && freeYaw && *tried == clickFacingRead {
-					// The aimed pass already predicted the aimed facing.
-					continue
-				}
-				aimed := pose
-				aimed.Rotation = rotation
-				changes, known, rotated := predictPlacementWithLimits(src, &aimed, clicked, face, offset, use, limits)
-				if !freeYaw && placementSameSpot(offset, sample) {
-					// Only a click on the very spot a free-aim pass clicks
-					// stands for it; one the model took elsewhere does not.
-					*tried = clickFacingFree
-					if rotated {
-						*tried = clickFacingRead
+			for _, offset := range candidates[:count] {
+				rotations, facings := planRotations(aimedRotation, freeYaw)
+				for j, rotation := range rotations[:facings] {
+					if j == 0 && freeYaw && *tried == clickFacingRead {
+						// The aimed pass already predicted the aimed facing.
+						continue
 					}
-				}
-				if !known || !match.changes(changes) {
-					if !rotated {
-						// Every other facing writes the same.
-						break
+					aimed := pose
+					aimed.Rotation = rotation
+					changes, known, rotated := predictPlacementWithLimits(src, &aimed, clicked, face, offset, use, limits)
+					if !freeYaw && placementSameSpot(offset, sample) {
+						// Only a click on the very spot a free-aim pass clicks
+						// stands for it; one the model took elsewhere does not.
+						*tried = clickFacingFree
+						if rotated {
+							*tried = clickFacingRead
+						}
 					}
-					continue
+					if !known || !match.changes(changes) {
+						if !rotated {
+							// Every other facing writes the same.
+							break
+						}
+						continue
+					}
+					if opts.RequireYawInvariant && rotated && !placementYawInvariant(match, aimed, clicked, face, offset, use, limits, opts.Accept) {
+						continue
+					}
+					if opts.Accept != nil && !opts.Accept(changes) {
+						continue
+					}
+					return PlacementPlan{Clicked: clicked, Face: face, Offset: offset, Rotation: rotation, Changes: changes}, true
 				}
-				if opts.RequireYawInvariant && rotated && !placementYawInvariant(match, aimed, clicked, face, offset, use, limits, opts.Accept) {
-					continue
-				}
-				if opts.Accept != nil && !opts.Accept(changes) {
-					continue
-				}
-				return PlacementPlan{Clicked: clicked, Face: face, Offset: offset, Rotation: rotation, Changes: changes}, true
 			}
 		}
 	}
