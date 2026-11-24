@@ -64,7 +64,8 @@ func PredictedBlockAt(changes []PredictedBlockChange, pos cube.Pos, layer uint8)
 // Non-block side effects such as sounds, particles and scheduled updates are
 // intentionally discarded.
 func PredictPlacement(src PlacementSource, pose *PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block) (changes []PredictedBlockChange, known bool) {
-	return predictPlacementWithLimits(src, pose, clickedPos, face, clickPos, placed, placementLimits{})
+	changes, known, _ = predictPlacementWithLimits(src, pose, clickedPos, face, clickPos, placed, placementLimits{})
+	return changes, known
 }
 
 // placementLimits are the canonical Player.PlaceBlock admission checks applied
@@ -78,11 +79,13 @@ type placementLimits struct {
 
 // predictPlacementWithLimits predicts placement and refuses the whole placement
 // when any canonical PlaceBlock call fails limits.
-func predictPlacementWithLimits(src PlacementSource, pose *PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, use any, limits placementLimits) (changes []PredictedBlockChange, known bool) {
+// rotated reports whether the placement read the user's facing, without which
+// another facing produces the same writes.
+func predictPlacementWithLimits(src PlacementSource, pose *PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, use any, limits placementLimits) (changes []PredictedBlockChange, known, rotated bool) {
 	usable, usableOK := use.(item.UsableOnBlock)
 	placed, placedOK := use.(world.Block)
 	if src == nil || !usableOK && !placedOK {
-		return nil, false
+		return nil, false, false
 	}
 
 	view := &placementView{
@@ -95,7 +98,7 @@ func predictPlacementWithLimits(src PlacementSource, pose *PlacementPose, clicke
 			if _, ok := recovered.(placementUserUnsupported); !ok {
 				panic(recovered)
 			}
-			changes, known = view.changes, false
+			changes, known, rotated = view.changes, false, view.rotated
 		}
 	}()
 	complete := world.RunBlockTransaction(view, func(tx *world.Tx) {
@@ -118,9 +121,9 @@ func predictPlacementWithLimits(src PlacementSource, pose *PlacementPose, clicke
 	if view.refused {
 		// A plan must not publish only part of a multi-block placement when a
 		// later canonical PlaceBlock call is refused.
-		return nil, complete && view.known
+		return nil, complete && view.known, view.rotated
 	}
-	return view.changes, complete && view.known
+	return view.changes, complete && view.known, view.rotated
 }
 
 type placementView struct {
@@ -129,6 +132,8 @@ type placementView struct {
 	known   bool
 	limits  placementLimits
 	refused bool
+	// rotated records that the placement read the user's facing.
+	rotated bool
 }
 
 func (v *placementView) Range() cube.Range          { return v.src.Range() }
@@ -304,6 +309,7 @@ func (u *placementUser) Position() mgl64.Vec3 {
 }
 
 func (u *placementUser) Rotation() cube.Rotation {
+	u.view.rotated = true
 	if u.pose == nil {
 		u.view.known = false
 		return cube.Rotation{}

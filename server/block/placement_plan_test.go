@@ -236,6 +236,159 @@ func TestBlock_PlanPlacementDerivesPlacedFenceConnections(t *testing.T) {
 	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: connected})
 }
 
+func TestBlock_PlanPlacementFreeAim(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	// A wall top above the eye: its top face cannot be seen from the ground.
+	wall := cube.Pos{0, 66, 0}
+	target := wall.Side(cube.FaceUp)
+	user := PlacementPose{Position: mgl64.Vec3{0.5, 64, 2.5}, EyeHeight: 1.62}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{wall: Stone{}, wall.Side(cube.FaceDown): Stone{}, wall.Side(cube.FaceDown).Side(cube.FaceDown): Stone{}})
+	opts := PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceUp}}
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts); ok {
+		t.Fatal("planned a click on a face the eye cannot see")
+	}
+	opts.FreeAim = true
+	plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, opts)
+	if !ok || plan.Clicked != wall || plan.Face != cube.FaceUp {
+		t.Fatalf("blind plan = %+v, %v; want the wall's top face", plan, ok)
+	}
+	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: Stone{}})
+	// A stair facing away from the click still plans, facing the way it needs.
+	for _, facing := range []cube.Direction{cube.North, cube.East, cube.South, cube.West} {
+		plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Stairs{Block: Stone{}, Facing: facing}, Stairs{Block: Stone{}}, opts)
+		if !ok || plan.Rotation.Direction() != facing {
+			t.Fatalf("free-aim %v stair plan = %+v, %v", facing, plan.Rotation, ok)
+		}
+	}
+	// A block with nothing beside it still has nothing to click: servers refuse clicks on air.
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, cube.Pos{3, 67, 0}, Stone{}, Stone{}, PlacementPlanOptions{Reach: 5, FreeAim: true}); ok {
+		t.Fatal("planned a block with nothing to click")
+	} // An aimed click may land elsewhere on a support's model than the sample
+	// it aimed at, such as a fence's narrow post: a top slab still plans from
+	// the sample the free-aim pass clicks exactly.
+	post := cube.Pos{0, 64, 0}
+	slab := post.Side(cube.FaceEast)
+	fenced := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{post: WoodFence{Wood: OakWood()}})
+	viewer := PlacementPose{Position: mgl64.Vec3{2.5, 64.5, 0.5}, EyeHeight: 1.62}
+	top := Slab{Block: Planks{Wood: OakWood()}, Top: true}
+	if _, ok := PlanPlacement(fenced, world.DefaultBlockRegistry, viewer, slab, top, Slab{Block: Planks{Wood: OakWood()}}, PlacementPlanOptions{Reach: 5, FreeAim: true, Faces: []cube.Face{cube.FaceEast}}); !ok {
+		t.Fatal("no free-aim plan for a top slab against a fence post")
+	}
+	// An aimed click a rounding off a face's centre sends a different offset
+	// than the centre itself, and a slab picks its half from it: both clicks
+	// are tried, so a bottom slab plans at the centre and a top slab from a
+	// hit that rounded above it, here with the upper sample out of reach.
+	stone := cube.Pos{0, 64, 0}
+	bottom := Slab{Block: Planks{Wood: OakWood()}}
+	lone := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{stone: Stone{}})
+	for _, test := range []struct {
+		eye  mgl64.Vec3
+		slab Slab
+	}{
+		{eye: mgl64.Vec3{1.15, 69.44, 0.5}, slab: bottom},
+		{eye: mgl64.Vec3{1.15, 59.55, 0.5}, slab: Slab{Block: Planks{Wood: OakWood()}, Top: true}},
+	} {
+		pose := PlacementPose{Position: test.eye.Sub(mgl64.Vec3{0, 1.62, 0}), EyeHeight: 1.62}
+		for _, freeAim := range []bool{false, true} {
+			if _, ok := PlanPlacement(lone, world.DefaultBlockRegistry, pose, stone.Side(cube.FaceEast), test.slab, bottom, PlacementPlanOptions{Reach: 5, FreeAim: freeAim, Faces: []cube.Face{cube.FaceEast}}); !ok {
+				t.Fatalf("no plan for top=%v from %v (free aim %v)", test.slab.Top, test.eye, freeAim)
+			}
+		}
+	}
+	// Free aim never reads a missing source.
+	if _, ok := PlanPlacement(nil, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, PlacementPlanOptions{Reach: 5, FreeAim: true}); ok {
+		t.Fatal("planned without a source")
+	}
+}
+
+func TestBlock_PlanUsePlacementEmptiesABucket(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 64, 2.5}, EyeHeight: 1.62}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}})
+	water := Water{Still: true, Depth: 8}
+	bucket := item.Bucket{Content: item.LiquidBucketContent(water)}
+	plan, ok := PlanUsePlacement(src, world.DefaultBlockRegistry, user, target, water, bucket, PlacementPlanOptions{Reach: 5})
+	if !ok || plan.Clicked != target.Side(cube.FaceDown) {
+		t.Fatalf("bucket plan = %+v, %v; want a click on the block below", plan, ok)
+	}
+	// The server's bucket leaves a flowing source, which the world settles.
+	if len(plan.Changes) != 1 || plan.Changes[0].Pos != target || !world.MatchesBuiltState(world.DefaultBlockRegistry, src, target, water, plan.Changes[0].Block) {
+		t.Fatalf("bucket writes %+v, want water at the target", plan.Changes)
+	}
+	if _, ok := PlanUsePlacement(src, world.DefaultBlockRegistry, user, target, Lava{Still: true, Depth: 8}, bucket, PlacementPlanOptions{Reach: 5}); ok {
+		t.Fatal("a water bucket planned lava")
+	}
+	nether := newPlacementTestSource(world.Nether, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Netherrack{}})
+	if _, ok := PlanUsePlacement(nether, world.DefaultBlockRegistry, user, target, water, bucket, PlacementPlanOptions{Reach: 5}); ok {
+		t.Fatal("planned water in the Nether, where it evaporates")
+	}
+}
+
+func TestBlock_PlanScaffoldStartsASidewaysRow(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 65, 0}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 65, 2.5}, EyeHeight: 1.62}
+	ground := map[cube.Pos]world.Block{}
+	for x := -3; x <= 3; x++ {
+		for z := -3; z <= 3; z++ {
+			ground[cube.Pos{x, 64, z}] = Stone{}
+		}
+	}
+	src := newPlacementTestSource(world.Overworld, ground)
+	log := Log{Wood: OakWood(), Axis: cube.Z}
+	// The row along Z is in the build; the cells beside it are not.
+	row := func(pos cube.Pos) (world.Block, bool) { return log, pos.X() == 0 && pos.Y() == 65 }
+	opts := PlacementPlanOptions{Reach: 5, FreeAim: true, Expected: row}
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, opts); ok {
+		t.Fatal("planned a sideways log with nothing along its axis")
+	}
+	if _, _, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, nil, opts); ok {
+		t.Fatal("a scaffold beside the log cannot set its axis, and along it lies the build")
+	}
+	// Outside the build the row's ends take a scaffold.
+	end := func(pos cube.Pos) (world.Block, bool) { return log, pos == target }
+	opts.Expected = end
+	cell, plan, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, nil, opts)
+	if !ok || cell.X() != 0 || cell.Y() != 65 || plan.Changes[0].Pos != cell {
+		t.Fatalf("scaffold = %v, %+v, %v; want one along the log's axis", cell, plan, ok)
+	}
+	if _, _, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, func(cube.Pos) bool { return false }, opts); ok {
+		t.Fatal("placed a scaffold where none is allowed")
+	}
+	// A scaffold that falls would leave before the click it supports; a stable
+	// one in the same cell plans.
+	hanging := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}, {1, 65, 1}: Stone{}})
+	only := func(cell cube.Pos) bool { return cell == cube.Pos{0, 65, 1} }
+	if cell, _, ok := PlanScaffold(hanging, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Sand{}, only, opts); ok {
+		t.Fatalf("sand scaffold at %v over air", cell)
+	}
+	if _, _, ok := PlanScaffold(hanging, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, only, opts); !ok {
+		t.Fatal("no dirt scaffold in the same cell")
+	}
+	// Sand rests on a bottom slab, which it cannot replace.
+	slabbed := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}, {1, 65, 1}: Stone{}, {0, 64, 1}: Slab{Block: Stone{}}})
+	if _, _, ok := PlanScaffold(slabbed, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Sand{}, only, opts); !ok {
+		t.Fatal("no sand scaffold resting on a slab")
+	}
+	// A block whose neighbour update rewrites it once the scaffold goes still
+	// stands while the result matches, such as a fence dropping its arm.
+	fence := WoodFence{Wood: OakWood()}
+	corner := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{{1, 64, 0}: Stone{}})
+	opts.Expected = func(pos cube.Pos) (world.Block, bool) { return fence, pos == target }
+	if cell, _, ok := PlanScaffold(corner, world.DefaultBlockRegistry, user, target, fence, fence, Dirt{}, func(cell cube.Pos) bool { return cell == cube.Pos{1, 65, 0} }, opts); !ok || cell != (cube.Pos{1, 65, 0}) {
+		t.Fatalf("fence scaffold = %v, %v; want one on the stone beside it", cell, ok)
+	}
+	// A block a scaffold holds up falls or breaks once it is removed.
+	above := target.Side(cube.FaceUp)
+	for _, held := range []world.Block{Sand{}, Torch{Facing: cube.FaceDown, Type: NormalFire()}} {
+		opts.Expected = func(pos cube.Pos) (world.Block, bool) { return held, pos == above }
+		if cell, _, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, above, held, held, Dirt{}, nil, opts); ok {
+			t.Fatalf("scaffold at %v holds up %T", cell, held)
+		}
+	}
+}
+
 func TestBlock_PlanPlacementActorRules(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}

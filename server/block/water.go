@@ -209,3 +209,14 @@ func allWater() (b []world.Block) {
 	f(false, true)
 	return
 }
+
+// WithAmbientState ...
+func (w Water) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(Water)
+	if !ok {
+		return w, false
+	}
+	// A source turns between still and flowing on its own as it is ticked.
+	w.Still = other.Still
+	return w, true
+}

@@ -109,6 +109,27 @@ func TestResolveBlockState_PrefersTheDeclaredState(t *testing.T) {
 	}
 }
 
+// TestResolveBlockState_NamesMatterForAnExactState resolves an undeclared
+// property whose value equals a declared state's. The palette's state hashes
+// leave out property names, so the value alone must not pick that state.
+func TestResolveBlockState_NamesMatterForAnExactState(t *testing.T) {
+	registry := NewBlockRegistry()
+	registry.RegisterBlockState(BlockState{Name: "dragonfly:axis_state", Properties: map[string]any{"axis": "y"}})
+	registry.RegisterBlockState(BlockState{Name: "dragonfly:axis_state", Properties: map[string]any{"axis": "x"}})
+	registry.Finalize()
+
+	block, ok := ResolveBlockState(registry, BlockState{
+		Name: "dragonfly:axis_state", Version: chunk.CurrentBlockVersion,
+		Properties: map[string]any{"other": "x"},
+	})
+	if !ok {
+		t.Fatal("ResolveBlockState did not resolve a state with one unknown property")
+	}
+	if _, properties := block.EncodeBlock(); properties["axis"] != "y" {
+		t.Fatalf("resolved axis = %#v, want the default \"y\"", properties["axis"])
+	}
+}
+
 // TestResolveBlockState_UpgradesRealPaletteState verifies that resolution uses
 // the same versioned upgrader and BDS-derived palette as Dragonfly world loading.
 func TestResolveBlockState_UpgradesRealPaletteState(t *testing.T) {
