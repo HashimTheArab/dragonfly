@@ -8,9 +8,10 @@ import (
 
 // TillsInto reports whether using a hoe on from at pos in src makes wanted,
 // compared through world.MatchesBuiltState, such as dirt that becomes farmland.
+// The block above pos must leave room for tilling, as the hoe requires.
 func TillsInto(registry world.BlockRegistry, src world.BlockSource, pos cube.Pos, from, wanted world.Block) bool {
 	tillable, ok := from.(item.Tillable)
-	if !ok || wanted == nil {
+	if !ok || wanted == nil || src == nil || !item.CanTillAt(src, pos) {
 		return false
 	}
 	result, ok := tillable.Till()
