@@ -355,6 +355,11 @@ func TestBlock_PlanScaffoldStartsASidewaysRow(t *testing.T) {
 	if _, _, ok := PlanScaffold(hanging, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, only, opts); !ok {
 		t.Fatal("no dirt scaffold in the same cell")
 	}
+	// Sand rests on a bottom slab, which it cannot replace.
+	slabbed := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}, {1, 65, 1}: Stone{}, {0, 64, 1}: Slab{Block: Stone{}}})
+	if _, _, ok := PlanScaffold(slabbed, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Sand{}, only, opts); !ok {
+		t.Fatal("no sand scaffold resting on a slab")
+	}
 	// A block whose neighbour update rewrites it once the scaffold goes still
 	// stands while the result matches, such as a fence dropping its arm.
 	fence := WoodFence{Wood: OakWood()}

@@ -101,12 +101,9 @@ func PlanScaffold(src PlacementSource, registry world.BlockRegistry, pose Placem
 		if current, loaded := src.BlockLoaded(cell); !loaded || current == nil || !world.CanReplace(current, scaffold) {
 			continue
 		}
-		if IsGravityAffected(scaffold) {
+		if scaffoldFalls(src, cell, scaffold) {
 			// A falling scaffold could leave before the click it supports.
-			below := cell.Side(cube.FaceDown)
-			if ground, loaded := src.BlockLoaded(below); !loaded || ground == nil || !ground.Model().FaceSolid(below, cube.FaceUp, src) {
-				continue
-			}
+			continue
 		}
 		if opts.Expected != nil {
 			if _, inside := opts.Expected(cell); inside {
@@ -127,6 +124,17 @@ func PlanScaffold(src PlacementSource, registry world.BlockRegistry, pose Placem
 		}
 	}
 	return cube.Pos{}, PlacementPlan{}, false
+}
+
+// scaffoldFalls reports whether scaffold would fall from cell, by the rule a
+// falling block uses, or whether the terrain below is not known.
+func scaffoldFalls(src PlacementSource, cell cube.Pos, scaffold world.Block) (falls bool) {
+	if !IsGravityAffected(scaffold) {
+		return false
+	}
+	view := &placementView{src: src, known: true}
+	world.RunBlockTransaction(view, func(tx *world.Tx) { falls = replaceableWith(tx, cell.Side(cube.FaceDown), scaffold) })
+	return falls || !view.known
 }
 
 // standsWithout reports whether the block changes leave at target still is
