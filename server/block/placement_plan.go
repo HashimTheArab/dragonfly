@@ -215,14 +215,13 @@ func (m placementMatch) changes(changes []PredictedBlockChange) bool {
 		if change.Layer != 0 {
 			continue
 		}
-		actualID, actualKnown := placementRuntimeID(m.registry, change.Block)
-		if !actualKnown {
+		if _, known := placementRuntimeID(m.registry, change.Block); !known {
 			return false
 		}
 		if change.Pos == m.target {
 			// Expected may cover neighbouring cells, but it cannot relax the
 			// requested target state.
-			if !world.MatchesDerivedState(m.registry, after, change.Pos, m.required, actualID) {
+			if !world.MatchesDerivedState(m.registry, after, change.Pos, m.required, change.Block) {
 				return false
 			}
 			matched = true
@@ -234,7 +233,7 @@ func (m placementMatch) changes(changes []PredictedBlockChange) bool {
 			continue
 		}
 		wanted, found := m.expected(change.Pos)
-		if !found || wanted == nil || !world.MatchesDerivedState(m.registry, after, change.Pos, wanted, actualID) {
+		if !found || wanted == nil || !world.MatchesDerivedState(m.registry, after, change.Pos, wanted, change.Block) {
 			return false
 		}
 	}
