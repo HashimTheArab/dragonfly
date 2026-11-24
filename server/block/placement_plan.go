@@ -5,6 +5,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/block/cube/trace"
+	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
 )
@@ -42,36 +43,19 @@ type PlacementPlanOptions struct {
 // PlanPlacement finds a support click that places required at target using
 // material when the player at pose turns to face it. Placement is predicted with
 // that facing, so directional states match what the server receives. Every
-// primary write must match Expected and occupy known terrain. State a block
-// derives from its neighbours, such as a stair's corner, is compared as the
-// wanted block derives it in the terrain the click leaves: the click cannot
-// choose it, and it changes again as the neighbours do. Writes may merge
+// primary write must match Expected and occupy known terrain, compared through
+// world.MatchesBuiltState against the terrain the click leaves: the click
+// chooses neither a block's derived state, such as a stair's corner, nor its
+// ambient state, such as a crop's growth. Writes may merge
 // into or update existing blocks, such as completing a double slab, when the
 // block's own placement behaviour does so. Reach is checked from the eye to the
 // clicked block's centre and to each placed cell's centre, and actor obstruction
 // at each canonical PlaceBlock call, preserving the block's
 // item.UseContext.IgnoreBBox behaviour.
 func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required, material world.Block, opts PlacementPlanOptions) (PlacementPlan, bool) {
-	if src == nil || registry == nil || required == nil || material == nil || opts.Reach <= 0 || math.IsInf(opts.Reach, 0) || math.IsNaN(opts.Reach) {
+	if material == nil {
 		return PlacementPlan{}, false
 	}
-	if target.OutOfBounds(src.Range()) {
-		return PlacementPlan{}, false
-	}
-	requiredID, ok := placementRuntimeID(registry, required)
-	if !ok {
-		return PlacementPlan{}, false
-	}
-	current, loaded := src.BlockLoaded(target)
-	if !loaded || current == nil {
-		return PlacementPlan{}, false
-	}
-	if currentID, ok := placementRuntimeID(registry, current); ok && currentID == requiredID {
-		return PlacementPlan{}, false
-	}
-	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
-	limits := placementLimits{reach: opts.Reach, actors: opts.Actors}
-	match := placementMatch{src: src, registry: registry, target: target, required: required, expected: opts.Expected}
 	faces := opts.Faces
 	if faces == nil {
 		faces = make([]cube.Face, 0, len(cube.Faces()))
@@ -79,11 +63,54 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose Place
 			faces = append(faces, side.Opposite())
 		}
 	}
+	return planClick(src, registry, pose, target, required, material, faces, opts, func(face cube.Face) cube.Pos { return target.Side(face.Opposite()) })
+}
+
+// PlanItemUse finds a click on target itself that turns it into required when
+// the player at pose turns to face it and uses used on it, such as a hoe
+// tilling dirt. It applies PlanPlacement's reach, visibility, terrain and
+// matching rules. opts.Faces limits the faces of target that may be clicked;
+// nil tries the top face first. Only a predictable use can be planned.
+func PlanItemUse(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required world.Block, used item.PlannableUse, opts PlacementPlanOptions) (PlacementPlan, bool) {
+	if used == nil {
+		return PlacementPlan{}, false
+	}
+	faces := opts.Faces
+	if faces == nil {
+		faces = []cube.Face{cube.FaceUp, cube.FaceNorth, cube.FaceSouth, cube.FaceWest, cube.FaceEast, cube.FaceDown}
+	}
+	return planClick(src, registry, pose, target, required, used, faces, opts, func(cube.Face) cube.Pos { return target })
+}
+
+// planClick searches faces for a reachable, visible click on the block
+// clicked returns for each face, predicting what using use there writes.
+func planClick(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required world.Block, use any, faces []cube.Face, opts PlacementPlanOptions, clickedFor func(cube.Face) cube.Pos) (PlacementPlan, bool) {
+	if src == nil || registry == nil || required == nil || opts.Reach <= 0 || math.IsInf(opts.Reach, 0) || math.IsNaN(opts.Reach) {
+		return PlacementPlan{}, false
+	}
+	if target.OutOfBounds(src.Range()) {
+		return PlacementPlan{}, false
+	}
+	if _, ok := placementRuntimeID(registry, required); !ok {
+		return PlacementPlan{}, false
+	}
+	current, loaded := src.BlockLoaded(target)
+	if !loaded || current == nil {
+		return PlacementPlan{}, false
+	}
+	// A target that already counts as built under the rule its writes are
+	// matched by needs no click.
+	if world.MatchesBuiltState(registry, src, target, required, current) {
+		return PlacementPlan{}, false
+	}
+	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
+	limits := placementLimits{reach: opts.Reach, actors: opts.Actors}
+	match := placementMatch{src: src, registry: registry, target: target, required: required, expected: opts.Expected}
 	for _, face := range faces {
 		if face < cube.FaceDown || face > cube.FaceEast {
 			continue
 		}
-		clicked := target.Side(face.Opposite())
+		clicked := clickedFor(face)
 		if clicked.OutOfBounds(src.Range()) {
 			continue
 		}
@@ -98,11 +125,11 @@ func PlanPlacement(src PlacementSource, registry world.BlockRegistry, pose Place
 			}
 			aimed := pose
 			aimed.Rotation = rotation
-			changes, known := predictPlacementWithLimits(src, &aimed, clicked, face, offset, material, limits)
+			changes, known := predictPlacementWithLimits(src, &aimed, clicked, face, offset, use, limits)
 			if !known || !match.changes(changes) {
 				continue
 			}
-			if opts.RequireYawInvariant && !placementYawInvariant(match, aimed, clicked, face, offset, material, limits, opts.Accept) {
+			if opts.RequireYawInvariant && !placementYawInvariant(match, aimed, clicked, face, offset, use, limits, opts.Accept) {
 				continue
 			}
 			if opts.Accept != nil && !opts.Accept(changes) {
@@ -221,7 +248,7 @@ func (m placementMatch) changes(changes []PredictedBlockChange) bool {
 		if change.Pos == m.target {
 			// Expected may cover neighbouring cells, but it cannot relax the
 			// requested target state.
-			if !world.MatchesDerivedState(m.registry, after, change.Pos, m.required, change.Block) {
+			if !world.MatchesBuiltState(m.registry, after, change.Pos, m.required, change.Block) {
 				return false
 			}
 			matched = true
@@ -233,7 +260,7 @@ func (m placementMatch) changes(changes []PredictedBlockChange) bool {
 			continue
 		}
 		wanted, found := m.expected(change.Pos)
-		if !found || wanted == nil || !world.MatchesDerivedState(m.registry, after, change.Pos, wanted, change.Block) {
+		if !found || wanted == nil || !world.MatchesBuiltState(m.registry, after, change.Pos, wanted, change.Block) {
 			return false
 		}
 	}
@@ -242,11 +269,11 @@ func (m placementMatch) changes(changes []PredictedBlockChange) bool {
 }
 
 // placementYawInvariant validates the requested writes at every quarter-turn.
-func placementYawInvariant(match placementMatch, pose PlacementPose, clicked cube.Pos, face cube.Face, offset mgl64.Vec3, material world.Block, limits placementLimits, accept func([]PredictedBlockChange) bool) bool {
+func placementYawInvariant(match placementMatch, pose PlacementPose, clicked cube.Pos, face cube.Face, offset mgl64.Vec3, use any, limits placementLimits, accept func([]PredictedBlockChange) bool) bool {
 	for quarterTurn := 1; quarterTurn < 4; quarterTurn++ {
 		turned := pose
 		turned.Rotation[0] += float64(quarterTurn * 90)
-		changes, known := predictPlacementWithLimits(match.src, &turned, clicked, face, offset, material, limits)
+		changes, known := predictPlacementWithLimits(match.src, &turned, clicked, face, offset, use, limits)
 		if !known || !match.changes(changes) || accept != nil && !accept(changes) {
 			return false
 		}

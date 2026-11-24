@@ -14,16 +14,18 @@ type Hoe struct {
 	Tier ToolTier
 }
 
+// PlannableUse marks tilling as predictable: the same block always tills the same way.
+func (Hoe) PlannableUse() {}
+
 // UseOnBlock will turn a dirt or grass block into a farmland if the necessary properties are met.
 func (h Hoe) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx, _ User, ctx *UseContext) bool {
-	if b, ok := tx.Block(pos).(tillable); ok {
+	if b, ok := tx.Block(pos).(Tillable); ok {
 		if res, ok := b.Till(); ok {
 			if face == cube.FaceDown {
 				// Tilled land isn't created when the bottom face is clicked.
 				return false
 			}
-			if tx.Block(pos.Side(cube.FaceUp)) != air() {
-				// Tilled land can only be created if air is above the grass block.
+			if !CanTillAt(tx, pos) {
 				return false
 			}
 			tx.SetBlock(pos, res, nil)
@@ -35,8 +37,14 @@ func (h Hoe) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx
 	return false
 }
 
-// tillable represents a block that can be tilled by using a hoe on it.
-type tillable interface {
+// CanTillAt reports whether a block at pos in src has room to be tilled:
+// tilled land can only be created with air above it.
+func CanTillAt(src world.BlockSource, pos cube.Pos) bool {
+	return src.Block(pos.Side(cube.FaceUp)) == air()
+}
+
+// Tillable represents a block that can be tilled by using a hoe on it.
+type Tillable interface {
 	// Till returns a block that results from tilling it. If tilling it does not have a result, the bool returned
 	// is false.
 	Till() (world.Block, bool)

@@ -82,3 +82,13 @@ func allWheat() (wheat []world.Block) {
 	}
 	return
 }
+
+// WithAmbientState ...
+func (s WheatSeeds) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(WheatSeeds)
+	if !ok {
+		return s, false
+	}
+	s.Growth = other.Growth
+	return s, true
+}

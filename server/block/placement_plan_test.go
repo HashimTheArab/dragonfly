@@ -146,6 +146,78 @@ func TestBlock_PlanPlacementDerivesNeighbourState(t *testing.T) {
 	}
 }
 
+func TestBlock_PlanItemUseTillsWithAHoe(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 64, 0}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 64, 2.5}, EyeHeight: 1.62}
+	opts := PlacementPlanOptions{Reach: 5}
+	hoe := item.Hoe{Tier: item.ToolTierIron}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target: Dirt{}})
+	// Moisture comes from nearby water after tilling, so a wanted moisture is not compared.
+	plan, ok := PlanItemUse(src, world.DefaultBlockRegistry, user, target, Farmland{Hydration: 7}, hoe, opts)
+	if !ok || plan.Clicked != target || plan.Face != cube.FaceUp {
+		t.Fatalf("hoe plan = %+v, %v; want a click on the dirt's top face", plan, ok)
+	}
+	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: Farmland{}})
+	if !TillsInto(world.DefaultBlockRegistry, src, target, Dirt{}, Farmland{Hydration: 7}) || TillsInto(world.DefaultBlockRegistry, src, target, Stone{}, Farmland{}) {
+		t.Fatal("TillsInto disagrees with the hoe")
+	}
+	if _, ok := PlanItemUse(src, world.DefaultBlockRegistry, user, target, Dirt{Coarse: true}, hoe, opts); ok {
+		t.Fatal("planned a hoe use for a block tilling cannot make")
+	}
+	covered := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target: Dirt{}, target.Side(cube.FaceUp): Stone{}})
+	if _, ok := PlanItemUse(covered, world.DefaultBlockRegistry, user, target, Farmland{}, hoe, opts); ok || TillsInto(world.DefaultBlockRegistry, covered, target, Dirt{}, Farmland{}) {
+		t.Fatal("tilled dirt with a block above it")
+	}
+}
+
+// State a block changes on its own, such as a plant's age or a wire's power,
+// never decides whether it was built as wanted; what a click chooses does.
+func TestBlock_MatchesBuiltStateIgnoresOnlyAmbientState(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	src := newPlacementTestSource(world.Overworld, nil)
+	pos := cube.Pos{0, 64, 0}
+	for _, test := range []struct {
+		name           string
+		wanted, actual world.Block
+		match          bool
+	}{
+		{name: "kelp age", wanted: Kelp{Age: 0}, actual: Kelp{Age: 17}, match: true},
+		{name: "cocoa age", wanted: CocoaBean{Facing: cube.North}, actual: CocoaBean{Facing: cube.North, Age: 2}, match: true},
+		{name: "cocoa facing", wanted: CocoaBean{Facing: cube.North}, actual: CocoaBean{Facing: cube.South, Age: 2}},
+		{name: "berry bush age", wanted: SweetBerryBush{}, actual: SweetBerryBush{Age: 3}, match: true},
+		{name: "wire power", wanted: RedstoneWire{Power: 15}, actual: RedstoneWire{}.DeriveState(pos, src), match: true},
+		{name: "other block", wanted: Kelp{}, actual: SweetBerryBush{}},
+		{name: "nil wanted", actual: Kelp{}},
+		{name: "nil actual", wanted: Kelp{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := world.MatchesBuiltState(world.DefaultBlockRegistry, src, pos, test.wanted, test.actual); got != test.match {
+				t.Fatalf("MatchesBuiltState = %v, want %v", got, test.match)
+			}
+		})
+	}
+	if TillsInto(world.DefaultBlockRegistry, src, pos, Dirt{}, nil) {
+		t.Fatal("dirt tills into nothing")
+	}
+}
+
+func TestBlock_PlanPlacementLeavesGrowthToTheWorld(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	target := cube.Pos{0, 65, 0}
+	user := PlacementPose{Position: mgl64.Vec3{2.5, 64, 2.5}, EyeHeight: 1.62}
+	src := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Farmland{}})
+	opts := PlacementPlanOptions{Reach: 5, Faces: []cube.Face{cube.FaceUp}}
+	plan, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, WheatSeeds{crop: crop{Growth: 7}}, WheatSeeds{}, opts)
+	if !ok {
+		t.Fatal("no seed plan for a grown wheat the crop grows into")
+	}
+	assertPlacementChanges(t, plan.Changes, PredictedBlockChange{Pos: target, Block: WheatSeeds{}})
+	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, target, Carrot{crop: crop{Growth: 7}}, WheatSeeds{}, opts); ok {
+		t.Fatal("growth relaxed the kind of crop")
+	}
+}
+
 func TestBlock_PlanPlacementDerivesPlacedFenceConnections(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize()
 	target := cube.Pos{0, 64, 0}

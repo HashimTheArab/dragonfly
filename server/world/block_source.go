@@ -28,40 +28,57 @@ type StateDeriver interface {
 	DeriveState(pos cube.Pos, src BlockSource) Block
 }
 
-// MatchesDerivedState reports whether actual, built or predicted at pos, is
-// wanted, either exactly or once wanted derives its state against src.
-// Derived state, such as a stair's corner, follows the blocks around pos
-// rather than wanted, so a caller comparing a built or predicted block with a
-// wanted one compares it here. An exact match needs no terrain: actual is the
-// state asked for. Blocks are compared by hash, and only encoded when one has
-// none.
-func MatchesDerivedState(registry BlockRegistry, src BlockSource, pos cube.Pos, wanted, actual Block) bool {
+// AmbientStater is implemented by Blocks with state that changes on its own
+// after they are placed, such as the growth of a crop or the moisture of
+// farmland, rather than through how they were placed.
+type AmbientStater interface {
+	Block
+	// WithAmbientState returns the Block with the ambient state of other copied
+	// in. It returns false when other is a different kind of block.
+	WithAmbientState(other Block) (Block, bool)
+}
+
+// MatchesBuiltState reports whether actual, built at pos in src, is wanted.
+// Neither the state wanted derives from its neighbours, such as a stair's
+// corner, nor its ambient state, such as a crop's growth, is compared as
+// wanted holds it: placing a block chooses neither. actual matches when it is
+// wanted's own state, which needs no terrain, or wanted once it takes
+// actual's ambient state and derives against src.
+func MatchesBuiltState(registry BlockRegistry, src BlockSource, pos cube.Pos, wanted, actual Block) bool {
 	if registry == nil || wanted == nil || actual == nil {
 		return false
 	}
-	deriver, derives := wanted.(StateDeriver)
+	ambient, isAmbient := wanted.(AmbientStater)
+	_, isDeriver := wanted.(StateDeriver)
 	wantedBase, wantedHash := wanted.Hash()
 	actualBase, actualHash := actual.Hash()
 	hashed := wantedHash != math.MaxUint64 && actualHash != math.MaxUint64
 	if hashed {
-		// Deriving never changes the kind of block, and a block that derives
-		// nothing matches only its own state.
+		// Neither ambient nor derived state changes the kind of block, and a
+		// block with neither matches only its own state.
 		if wantedBase != actualBase {
 			return false
 		}
 		if wantedHash == actualHash {
 			return true
 		}
-		if !derives {
+		if !isAmbient && !isDeriver {
 			return false
 		}
 	}
-	if derives {
+	if isAmbient {
+		if b, ok := ambient.WithAmbientState(actual); ok {
+			wanted = b
+		}
+	}
+	if isDeriver {
 		if src == nil {
 			return false
 		}
-		wanted = deriver.DeriveState(pos, src)
-		if base, hash := wanted.Hash(); hashed && hash != math.MaxUint64 {
+		wanted = wanted.(StateDeriver).DeriveState(pos, src)
+	}
+	if hashed {
+		if base, hash := wanted.Hash(); hash != math.MaxUint64 {
 			return base == actualBase && hash == actualHash
 		}
 	}

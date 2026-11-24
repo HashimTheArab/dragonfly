@@ -173,3 +173,13 @@ func supportsSweetBerryBush(b world.Block) bool {
 		return false
 	}
 }
+
+// WithAmbientState ...
+func (s SweetBerryBush) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(SweetBerryBush)
+	if !ok {
+		return s, false
+	}
+	s.Age = other.Age
+	return s, true
+}

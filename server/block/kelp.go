@@ -158,3 +158,13 @@ func kelpSupported(pos cube.Pos, tx *world.Tx) bool {
 	}
 	return b.Model().FaceSolid(below, cube.FaceUp, tx)
 }
+
+// WithAmbientState ...
+func (k Kelp) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(Kelp)
+	if !ok {
+		return k, false
+	}
+	k.Age = other.Age
+	return k, true
+}

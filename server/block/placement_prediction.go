@@ -78,8 +78,10 @@ type placementLimits struct {
 
 // predictPlacementWithLimits predicts placement and refuses the whole placement
 // when any canonical PlaceBlock call fails limits.
-func predictPlacementWithLimits(src PlacementSource, pose *PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, placed world.Block, limits placementLimits) (changes []PredictedBlockChange, known bool) {
-	if src == nil || placed == nil {
+func predictPlacementWithLimits(src PlacementSource, pose *PlacementPose, clickedPos cube.Pos, face cube.Face, clickPos mgl64.Vec3, use any, limits placementLimits) (changes []PredictedBlockChange, known bool) {
+	usable, usableOK := use.(item.UsableOnBlock)
+	placed, placedOK := use.(world.Block)
+	if src == nil || !usableOK && !placedOK {
 		return nil, false
 	}
 
@@ -98,7 +100,7 @@ func predictPlacementWithLimits(src PlacementSource, pose *PlacementPose, clicke
 	}()
 	complete := world.RunBlockTransaction(view, func(tx *world.Tx) {
 		u, ctx := &placementUser{pose: pose, tx: tx, view: view}, &item.UseContext{}
-		if usable, ok := placed.(item.UsableOnBlock); ok {
+		if usableOK {
 			usable.UseOnBlock(clickedPos, face, clickPos, tx, u, ctx)
 			return
 		}

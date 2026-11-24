@@ -124,3 +124,13 @@ func allSugarCane() (b []world.Block) {
 	}
 	return
 }
+
+// WithAmbientState ...
+func (c SugarCane) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(SugarCane)
+	if !ok {
+		return c, false
+	}
+	c.Age = other.Age
+	return c, true
+}

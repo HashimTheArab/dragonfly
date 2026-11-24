@@ -444,3 +444,13 @@ func redstoneWireFaceHorizontal(face cube.Face) bool {
 		return false
 	}
 }
+
+// WithAmbientState ...
+func (r RedstoneWire) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(RedstoneWire)
+	if !ok {
+		return r, false
+	}
+	r.Power = other.Power
+	return r, true
+}

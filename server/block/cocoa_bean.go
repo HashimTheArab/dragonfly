@@ -114,3 +114,13 @@ func allCocoaBeans() (cocoa []world.Block) {
 	}
 	return
 }
+
+// WithAmbientState ...
+func (c CocoaBean) WithAmbientState(b world.Block) (world.Block, bool) {
+	other, ok := b.(CocoaBean)
+	if !ok {
+		return c, false
+	}
+	c.Age = other.Age
+	return c, true
+}
