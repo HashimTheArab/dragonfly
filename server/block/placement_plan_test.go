@@ -274,6 +274,20 @@ func TestBlock_PlanPlacementFreeAim(t *testing.T) {
 	if _, ok := PlanPlacement(fenced, world.DefaultBlockRegistry, viewer, slab, top, Slab{Block: Planks{Wood: OakWood()}}, PlacementPlanOptions{Reach: 5, FreeAim: true, Faces: []cube.Face{cube.FaceEast}}); !ok {
 		t.Fatal("no free-aim plan for a top slab against a fence post")
 	}
+	// An aimed click a rounding above a face's centre sends a different
+	// offset than the centre itself, and a slab picks its half from it: the
+	// free-aim pass still tries the exact centre for a bottom slab.
+	stone := cube.Pos{0, 64, 0}
+	bottom := Slab{Block: Planks{Wood: OakWood()}}
+	above := PlacementPose{Position: mgl64.Vec3{1.15, 69.44 - 1.62, 0.5}, EyeHeight: 1.62}
+	lone := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{stone: Stone{}})
+	if _, ok := PlanPlacement(lone, world.DefaultBlockRegistry, above, stone.Side(cube.FaceEast), bottom, bottom, PlacementPlanOptions{Reach: 5, FreeAim: true, Faces: []cube.Face{cube.FaceEast}}); !ok {
+		t.Fatal("no free-aim plan for a bottom slab at a face's centre")
+	}
+	// Free aim never reads a missing source.
+	if _, ok := PlanPlacement(nil, world.DefaultBlockRegistry, user, target, Stone{}, Stone{}, PlacementPlanOptions{Reach: 5, FreeAim: true}); ok {
+		t.Fatal("planned without a source")
+	}
 }
 
 func TestBlock_PlanUsePlacementEmptiesABucket(t *testing.T) {
@@ -330,6 +344,24 @@ func TestBlock_PlanScaffoldStartsASidewaysRow(t *testing.T) {
 	}
 	if _, _, ok := PlanScaffold(src, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, func(cube.Pos) bool { return false }, opts); ok {
 		t.Fatal("placed a scaffold where none is allowed")
+	}
+	// A scaffold that falls would leave before the click it supports; a stable
+	// one in the same cell plans.
+	hanging := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target.Side(cube.FaceDown): Stone{}, {1, 65, 1}: Stone{}})
+	only := func(cell cube.Pos) bool { return cell == cube.Pos{0, 65, 1} }
+	if cell, _, ok := PlanScaffold(hanging, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Sand{}, only, opts); ok {
+		t.Fatalf("sand scaffold at %v over air", cell)
+	}
+	if _, _, ok := PlanScaffold(hanging, world.DefaultBlockRegistry, user, target, log, Log{Wood: OakWood()}, Dirt{}, only, opts); !ok {
+		t.Fatal("no dirt scaffold in the same cell")
+	}
+	// A block whose neighbour update rewrites it once the scaffold goes still
+	// stands while the result matches, such as a fence dropping its arm.
+	fence := WoodFence{Wood: OakWood()}
+	corner := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{{1, 64, 0}: Stone{}})
+	opts.Expected = func(pos cube.Pos) (world.Block, bool) { return fence, pos == target }
+	if cell, _, ok := PlanScaffold(corner, world.DefaultBlockRegistry, user, target, fence, fence, Dirt{}, func(cell cube.Pos) bool { return cell == cube.Pos{1, 65, 0} }, opts); !ok || cell != (cube.Pos{1, 65, 0}) {
+		t.Fatalf("fence scaffold = %v, %v; want one on the stone beside it", cell, ok)
 	}
 	// A block a scaffold holds up falls or breaks once it is removed.
 	above := target.Side(cube.FaceUp)

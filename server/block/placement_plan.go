@@ -101,6 +101,13 @@ func PlanScaffold(src PlacementSource, registry world.BlockRegistry, pose Placem
 		if current, loaded := src.BlockLoaded(cell); !loaded || current == nil || !world.CanReplace(current, scaffold) {
 			continue
 		}
+		if IsGravityAffected(scaffold) {
+			// A falling scaffold could leave before the click it supports.
+			below := cell.Side(cube.FaceDown)
+			if ground, loaded := src.BlockLoaded(below); !loaded || ground == nil || !ground.Model().FaceSolid(below, cube.FaceUp, src) {
+				continue
+			}
+		}
 		if opts.Expected != nil {
 			if _, inside := opts.Expected(cell); inside {
 				continue
@@ -115,17 +122,19 @@ func PlanScaffold(src PlacementSource, registry world.BlockRegistry, pose Placem
 		}
 		after := &placementView{src: src, changes: plan.Changes, known: true}
 		placed, ok := planSupportClick(after, registry, pose, target, required, material, opts)
-		if ok && standsWithout(src, slices.Concat(plan.Changes, placed.Changes), target, cell) {
+		if ok && standsWithout(src, registry, slices.Concat(plan.Changes, placed.Changes), target, required, cell) {
 			return cell, plan, true
 		}
 	}
 	return cube.Pos{}, PlacementPlan{}, false
 }
 
-// standsWithout reports whether the block changes leave at target stays as it
-// is when removed is emptied, running its neighbour update against the result.
-// A block whose update cannot be predicted does not count as standing.
-func standsWithout(src PlacementSource, changes []PredictedBlockChange, target, removed cube.Pos) (stands bool) {
+// standsWithout reports whether the block changes leave at target still is
+// required when removed is emptied, running its neighbour update against the
+// result: an update may rewrite the block, such as a fence dropping the arm it
+// had towards removed, as long as the result still matches. A block whose
+// update cannot be predicted does not count as standing.
+func standsWithout(src PlacementSource, registry world.BlockRegistry, changes []PredictedBlockChange, target cube.Pos, required world.Block, removed cube.Pos) (stands bool) {
 	view := &placementView{src: src, changes: append(changes, PredictedBlockChange{Pos: removed, Block: Air{}}), known: true}
 	ticker, ok := view.Block(target).(world.NeighbourUpdateTicker)
 	if !ok {
@@ -140,7 +149,7 @@ func standsWithout(src PlacementSource, changes []PredictedBlockChange, target, 
 	}()
 	world.RunBlockTransaction(view, func(tx *world.Tx) { ticker.NeighbourUpdateTick(target, removed, tx) })
 	for _, change := range view.changes[written:] {
-		if change.Pos == target {
+		if change.Pos == target && (change.Layer != 0 || !world.MatchesBuiltState(registry, view, target, required, change.Block)) {
 			return false
 		}
 	}
@@ -252,6 +261,9 @@ const (
 // sample the aimed pass never predicted, or one whose placement read the
 // user's facing.
 func (m *clickMemo) freeAimMayDiffer(src PlacementSource, faces []cube.Face, clickedFor func(cube.Face) cube.Pos, eye mgl64.Vec3, reach float64) bool {
+	if src == nil {
+		return false
+	}
 	for _, face := range faces {
 		if face < cube.FaceDown || face > cube.FaceEast {
 			continue
@@ -388,12 +400,12 @@ func placementAim(src PlacementSource, eye mgl64.Vec3, reach float64, clicked cu
 	return rotation, offset, true
 }
 
-// placementSameSpot reports whether an aimed click offset landed on sample,
-// within the trace's rounding.
+// placementSameSpot reports whether an aimed click sends the very offset a
+// click on sample sends. Only the same wire offset stands for it: a block
+// such as a slab picks its half from the offset, so even a rounding apart can
+// place differently.
 func placementSameSpot(offset, sample mgl64.Vec3) bool {
-	const epsilon = 1e-4
-	d := offset.Sub(placementWireOffset(sample))
-	return math.Abs(d[0]) < epsilon && math.Abs(d[1]) < epsilon && math.Abs(d[2]) < epsilon
+	return placementWireOffset(offset) == placementWireOffset(sample)
 }
 
 // placementWireOffset rounds a click offset to the precision the wire sends.
