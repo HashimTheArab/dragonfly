@@ -30,6 +30,16 @@ type UsableOnBlock interface {
 	UseOnBlock(pos cube.Pos, face cube.Face, clickPos mgl64.Vec3, tx *world.Tx, user User, ctx *UseContext) bool
 }
 
+// PlannableUse is an item whose use on a block always writes the same blocks
+// for the same terrain, so predicting the use tells what it will do. Planners
+// such as block.PlanItemUse accept only these: a use with a random outcome,
+// such as bone meal growing bamboo, cannot be planned from one prediction.
+type PlannableUse interface {
+	UsableOnBlock
+	// PlannableUse marks the item's use on a block as predictable.
+	PlannableUse()
+}
+
 // UsableOnEntity represents an item that may be used on an entity. If an item implements this interface, the
 // UseOnEntity method is called whenever the item is used on an entity.
 type UsableOnEntity interface {
