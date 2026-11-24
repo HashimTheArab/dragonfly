@@ -291,12 +291,8 @@ func planClick(src PlacementSource, registry world.BlockRegistry, pose Placement
 	if !loaded || current == nil {
 		return PlacementPlan{}, false
 	}
-	if same, hashed := sameHashedState(current, required); same {
+	if currentID, ok := placementRuntimeID(registry, current); ok && currentID == requiredID {
 		return PlacementPlan{}, false
-	} else if !hashed {
-		if currentID, ok := placementRuntimeID(registry, current); ok && currentID == requiredID {
-			return PlacementPlan{}, false
-		}
 	}
 	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
 	limits := placementLimits{reach: opts.Reach, actors: opts.Actors}
@@ -416,17 +412,6 @@ func placementRuntimeID(registry world.BlockRegistry, b world.Block) (uint32, bo
 	return registry.StateToRuntimeID(name, properties)
 }
 
-// sameHashedState reports whether a and b are the same state by their hashes,
-// which identify a state without encoding it, and whether both have one.
-func sameHashedState(a, b world.Block) (same, hashed bool) {
-	aBase, aHash := a.Hash()
-	bBase, bHash := b.Hash()
-	if aHash == math.MaxUint64 || bHash == math.MaxUint64 {
-		return false, false
-	}
-	return aBase == bBase && aHash == bHash, true
-}
-
 // placementClickOffsets returns aim targets at the face centre and both vertical
 // halves for click-sensitive canonical placement rules such as slab
 // orientation, and how many of the three a face uses.
@@ -493,17 +478,14 @@ func (m placementMatch) changes(changes []PredictedBlockChange) bool {
 		if change.Pos == m.target {
 			// Expected may cover neighbouring cells, but it cannot relax the
 			// requested target state. A wrong state fails here, before the
-			// encoding the registry check below may need.
+			// registry check below encodes it.
 			if !world.MatchesBuiltState(m.registry, after, change.Pos, m.required, change.Block) {
 				return false
 			}
 			matched = true
 		}
-		// The registry knows required, so a change to that very state needs no lookup.
-		if same, _ := sameHashedState(change.Block, m.required); !same {
-			if _, known := placementRuntimeID(m.registry, change.Block); !known {
-				return false
-			}
+		if _, known := placementRuntimeID(m.registry, change.Block); !known {
+			return false
 		}
 		if m.expected == nil {
 			if change.Pos != m.target {

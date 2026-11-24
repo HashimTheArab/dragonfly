@@ -766,9 +766,9 @@ func validBlockPropertyValue(value any) bool {
 // numeric properties such as a stair's direction alone. Properties the palette
 // does not declare at all are dropped, since no registered state carries them.
 func (br *BasicBlockRegistry) ResolveBlockState(state BlockState) (Block, bool) {
-	if state.Version >= chunk.CurrentBlockVersion {
-		// A current state naming a registered state exactly has nothing to
-		// upgrade or coerce.
+	if state.Version >= chunk.CurrentBlockVersion && br.declaresExactly(state) {
+		// A current state with exactly the declared properties, each of its
+		// declared type, has nothing to upgrade, coerce or drop.
 		if b, ok := br.BlockByName(state.Name, state.Properties); ok {
 			return b, true
 		}
@@ -827,6 +827,22 @@ func (br *BasicBlockRegistry) ResolveBlockState(state BlockState) (Block, bool) 
 		}
 	}
 	return match, matched
+}
+
+// declaresExactly reports whether state has every property the palette
+// declares for its name and no other, each with the declared value's type.
+func (br *BasicBlockRegistry) declaresExactly(state BlockState) bool {
+	declared, ok := br.blockProperties[state.Name]
+	if !ok || len(declared) != len(state.Properties) {
+		return false
+	}
+	for property, value := range state.Properties {
+		declaredValue, ok := declared[property]
+		if !ok || reflect.TypeOf(declaredValue) != reflect.TypeOf(value) {
+			return false
+		}
+	}
+	return true
 }
 
 // resolveBlockStateCandidate upgrades one type interpretation and reports its normalization cost.
