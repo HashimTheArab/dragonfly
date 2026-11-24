@@ -166,7 +166,7 @@ func TestBlock_PlanItemUseTillsWithAHoe(t *testing.T) {
 		t.Fatal("planned a hoe use for a block tilling cannot make")
 	}
 	covered := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{target: Dirt{}, target.Side(cube.FaceUp): Stone{}})
-	if _, ok := PlanItemUse(covered, world.DefaultBlockRegistry, user, target, Farmland{}, hoe, opts); ok {
+	if _, ok := PlanItemUse(covered, world.DefaultBlockRegistry, user, target, Farmland{}, hoe, opts); ok || TillsInto(world.DefaultBlockRegistry, covered, target, Dirt{}, Farmland{}) {
 		t.Fatal("tilled dirt with a block above it")
 	}
 }

@@ -22,8 +22,7 @@ func (h Hoe) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx
 				// Tilled land isn't created when the bottom face is clicked.
 				return false
 			}
-			if tx.Block(pos.Side(cube.FaceUp)) != air() {
-				// Tilled land can only be created if air is above the grass block.
+			if !CanTillAt(tx, pos) {
 				return false
 			}
 			tx.SetBlock(pos, res, nil)
@@ -33,6 +32,12 @@ func (h Hoe) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx
 		}
 	}
 	return false
+}
+
+// CanTillAt reports whether a block at pos in src has room to be tilled:
+// tilled land can only be created with air above it.
+func CanTillAt(src world.BlockSource, pos cube.Pos) bool {
+	return src.Block(pos.Side(cube.FaceUp)) == air()
 }
 
 // Tillable represents a block that can be tilled by using a hoe on it.
