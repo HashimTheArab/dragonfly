@@ -263,7 +263,8 @@ func (m placementMatch) changes(changes []PredictedBlockChange) bool {
 			return false
 		}
 	}
-	return matched
+	// A derived state read through unloaded terrain is not known to match.
+	return matched && after.known
 }
 
 // placementYawInvariant validates the requested writes at every quarter-turn.
