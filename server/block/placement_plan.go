@@ -332,7 +332,7 @@ func planClick(src PlacementSource, registry world.BlockRegistry, pose Placement
 				aimed := pose
 				aimed.Rotation = rotation
 				changes, known, rotated := predictPlacementWithLimits(src, &aimed, clicked, face, offset, use, limits)
-				if !freeYaw && offset == placementWireOffset(sample) {
+				if !freeYaw && placementSameSpot(offset, sample) {
 					// Only a click on the very spot a free-aim pass clicks
 					// stands for it; one the model took elsewhere does not.
 					*tried = clickFacingFree
@@ -385,6 +385,14 @@ func placementAim(src PlacementSource, eye mgl64.Vec3, reach float64, clicked cu
 		return cube.Rotation{}, mgl64.Vec3{}, false
 	}
 	return rotation, offset, true
+}
+
+// placementSameSpot reports whether an aimed click offset landed on sample,
+// within the trace's rounding.
+func placementSameSpot(offset, sample mgl64.Vec3) bool {
+	const epsilon = 1e-4
+	d := offset.Sub(placementWireOffset(sample))
+	return math.Abs(d[0]) < epsilon && math.Abs(d[1]) < epsilon && math.Abs(d[2]) < epsilon
 }
 
 // placementWireOffset rounds a click offset to the precision the wire sends.
