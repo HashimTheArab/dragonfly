@@ -29,10 +29,12 @@ type StateDeriver interface {
 }
 
 // MatchesDerivedState reports whether actual, built or predicted at pos, is
-// wanted once wanted derives its state against src. Derived state, such as a
-// stair's corner, follows the blocks around pos rather than wanted, so a
-// caller comparing a built or predicted block with a wanted one compares it
-// here. Blocks are compared by hash, and only encoded when one has none.
+// wanted, either exactly or once wanted derives its state against src.
+// Derived state, such as a stair's corner, follows the blocks around pos
+// rather than wanted, so a caller comparing a built or predicted block with a
+// wanted one compares it here. An exact match needs no terrain: actual is the
+// state asked for. Blocks are compared by hash, and only encoded when one has
+// none.
 func MatchesDerivedState(registry BlockRegistry, src BlockSource, pos cube.Pos, wanted, actual Block) bool {
 	if registry == nil || wanted == nil || actual == nil {
 		return false
