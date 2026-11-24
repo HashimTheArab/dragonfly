@@ -170,8 +170,8 @@ func planSupportClick(src PlacementSource, registry world.BlockRegistry, pose Pl
 // the player at pose turns to face it and uses used on it, such as a hoe
 // tilling dirt. It applies PlanPlacement's reach, visibility, terrain and
 // matching rules. opts.Faces limits the faces of target that may be clicked;
-// nil tries the top face first.
-func PlanItemUse(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required world.Block, used item.UsableOnBlock, opts PlacementPlanOptions) (PlacementPlan, bool) {
+// nil tries the top face first. Only a predictable use can be planned.
+func PlanItemUse(src PlacementSource, registry world.BlockRegistry, pose PlacementPose, target cube.Pos, required world.Block, used item.PlannableUse, opts PlacementPlanOptions) (PlacementPlan, bool) {
 	if used == nil {
 		return PlacementPlan{}, false
 	}
@@ -283,15 +283,16 @@ func planClick(src PlacementSource, registry world.BlockRegistry, pose Placement
 	if target.OutOfBounds(src.Range()) {
 		return PlacementPlan{}, false
 	}
-	requiredID, ok := placementRuntimeID(registry, required)
-	if !ok {
+	if _, ok := placementRuntimeID(registry, required); !ok {
 		return PlacementPlan{}, false
 	}
 	current, loaded := src.BlockLoaded(target)
 	if !loaded || current == nil {
 		return PlacementPlan{}, false
 	}
-	if currentID, ok := placementRuntimeID(registry, current); ok && currentID == requiredID {
+	// A target that already counts as built under the rule its writes are
+	// matched by needs no click.
+	if world.MatchesBuiltState(registry, src, target, required, current) {
 		return PlacementPlan{}, false
 	}
 	eye := pose.Position.Add(mgl64.Vec3{0, pose.EyeHeight, 0})
@@ -498,7 +499,8 @@ func (m placementMatch) changes(changes []PredictedBlockChange) bool {
 			return false
 		}
 	}
-	return matched
+	// A derived state read through unloaded terrain is not known to match.
+	return matched && after.known
 }
 
 // placementYawInvariant validates the requested writes at every quarter-turn.

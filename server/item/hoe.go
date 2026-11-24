@@ -14,6 +14,9 @@ type Hoe struct {
 	Tier ToolTier
 }
 
+// PlannableUse marks tilling as predictable: the same block always tills the same way.
+func (Hoe) PlannableUse() {}
+
 // UseOnBlock will turn a dirt or grass block into a farmland if the necessary properties are met.
 func (h Hoe) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx, _ User, ctx *UseContext) bool {
 	if b, ok := tx.Block(pos).(Tillable); ok {

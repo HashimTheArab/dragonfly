@@ -41,8 +41,9 @@ type AmbientStater interface {
 // MatchesBuiltState reports whether actual, built at pos in src, is wanted.
 // Neither the state wanted derives from its neighbours, such as a stair's
 // corner, nor its ambient state, such as a crop's growth, is compared as
-// wanted holds it: placing a block chooses neither. wanted takes actual's
-// ambient state and then derives against src before the runtime IDs compare.
+// wanted holds it: placing a block chooses neither. actual matches when it is
+// wanted's own state, which needs no terrain, or wanted once it takes
+// actual's ambient state and derives against src.
 func MatchesBuiltState(registry BlockRegistry, src BlockSource, pos cube.Pos, wanted, actual Block) bool {
 	if registry == nil || wanted == nil || actual == nil {
 		return false
