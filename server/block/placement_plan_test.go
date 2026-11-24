@@ -263,6 +263,16 @@ func TestBlock_PlanPlacementFreeAim(t *testing.T) {
 	// A block with nothing beside it still has nothing to click: servers refuse clicks on air.
 	if _, ok := PlanPlacement(src, world.DefaultBlockRegistry, user, cube.Pos{3, 67, 0}, Stone{}, Stone{}, PlacementPlanOptions{Reach: 5, FreeAim: true}); ok {
 		t.Fatal("planned a block with nothing to click")
+	} // An aimed click may land elsewhere on a support's model than the sample
+	// it aimed at, such as a fence's narrow post: a top slab still plans from
+	// the sample the free-aim pass clicks exactly.
+	post := cube.Pos{0, 64, 0}
+	slab := post.Side(cube.FaceEast)
+	fenced := newPlacementTestSource(world.Overworld, map[cube.Pos]world.Block{post: WoodFence{Wood: OakWood()}})
+	viewer := PlacementPose{Position: mgl64.Vec3{2.5, 64.5, 0.5}, EyeHeight: 1.62}
+	top := Slab{Block: Planks{Wood: OakWood()}, Top: true}
+	if _, ok := PlanPlacement(fenced, world.DefaultBlockRegistry, viewer, slab, top, Slab{Block: Planks{Wood: OakWood()}}, PlacementPlanOptions{Reach: 5, FreeAim: true, Faces: []cube.Face{cube.FaceEast}}); !ok {
+		t.Fatal("no free-aim plan for a top slab against a fence post")
 	}
 }
 

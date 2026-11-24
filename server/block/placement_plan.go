@@ -216,7 +216,7 @@ func supportAim(src PlacementSource, eye mgl64.Vec3, reach float64, blind bool) 
 				float64(float32(mgl64.RadToDeg(math.Atan2(-d[0], d[2])))),
 				float64(float32(mgl64.RadToDeg(-math.Atan2(d[1], math.Hypot(d[0], d[2]))))),
 			}
-			return rotation, mgl64.Vec3{float64(float32(sample[0])), float64(float32(sample[1])), float64(float32(sample[2]))}, true
+			return rotation, placementWireOffset(sample), true
 		}, true
 	}
 }
@@ -332,7 +332,9 @@ func planClick(src PlacementSource, registry world.BlockRegistry, pose Placement
 				aimed := pose
 				aimed.Rotation = rotation
 				changes, known, rotated := predictPlacementWithLimits(src, &aimed, clicked, face, offset, use, limits)
-				if !freeYaw {
+				if !freeYaw && offset == placementWireOffset(sample) {
+					// Only a click on the very spot a free-aim pass clicks
+					// stands for it; one the model took elsewhere does not.
 					*tried = clickFacingFree
 					if rotated {
 						*tried = clickFacingRead
@@ -377,12 +379,17 @@ func placementAim(src PlacementSource, eye mgl64.Vec3, reach float64, clicked cu
 		return cube.Rotation{}, mgl64.Vec3{}, false
 	}
 	offset := hit.Position().Sub(clicked.Vec3())
-	offset = mgl64.Vec3{float64(float32(offset[0])), float64(float32(offset[1])), float64(float32(offset[2]))}
+	offset = placementWireOffset(offset)
 	point := clicked.Vec3().Add(offset)
 	if eye.Sub(point).LenSqr() > reach*reach || !placementVisible(src, eye, point, clicked) {
 		return cube.Rotation{}, mgl64.Vec3{}, false
 	}
 	return rotation, offset, true
+}
+
+// placementWireOffset rounds a click offset to the precision the wire sends.
+func placementWireOffset(offset mgl64.Vec3) mgl64.Vec3 {
+	return mgl64.Vec3{float64(float32(offset[0])), float64(float32(offset[1])), float64(float32(offset[2]))}
 }
 
 // placementWithinReach applies Player.canReach's eye-distance rule to point.
