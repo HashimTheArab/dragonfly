@@ -1,6 +1,8 @@
 package block
 
 import (
+	"math"
+	"math/bits"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/item"
@@ -9,6 +11,8 @@ import (
 const (
 	furnaceCookDuration     = time.Second * 10
 	fastSmelterCookDuration = time.Second * 5
+	smelterTick             = time.Millisecond * 50
+	smelterCooldown         = smelterTick * 2
 )
 
 // CookDuration returns how long a furnace takes to smelt one item.
@@ -36,11 +40,20 @@ func (s Smoker) ItemsPerFuel(fuel item.FuelInfo) float64 {
 }
 
 func itemsPerFuel(fuel item.FuelInfo, cook time.Duration) float64 {
-	return float64(fuelBurnDuration(fuel, cook)) / float64(cook)
+	return float64(fuelBurnDuration(fuel.Duration, cook)) / float64(cook)
 }
 
 // fuelBurnDuration scales a fuel's furnace burn time to a smelter that cooks in
 // the given duration, so faster smelters burn their fuel proportionally faster.
-func fuelBurnDuration(fuel item.FuelInfo, cook time.Duration) time.Duration {
-	return fuel.Duration / time.Millisecond * cook / furnaceCookDuration * time.Millisecond
+// The result is whole ticks, and zero when the fuel cannot burn for one.
+func fuelBurnDuration(fuel, cook time.Duration) time.Duration {
+	if fuel <= 0 || cook <= 0 {
+		return 0
+	}
+	hi, lo := bits.Mul64(uint64(fuel), uint64(cook))
+	if hi >= uint64(furnaceCookDuration) {
+		return time.Duration(math.MaxInt64).Truncate(smelterTick)
+	}
+	burn, _ := bits.Div64(hi, lo, uint64(furnaceCookDuration))
+	return time.Duration(min(burn, math.MaxInt64)).Truncate(smelterTick)
 }

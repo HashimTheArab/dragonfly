@@ -8,7 +8,6 @@ import (
 	"github.com/df-mc/dragonfly/server/world/sound"
 	"github.com/go-gl/mathgl/mgl64"
 	"math/rand/v2"
-	"time"
 )
 
 // BlastFurnace is a block that smelts ores, raw metals, iron and gold armour and tools, similar to a furnace, but at
@@ -43,7 +42,7 @@ func (b BlastFurnace) Tick(_ int64, pos cube.Pos, tx *world.Tx) {
 	if b.Lit && rand.Float64() <= 0.016 { // Every three or so seconds.
 		tx.PlaySound(pos.Vec3Centre(), sound.BlastFurnaceCrackle{})
 	}
-	if lit := b.tickSmelting(b.CookDuration(), time.Millisecond*200, b.Lit, func(i item.SmeltInfo) bool {
+	if lit := b.tickSmelting(b.CookDuration(), b.Lit, func(i item.SmeltInfo) bool {
 		return i.Ores
 	}); b.Lit != lit {
 		b.Lit = lit
