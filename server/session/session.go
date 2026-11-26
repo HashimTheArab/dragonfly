@@ -651,17 +651,39 @@ func (s *Session) writePacket(pk packet.Packet) {
 type actorIdentifier struct {
 	// ID is a unique namespaced identifier for the entity.
 	ID string `nbt:"id"`
+	// BaseID selects the existing actor class used to construct this identity.
+	BaseID string `nbt:"bid"`
 }
 
 // sendAvailableEntities sends all registered entities to the player.
 func (s *Session) sendAvailableEntities(w *world.World) {
-	var identifiers []actorIdentifier
 	for _, t := range w.EntityRegistry().Types() {
-		identifiers = append(identifiers, actorIdentifier{ID: t.EncodeEntity()})
+		if properties, ok := t.(interface{ EntityPropertyDefinitions() map[string]any }); ok {
+			s.writePacket(&packet.SyncActorProperty{PropertyData: properties.EntityPropertyDefinitions()})
+		}
 	}
+	identifiers := availableEntityIdentifiers(w.EntityRegistry())
 	serialisedEntityData, err := nbt.Marshal(map[string]any{"idlist": identifiers})
 	if err != nil {
 		panic("should never happen")
 	}
 	s.writePacket(&packet.AvailableActorIdentifiers{SerialisedEntityIdentifiers: serialisedEntityData})
+}
+
+// availableEntityIdentifiers lists each client-facing identity once.
+func availableEntityIdentifiers(registry world.EntityRegistry) []actorIdentifier {
+	var identifiers []actorIdentifier
+	seen := make(map[string]bool)
+	for _, t := range registry.Types() {
+		id := world.EntityNetworkIdentifier(t)
+		if !seen[id] {
+			identifier := actorIdentifier{ID: id}
+			if base, ok := t.(world.BaseEntityType); ok {
+				identifier.BaseID = base.BaseEntityIdentifier()
+			}
+			identifiers = append(identifiers, identifier)
+			seen[id] = true
+		}
+	}
+	return identifiers
 }

@@ -22,14 +22,23 @@ func (s *Session) parseEntityMetadata(e world.Entity) protocol.EntityMetadata {
 	bb := e.H().Type().BBox(e)
 	m := protocol.NewEntityMetadata()
 
-	m[protocol.EntityDataKeyWidth] = float32(bb.Width())
-	m[protocol.EntityDataKeyHeight] = float32(bb.Height())
 	m[protocol.EntityDataKeyEffectColor] = int32(0)
 	m[protocol.EntityDataKeyEffectAmbience] = byte(0)
 	m[protocol.EntityDataKeyColorIndex] = byte(0)
 
 	m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagHasGravity)
 	m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagClimb)
+	if _, seat, ok := world.Riding(e); ok {
+		m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagRiding)
+		m[protocol.EntityDataKeySeatOffset] = vec64To32(seat.Position)
+		m[protocol.EntityDataKeySeatLockPassengerRotation] = boolByte(seat.RotationLimit != nil)
+		if seat.RotationLimit != nil {
+			m[protocol.EntityDataKeySeatLockPassengerRotationDegrees] = float32(*seat.RotationLimit)
+		}
+	} else {
+		m[protocol.EntityDataKeySeatOffset] = vec64To32(mgl64.Vec3{})
+		m[protocol.EntityDataKeySeatLockPassengerRotation] = byte(0)
+	}
 	if g, ok := e.H().Type().(glint); ok && g.Glint() {
 		m.SetFlag(protocol.EntityDataKeyFlags, protocol.EntityDataFlagEnchanted)
 	}
@@ -40,6 +49,13 @@ func (s *Session) parseEntityMetadata(e world.Entity) protocol.EntityMetadata {
 	if ent, ok := e.(*entity.Ent); ok {
 		s.addSpecificMetadata(ent.Behaviour(), m)
 	}
+	width, height := bb.Width(), bb.Height()
+	if scale, ok := m[protocol.EntityDataKeyScale].(float32); ok && scale > 0 && !math.IsInf(float64(scale), 0) {
+		// The client applies this separately replicated scale to the dimensions.
+		width, height = width/float64(scale), height/float64(scale)
+	}
+	m[protocol.EntityDataKeyWidth] = float32(width)
+	m[protocol.EntityDataKeyHeight] = float32(height)
 	return m
 }
 

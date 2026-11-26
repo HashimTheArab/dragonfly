@@ -6,12 +6,21 @@ import (
 	"strings"
 )
 
-// buildLanguageFile creates a lang file and writes all of the language entries to the pack.
+// buildLanguageFile appends generated entries while preserving entity translations.
 func buildLanguageFile(dir string, lang []string) {
-	if err := os.Mkdir(filepath.Join(dir, "texts"), os.ModePerm); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "texts"), os.ModePerm); err != nil {
 		panic(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "texts/en_US.lang"), []byte(strings.Join(lang, "\n")), 0666); err != nil {
+	file := filepath.Join(dir, "texts/en_US.lang")
+	data, err := os.ReadFile(file)
+	if err != nil && !os.IsNotExist(err) {
+		panic(err)
+	}
+	if len(lang) > 0 && len(data) > 0 && data[len(data)-1] != '\n' {
+		data = append(data, '\n')
+	}
+	data = append(data, strings.Join(lang, "\n")...)
+	if err := os.WriteFile(file, data, 0666); err != nil {
 		panic(err)
 	}
 }
