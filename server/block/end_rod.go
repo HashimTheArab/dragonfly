@@ -61,10 +61,7 @@ func (EndRod) EncodeItem() (name string, meta int16) {
 
 // EncodeBlock ...
 func (e EndRod) EncodeBlock() (string, map[string]any) {
-	if e.Facing.Axis() == cube.Y {
-		return "minecraft:end_rod", map[string]any{"facing_direction": int32(e.Facing)}
-	}
-	return "minecraft:end_rod", map[string]any{"facing_direction": int32(e.Facing.Opposite())}
+	return "minecraft:end_rod", map[string]any{"facing_direction": world.FacingDirection("minecraft:end_rod", e.Facing)}
 }
 
 // allEndRods ...

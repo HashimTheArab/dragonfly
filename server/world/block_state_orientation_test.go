@@ -40,6 +40,12 @@ func TestBlockState_Facing(t *testing.T) {
 			t.Errorf("accepted invalid facing: %v", properties)
 		}
 	}
+	for index, face := range []cube.Face{cube.FaceDown, cube.FaceUp, cube.FaceSouth, cube.FaceNorth, cube.FaceEast, cube.FaceWest} {
+		got, ok := (BlockState{Name: "minecraft:piston", Properties: map[string]any{"facing_direction": int32(index)}}).Facing()
+		if !ok || got != face {
+			t.Errorf("piston facing_direction=%d: got %v %v, want %v", index, got, ok, face)
+		}
+	}
 	got, ok := (BlockState{Properties: map[string]any{
 		"minecraft:cardinal_direction": "east", "minecraft:facing_direction": "west", "facing_direction": int32(cube.FaceNorth), "direction": int32(0),
 	}}).Facing()
