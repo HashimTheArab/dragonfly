@@ -215,7 +215,8 @@ func (s *smelter) tickSmelting(requirement, decrement time.Duration, lit bool, s
 	// duration and cook duration and create residue.
 	canSmelt := input.Count() > 0 && (inputInfo.Product.Comparable(product)) && !inputInfo.Product.Empty() && product.Count() < product.MaxCount()
 	if s.remainingDuration <= 0 && canSmelt && fuelInfo.Duration > 0 && fuel.Count() > 0 {
-		s.remainingDuration, s.maxDuration, lit = fuelInfo.Duration, fuelInfo.Duration, true
+		burn := fuelBurnDuration(fuelInfo, requirement)
+		s.remainingDuration, s.maxDuration, lit = burn, burn, true
 		defer s.inventory.SetItem(SmelterFuelSlot, fuelInfo.Residue)
 	}
 
