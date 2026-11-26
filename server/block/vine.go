@@ -283,13 +283,11 @@ func (v Vines) EncodeBlock() (string, map[string]any) {
 	return "minecraft:vine", map[string]any{"vine_direction_bits": int32(bits)}
 }
 
-// canSpreadTo returns true if the block at the position passed fills a whole cube, as vines need.
+// canSpreadTo returns true if the block at the position passed is solid or leaves, as vines need.
 func (Vines) canSpreadTo(tx *world.Tx, pos cube.Pos) bool {
-	switch tx.Block(pos).Model().(type) {
-	case model.Solid, model.Leaves:
-		return true
-	}
-	return false
+	m := tx.Block(pos).Model()
+	_, leaves := m.(model.Leaves)
+	return leaves || model.IsSolid(m)
 }
 
 // canSpread returns true if the vines can spread from the given position. Vines

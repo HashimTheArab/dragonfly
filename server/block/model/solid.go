@@ -21,3 +21,13 @@ func (Solid) BBox(cube.Pos, world.BlockSource) []cube.BBox {
 func (Solid) FaceSolid(cube.Pos, cube.Face, world.BlockSource) bool {
 	return true
 }
+
+func (Solid) solidBlock() {}
+
+// IsSolid reports whether m is a solid block. This includes models embedding Solid whose entity collision box is
+// lower than a full cube, such as soul sand and mud, which still support attachments, block spawning and cause
+// suffocation.
+func IsSolid(m world.BlockModel) bool {
+	_, ok := m.(interface{ solidBlock() })
+	return ok
+}

@@ -180,8 +180,7 @@ func CreateNetherPortal(tx *world.Tx, pos cube.Pos) (Nether, bool) {
 						pos.Y() + height,
 						pos.Z() + safeSpace2*coEff2 - safeSpace1*coEff1,
 					})
-					_, solid := b.Model().(model.Solid)
-					if height < 0 && !solid || height >= 0 && b != air() {
+					if height < 0 && !model.IsSolid(b.Model()) || height >= 0 && b != air() {
 						return false
 					}
 				}
@@ -201,8 +200,7 @@ func CreateNetherPortal(tx *world.Tx, pos cube.Pos) (Nether, bool) {
 						pos.Y() + height,
 						pos.Z() + safeSpace*coEff2,
 					})
-					_, solid := b.Model().(model.Solid)
-					if height < 0 && !solid || height >= 0 && b != air() {
+					if height < 0 && !model.IsSolid(b.Model()) || height >= 0 && b != air() {
 						return false
 					}
 				}
