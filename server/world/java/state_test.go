@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"testing"
 
 	_ "github.com/df-mc/dragonfly/server/block"
@@ -104,5 +105,45 @@ func TestLegacy_ResolvesEveryTableEntry(t *testing.T) {
 		if _, err := Legacy(world.DefaultBlockRegistry, id, meta); err != nil {
 			t.Errorf("%s -> %s: %v", key, data.Legacy[key], err)
 		}
+	}
+}
+
+// TestResolve_FacingMatchesJava checks every numeric facing_direction the table
+// produces against the direction its Java state names, so a block that numbers
+// its directions differently cannot be read the wrong way round.
+func TestResolve_FacingMatchesJava(t *testing.T) {
+	data, err := loadMapping()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for java, bedrock := range data.States {
+		javaState, err := Parse(java)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, ok := (world.BlockState{Properties: map[string]any{"minecraft:facing_direction": javaState.Properties["facing"]}}).Facing()
+		if !ok {
+			continue
+		}
+		if _, attached := javaState.Properties["face"]; attached {
+			continue
+		}
+		bedrockState, err := Parse(bedrock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		index, err := strconv.ParseInt(bedrockState.Properties["facing_direction"], 10, 32)
+		if err != nil {
+			continue
+		}
+		got, ok := (world.BlockState{Name: bedrockState.Name, Properties: map[string]any{"facing_direction": int32(index)}}).Facing()
+		if !ok || got != want {
+			t.Errorf("%s -> %s: Facing() = %v %v, want %v", java, bedrock, got, ok, want)
+		}
+		checked++
+	}
+	if checked == 0 {
+		t.Fatal("the table has no numeric facing_direction states")
 	}
 }
