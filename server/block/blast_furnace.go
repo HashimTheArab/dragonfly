@@ -43,7 +43,7 @@ func (b BlastFurnace) Tick(_ int64, pos cube.Pos, tx *world.Tx) {
 	if b.Lit && rand.Float64() <= 0.016 { // Every three or so seconds.
 		tx.PlaySound(pos.Vec3Centre(), sound.BlastFurnaceCrackle{})
 	}
-	if lit := b.tickSmelting(time.Second*5, time.Millisecond*200, b.Lit, func(i item.SmeltInfo) bool {
+	if lit := b.tickSmelting(b.CookDuration(), time.Millisecond*200, b.Lit, func(i item.SmeltInfo) bool {
 		return i.Ores
 	}); b.Lit != lit {
 		b.Lit = lit
