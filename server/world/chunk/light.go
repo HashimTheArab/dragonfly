@@ -116,10 +116,18 @@ func (a *lightArea) propagateNeighbour(queue *lightQueue, lt light, level uint8,
 		return
 	}
 	pos := cube.Pos{x, y, z}
-	filter := a.highest(pos, a.br.FilteringBlock) + 1
-	if level > filter && a.light(pos, lt) < level-filter {
-		queue.push(node(pos, level-filter, lt))
+	if next, ok := attenuate(level, a.highest(pos, a.br.FilteringBlock)); ok && a.light(pos, lt) < next {
+		queue.push(node(pos, next, lt))
 	}
+}
+
+// attenuate returns the light level that spreads into a block with the light filtering value passed from a
+// neighbour lit at level, and false if no light reaches it.
+func attenuate(level, filtering uint8) (uint8, bool) {
+	if filter := filtering + 1; level > filter {
+		return level - filter, true
+	}
+	return 0, false
 }
 
 // lightNode is a node pushed to the queue which is used to propagate light.
