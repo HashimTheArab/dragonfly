@@ -232,14 +232,22 @@ func (sub *SubChunk) highest(x, y, z uint8, lightBlocking func(rid uint32) uint8
 	case 0:
 		return 0
 	case 1:
-		return lightBlocking(storages[0].At(x, y, z))
+		return highestLayer(lightBlocking, storages[0].At(x, y, z), 0, 1)
 	default:
-		level := lightBlocking(storages[0].At(x, y, z))
-		if v := lightBlocking(storages[1].At(x, y, z)); v > level {
+		return highestLayer(lightBlocking, storages[0].At(x, y, z), storages[1].At(x, y, z), 2)
+	}
+}
+
+// highestLayer calls lightBlocking for the runtime IDs of the blocks on the first layers layers of a position,
+// first the block on the first layer and then the block on the second, and returns the highest value.
+func highestLayer(lightBlocking func(rid uint32) uint8, first, second uint32, layers int) uint8 {
+	level := lightBlocking(first)
+	if layers > 1 {
+		if v := lightBlocking(second); v > level {
 			return v
 		}
-		return level
 	}
+	return level
 }
 
 var (

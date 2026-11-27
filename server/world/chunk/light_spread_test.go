@@ -72,6 +72,18 @@ func newSpreadTestArea() ([]*Chunk, []cube.Pos) {
 	return chunks, torches
 }
 
+// chunkBlocks reads the blocks of the chunks that at returns, for SpreadBlockLight.
+func chunkBlocks(at func(x, z int) *Chunk) func(pos cube.Pos) (uint32, uint32, int) {
+	return func(pos cube.Pos) (uint32, uint32, int) {
+		c := at(pos[0]>>4, pos[2]>>4)
+		if c == nil || pos.OutOfBounds(c.r) {
+			return 0, 0, 0
+		}
+		x, y, z := uint8(pos[0]&0xf), int16(pos[1]), uint8(pos[2]&0xf)
+		return c.Block(x, y, z, 0), c.Block(x, y, z, 1), 2
+	}
+}
+
 // SpreadBlockLight lights exactly the positions, with exactly the levels, that the block light stage of a
 // light area gives the same blocks, across chunk borders and through blocks that diffuse light.
 func TestSpreadBlockLightMatchesLightArea(t *testing.T) {
@@ -82,7 +94,7 @@ func TestSpreadBlockLightMatchesLightArea(t *testing.T) {
 		}
 		return chunks[x+z*3]
 	}
-	got := SpreadBlockLight(at, torches, 1<<20)
+	got := SpreadBlockLight(spreadTestRegistry{}, chunkBlocks(at), torches, 1<<20)
 
 	area := LightArea(chunks, 0, 0)
 	area.Fill()
@@ -108,7 +120,7 @@ func TestSpreadBlockLightMatchesLightArea(t *testing.T) {
 	}
 }
 
-// SpreadBlockLight adds no more positions than its limit, and none in chunks that are not loaded.
+// SpreadBlockLight adds no more positions than its limit, and none whose blocks are not known.
 func TestSpreadBlockLightStaysInLimitAndLoadedChunks(t *testing.T) {
 	chunks, torches := newSpreadTestArea()
 	onlyFirst := func(x, z int) *Chunk {
@@ -117,7 +129,7 @@ func TestSpreadBlockLightStaysInLimitAndLoadedChunks(t *testing.T) {
 		}
 		return nil
 	}
-	for pos := range SpreadBlockLight(onlyFirst, torches[:1], 1<<20) {
+	for pos := range SpreadBlockLight(spreadTestRegistry{}, chunkBlocks(onlyFirst), torches[:1], 1<<20) {
 		if pos[0] < 0 || pos[0] > 15 || pos[2] < 16 || pos[2] > 31 {
 			t.Fatalf("lit %v outside the loaded chunk", pos)
 		}
@@ -128,7 +140,7 @@ func TestSpreadBlockLightStaysInLimitAndLoadedChunks(t *testing.T) {
 		}
 		return chunks[x+z*3]
 	}
-	if got := len(SpreadBlockLight(at, torches, 10)); got != 10 {
+	if got := len(SpreadBlockLight(spreadTestRegistry{}, chunkBlocks(at), torches, 10)); got != 10 {
 		t.Fatalf("lit %d positions, want the limit of 10", got)
 	}
 }
@@ -141,8 +153,9 @@ func BenchmarkSpreadBlockLight(b *testing.B) {
 		}
 		return chunks[x+z*3]
 	}
+	blocks := chunkBlocks(at)
 	b.ReportAllocs()
 	for b.Loop() {
-		SpreadBlockLight(at, torches, 1<<20)
+		SpreadBlockLight(spreadTestRegistry{}, blocks, torches, 1<<20)
 	}
 }
