@@ -12,10 +12,15 @@ type Slime struct {
 	transparent
 }
 
+// ModifyFallDistance takes the whole fall out of an entity landing on the slime block.
+func (Slime) ModifyFallDistance(float64) float64 {
+	return 0
+}
+
 // EntityLand ...
-func (Slime) EntityLand(_ cube.Pos, _ *world.Tx, e world.Entity, distance *float64) {
+func (b Slime) EntityLand(_ cube.Pos, _ *world.Tx, e world.Entity, distance *float64) {
 	if _, ok := e.(fallDistanceEntity); ok {
-		*distance = 0
+		*distance = b.ModifyFallDistance(*distance)
 	}
 	if s, ok := e.(interface{ Sneaking() bool }); ok && s.Sneaking() {
 		return

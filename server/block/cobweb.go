@@ -22,6 +22,11 @@ func (Cobweb) SwordMiningSpeed() float64 { return 15 }
 // ShearsMiningSpeed ...
 func (Cobweb) ShearsMiningSpeed() float64 { return 15 }
 
+// ModifyFallDistance ends the fall of an entity inside the cobweb.
+func (Cobweb) ModifyFallDistance(float64) float64 {
+	return 0
+}
+
 // EntityInside slows the entity's velocity and resets its fall distance while it is inside the cobweb.
 func (Cobweb) EntityInside(_ cube.Pos, _ *world.Tx, e world.Entity) {
 	if fallEntity, ok := e.(fallDistanceEntity); ok {

@@ -70,3 +70,29 @@ func TestArmourDamageReduction_DetachedProjectionMatchesEquipped(t *testing.T) {
 		t.Fatalf("void reduction=%g, want 0", got)
 	}
 }
+
+// TestFinalDamage_Fall reduces a fall by Feather Falling and Resistance but not
+// by armour points.
+func TestFinalDamage_Fall(t *testing.T) {
+	plate := item.NewStack(item.Chestplate{Tier: item.ArmourTierDiamond{}}, 1)
+	boots := item.NewStack(item.Boots{Tier: item.ArmourTierDiamond{}}, 1).WithEnchantments(item.NewEnchantment(enchantment.FeatherFalling, 4))
+	for _, test := range []struct {
+		name       string
+		resistance int
+		armour     []item.Stack
+		want       float64
+	}{
+		{name: "bare", want: 10},
+		{name: "armour points", armour: []item.Stack{plate}, want: 10},
+		{name: "resistance I", resistance: 1, want: 8},
+		{name: "resistance V", resistance: 5, want: 0},
+		{name: "feather falling IV", armour: []item.Stack{boots}, want: 5.2},
+		{name: "feather falling IV, resistance I", resistance: 1, armour: []item.Stack{plate, boots}, want: 4.16},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := inventory.FinalDamage(10, entity.FallDamageSource{}, test.resistance, test.armour...); math.Abs(got-test.want) > 1e-8 {
+				t.Fatalf("damage=%g, want %g", got, test.want)
+			}
+		})
+	}
+}
