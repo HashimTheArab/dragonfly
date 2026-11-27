@@ -124,6 +124,13 @@ type EntityStepper interface {
 	EntityStepOn(pos cube.Pos, tx *world.Tx, e world.Entity)
 }
 
+// Harmful represents a block that may hurt a living entity standing on top of it or inside it.
+type Harmful interface {
+	// HarmsOnContact reports whether the block, in its current state, hurts a living entity that stands on
+	// its top face or moves inside its 1x1x1 axis aligned bounding box.
+	HarmsOnContact() bool
+}
+
 // ProjectileHitter represents a block that handles being hit by a projectile.
 type ProjectileHitter interface {
 	// ProjectileHit is called when a projectile hits the block.

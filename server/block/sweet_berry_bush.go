@@ -81,9 +81,14 @@ func (s SweetBerryBush) BreakInfo() BreakInfo {
 	})
 }
 
+// HarmsOnContact reports whether the bush has grown past a sapling.
+func (s SweetBerryBush) HarmsOnContact() bool {
+	return s.Age > 0
+}
+
 // EntityInside damages moving, non-sneaking entities that brush through the bush.
 func (s SweetBerryBush) EntityInside(_ cube.Pos, _ *world.Tx, e world.Entity) {
-	if s.Age == 0 {
+	if !s.HarmsOnContact() {
 		return
 	}
 	v, ok := e.(velocityEntity)
