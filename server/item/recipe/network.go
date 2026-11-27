@@ -10,6 +10,8 @@ import (
 
 // DecodeNetworkIngredient resolves an ordinary network ingredient. resolve must resolve
 // the supplied item name and metadata; wildcard metadata is resolved using metadata 0.
+// An item resolved without a variant for the metadata, encoding metadata 0, is tied to
+// that metadata with WithNetworkMetadata.
 // Unknown tags, unsupported descriptors and invalid counts or metadata fail closed.
 // Invalid descriptors denote empty cells. The result uses the same variants marker
 // as the embedded recipe catalog to represent wildcard metadata (32767).
@@ -37,13 +39,16 @@ func DecodeNetworkIngredient(in protocol.ItemDescriptorCount, resolve func(strin
 			return nil, false
 		}
 		name, actualMeta := it.EncodeItem()
-		if name != d.Name || actualMeta != meta {
+		if name != d.Name || actualMeta != meta && actualMeta != 0 {
 			return nil, false
 		}
 		st := item.NewStack(it, int(in.Count))
 		if st.Empty() {
 			return nil, false
 		}
+		// The item has no variant for this metadata, so the ingredient is the item as the
+		// peer names it with that value.
+		st = WithNetworkMetadata(st, meta)
 		if wildcard {
 			st = st.WithValue("variants", true)
 		}
@@ -99,4 +104,35 @@ func DecodeNetworkCraftingPattern(r any, resolve func(string, int16) (world.Item
 		return CraftingPattern{}, false
 	}
 	return p, true
+}
+
+// networkMetadataKey is the Stack value WithNetworkMetadata stores.
+const networkMetadataKey = "network_metadata"
+
+// WithNetworkMetadata returns s tied to meta, the metadata a network peer names s's item
+// with when the item has no variant of its own for it, such as a server naming birch logs
+// minecraft:birch_log with metadata 2. MatchingStacks then matches s only against stacks
+// tied to the same metadata. s is returned unchanged when its item encodes meta itself.
+// The tie is matching state: a tied stack must not be encoded for a client or storage.
+func WithNetworkMetadata(s item.Stack, meta int16) item.Stack {
+	if s.Empty() {
+		return s
+	}
+	if _, own := s.Item().EncodeItem(); own == meta {
+		return s
+	}
+	return s.WithValue(networkMetadataKey, meta)
+}
+
+// NetworkMetadata returns the metadata s is named with on the network: the metadata
+// WithNetworkMetadata tied it to, otherwise its item's own.
+func NetworkMetadata(s item.Stack) int16 {
+	if v, ok := s.Value(networkMetadataKey); ok {
+		return v.(int16)
+	}
+	if s.Empty() {
+		return 0
+	}
+	_, meta := s.Item().EncodeItem()
+	return meta
 }

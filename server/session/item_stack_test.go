@@ -7,6 +7,7 @@ import (
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/item"
+	"github.com/df-mc/dragonfly/server/item/recipe"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
@@ -174,6 +175,28 @@ func TestStackToItem_PreservesResolvedVariantsWithoutNBT(t *testing.T) {
 				if gotName != wantName || gotMeta != wantMeta {
 					t.Fatalf("decoded item = %s:%d, want %s:%d", gotName, gotMeta, wantName, wantMeta)
 				}
+			}
+		})
+	}
+}
+
+// TestStacksToIngredientItems_KeepsNetworkMetadata advertises an ingredient tied
+// to network metadata its item has no variant for under that same metadata.
+func TestStacksToIngredientItems_KeepsNetworkMetadata(t *testing.T) {
+	log := item.NewStack(block.Log{Wood: block.BirchWood()}, 1)
+	for _, tt := range []struct {
+		name string
+		in   item.Stack
+		want int32
+	}{
+		{"own metadata", log, 0},
+		{"tied metadata", recipe.WithNetworkMetadata(log, 2), 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stacksToIngredientItems(nil, []recipe.Item{tt.in})
+			d, ok := got[0].Descriptor.(*protocol.DefaultItemDescriptor)
+			if !ok || d.Name != "minecraft:birch_log" || d.MetadataValue != tt.want {
+				t.Fatalf("descriptor = %#v, want minecraft:birch_log with metadata %d", got[0].Descriptor, tt.want)
 			}
 		})
 	}
