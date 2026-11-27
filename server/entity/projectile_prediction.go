@@ -212,3 +212,49 @@ func projectileNextVelocity(motion mgl32.Vec3, inertia, gravity float32) mgl32.V
 	motion[1] -= gravity
 	return motion
 }
+
+// ProjectileLaunchToward returns the launch velocity of physics.Speed whose
+// flight, as PredictProjectileLanding moves it, first passes through delta,
+// the target's offset from the launch point. Of the flights that reach it, the
+// earliest arrival is chosen, which is the flattest arc. The arrival may fall
+// between two ticks; the flight is then taken as moving linearly across that
+// tick. It returns false when delta is the launch point, the speed is not
+// positive, or no flight within maxTicks reaches delta at that speed.
+func ProjectileLaunchToward(delta mgl64.Vec3, physics ProjectilePhysics, maxTicks int) (mgl64.Vec3, bool) {
+	speed, gravity, drag := physics.Speed, physics.Gravity, physics.Drag
+	if !projectileFinite32(speed) || speed <= 0 || !projectileFinite32(gravity) || !projectileFinite32(drag) || gravity < 0 || drag < 0 || drag >= 1 || delta.Len() <= 1e-5 {
+		return mgl64.Vec3{}, false
+	}
+	inertia := 1 - drag
+	// After n ticks the flight has moved velocity*reach - (0, fall, 0). step
+	// and drop are the shares of the launch velocity and of gravity that the
+	// next tick adds to them.
+	step, drop := 1.0, 0.0
+	if physics.ForcesBeforeMove {
+		step, drop = inertia, gravity
+	}
+	needed := func(reach, fall float64) float64 {
+		return mgl64.Vec3{delta[0] / reach, (delta[1] + fall) / reach, delta[2] / reach}.Len()
+	}
+	var reach, fall float64
+	for range maxTicks {
+		if needed(reach+step, fall+drop) <= speed {
+			// Find the share of this tick at which the speed first suffices.
+			low, high := 0.0, 1.0
+			for range 20 {
+				mid := (low + high) / 2
+				if needed(reach+mid*step, fall+mid*drop) <= speed {
+					high = mid
+				} else {
+					low = mid
+				}
+			}
+			reach, fall = reach+high*step, fall+high*drop
+			velocity := mgl64.Vec3{delta[0] / reach, (delta[1] + fall) / reach, delta[2] / reach}
+			return velocity.Mul(speed / velocity.Len()), true
+		}
+		reach, fall = reach+step, fall+drop
+		step, drop = step*inertia, drop*inertia+gravity
+	}
+	return mgl64.Vec3{}, false
+}
