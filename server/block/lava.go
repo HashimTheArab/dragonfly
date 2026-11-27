@@ -44,6 +44,11 @@ func (l Lava) ReplaceableBy(b world.Block) bool {
 	return true
 }
 
+// HarmsOnContact ...
+func (Lava) HarmsOnContact() bool {
+	return true
+}
+
 // EntityInside ...
 func (l Lava) EntityInside(_ cube.Pos, _ *world.Tx, e world.Entity) {
 	if fallEntity, ok := e.(fallDistanceEntity); ok {
