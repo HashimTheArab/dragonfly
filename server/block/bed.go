@@ -279,6 +279,12 @@ func (b Bed) side(pos cube.Pos, tx *world.Tx) (Bed, cube.Pos, bool) {
 	return o, sidePos, ok
 }
 
+// OtherHalf returns the position of the other half of the two block bed whose
+// half b is at pos.
+func (b Bed) OtherHalf(pos cube.Pos) cube.Pos {
+	return bedSide(pos, b.Facing, b.Head)
+}
+
 // bedSide returns the position of the other half of a two block bed at pos.
 func bedSide(pos cube.Pos, facing cube.Direction, head bool) cube.Pos {
 	face := facing.Face()
