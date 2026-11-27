@@ -3,8 +3,10 @@ package chunk
 import "github.com/df-mc/dragonfly/server/block/cube"
 
 // SpreadBlockLight spreads the block light given off by the blocks at the sources passed through the blocks
-// around them, by the same rules as the block light stage of a light area, and returns the block light level
-// of every position it reaches. It writes no light anywhere, so the blocks may come from a world that is not
+// around them, by the same emission, filtering and attenuation rules a light area applies, and returns the
+// block light level of every position it reaches. It treats the blocks as one area, as a single light area
+// filled over all of them does, rather than lighting each chunk on its own and then spreading across chunk
+// borders as a World does. It writes no light anywhere, so the blocks may come from a world that is not
 // stored in chunks the caller owns.
 //
 // blocksAt returns the runtime IDs, in br, of the blocks at a position on its first and second layer, and how

@@ -84,8 +84,8 @@ func chunkBlocks(at func(x, z int) *Chunk) func(pos cube.Pos) (uint32, uint32, i
 	}
 }
 
-// SpreadBlockLight lights exactly the positions, with exactly the levels, that the block light stage of a
-// light area gives the same blocks, across chunk borders and through blocks that diffuse light.
+// SpreadBlockLight lights exactly the positions, with exactly the levels, that one light area filled over all
+// of the same blocks gives them, across chunk borders and through blocks that diffuse light.
 func TestSpreadBlockLightMatchesLightArea(t *testing.T) {
 	chunks, torches := newSpreadTestArea()
 	at := func(x, z int) *Chunk {
