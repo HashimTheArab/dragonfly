@@ -54,6 +54,11 @@ func (l Ladder) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world
 	return placed(ctx)
 }
 
+// ModifyFallDistance ends the fall of an entity inside the ladder.
+func (Ladder) ModifyFallDistance(float64) float64 {
+	return 0
+}
+
 // EntityInside ...
 func (l Ladder) EntityInside(_ cube.Pos, _ *world.Tx, e world.Entity) {
 	if fallEntity, ok := e.(fallDistanceEntity); ok {

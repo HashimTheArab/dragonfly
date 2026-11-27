@@ -44,6 +44,11 @@ func (l Lava) ReplaceableBy(b world.Block) bool {
 	return true
 }
 
+// ModifyFallDistance ends the fall of an entity inside the lava.
+func (Lava) ModifyFallDistance(float64) float64 {
+	return 0
+}
+
 // EntityInside ...
 func (l Lava) EntityInside(_ cube.Pos, _ *world.Tx, e world.Entity) {
 	if fallEntity, ok := e.(fallDistanceEntity); ok {

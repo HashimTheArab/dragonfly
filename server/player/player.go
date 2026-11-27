@@ -576,14 +576,13 @@ func (p *Player) fall(distance float64) {
 	if pos, lander, ok := p.landedOn(); ok {
 		lander.EntityLand(pos, p.tx, p, &distance)
 	}
-	dmg := distance - 3
+	jumpBoost := 0
 	if boost, ok := p.Effect(effect.JumpBoost); ok {
-		dmg -= float64(boost.Level())
+		jumpBoost = boost.Level()
 	}
-	if dmg < 0.5 {
-		return
+	if dmg := entity.FallDamage(distance, jumpBoost); dmg > 0 {
+		p.Hurt(dmg, entity.FallDamageSource{})
 	}
-	p.Hurt(math.Ceil(dmg), entity.FallDamageSource{})
 }
 
 // landedOn returns the first block.EntityLander the Player came to rest on, along with its position.
@@ -727,13 +726,11 @@ func (p *Player) applyTotemEffects() {
 // enchantments on the individual pieces.
 // The damage returned will be at the least 0.
 func (p *Player) FinalDamageFrom(dmg float64, src world.DamageSource) float64 {
-	dmg = max(dmg, 0)
-
-	dmg -= p.Armour().DamageReduction(dmg, src)
+	resistance := 0
 	if res, ok := p.Effect(effect.Resistance); ok {
-		dmg *= effect.Resistance.Multiplier(src, res.Level())
+		resistance = res.Level()
 	}
-	return dmg
+	return inventory.FinalDamage(dmg, src, resistance, p.Armour().Items()...)
 }
 
 // Explode ...
