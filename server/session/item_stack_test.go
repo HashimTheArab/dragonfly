@@ -190,7 +190,9 @@ func TestStacksToIngredientItems_KeepsNetworkMetadata(t *testing.T) {
 		want int32
 	}{
 		{"own metadata", log, 0},
-		{"tied metadata", recipe.WithNetworkMetadata(log, 2), 2},
+		{"tied metadata", log.WithNetworkMetadata(2), 2},
+		{"user value under the tie's former key", log.WithValue("network_metadata", "two"), 0},
+		{"tied metadata with a user value", log.WithNetworkMetadata(2).WithValue("network_metadata", "two"), 2},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := stacksToIngredientItems(nil, []recipe.Item{tt.in})

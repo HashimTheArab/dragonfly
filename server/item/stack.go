@@ -31,6 +31,9 @@ type Stack struct {
 
 	data map[string]any
 
+	networkMeta     int16
+	networkMetaTied bool
+
 	enchantments map[EnchantmentType]Enchantment
 }
 
@@ -265,6 +268,35 @@ func (s Stack) Value(key string) (val any, ok bool) {
 	return val, ok
 }
 
+// WithNetworkMetadata returns s tied to meta, the metadata a network peer names s's item
+// with when the item has no variant of its own for it, such as a server naming birch logs
+// minecraft:birch_log with metadata 2. Comparable then treats s as comparable only to
+// stacks tied to the same metadata. s is returned untied when its item encodes meta
+// itself. The tie is matching state: it is never encoded for a client or storage.
+func (s Stack) WithNetworkMetadata(meta int16) Stack {
+	if s.Empty() {
+		return s
+	}
+	s.networkMeta, s.networkMetaTied = 0, false
+	if _, own := s.item.EncodeItem(); own != meta {
+		s.networkMeta, s.networkMetaTied = meta, true
+	}
+	return s
+}
+
+// NetworkMetadata returns the metadata s is named with on the network: the metadata
+// WithNetworkMetadata tied it to, otherwise its item's own.
+func (s Stack) NetworkMetadata() int16 {
+	if s.Empty() {
+		return 0
+	}
+	if s.networkMetaTied {
+		return s.networkMeta
+	}
+	_, meta := s.item.EncodeItem()
+	return meta
+}
+
 // WithEnchantments returns the current stack with the passed enchantments. If an enchantment is not compatible
 // with the item stack, it will not be applied.
 func (s Stack) WithEnchantments(enchants ...Enchantment) Stack {
@@ -376,6 +408,9 @@ func (s Stack) WithItem(t world.Item) Stack {
 		WithAnvilCost(s.anvilCost)
 	cp.unbreakable = s.unbreakable && s.MaxDurability() != -1
 	cp.data = s.data
+	if s.networkMetaTied {
+		cp = cp.WithNetworkMetadata(s.networkMeta)
+	}
 	return cp
 }
 
@@ -433,7 +468,7 @@ func (s Stack) Comparable(s2 Stack) bool {
 			return false
 		}
 	}
-	if !reflect.DeepEqual(s.data, s2.data) {
+	if !reflect.DeepEqual(s.data, s2.data) || s.networkMetaTied != s2.networkMetaTied || s.networkMeta != s2.networkMeta {
 		return false
 	}
 	if nbt, ok := s.Item().(world.NBTer); ok {
