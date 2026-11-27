@@ -207,7 +207,7 @@ func TestDecodeNetworkCraftingPattern_TiesMetadataTheItemCannotCarry(t *testing.
 	if !ok {
 		t.Fatal("rejected a recipe naming the item by metadata it has no variant for")
 	}
-	if got := NetworkMetadata(pattern.Input[0].(item.Stack)); got != 2 {
+	if got := pattern.Input[0].(item.Stack).NetworkMetadata(); got != 2 {
 		t.Fatalf("ingredient names metadata %d, want 2", got)
 	}
 	base := item.NewStack(gridTestItem{log, 0}, 1)
@@ -216,9 +216,9 @@ func TestDecodeNetworkCraftingPattern_TiesMetadataTheItemCannotCarry(t *testing.
 		has  item.Stack
 		want bool
 	}{
-		{"same metadata", WithNetworkMetadata(base, 2), true},
+		{"same metadata", base.WithNetworkMetadata(2), true},
 		{"item's own metadata", base, false},
-		{"other metadata", WithNetworkMetadata(base, 3), false},
+		{"other metadata", base.WithNetworkMetadata(3), false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			grid := make([]item.Stack, 4)
@@ -229,10 +229,10 @@ func TestDecodeNetworkCraftingPattern_TiesMetadataTheItemCannotCarry(t *testing.
 		})
 	}
 	wildcard := base.WithValue("variants", true)
-	if match, ok := MatchingStacks(WithNetworkMetadata(base, 2), wildcard); !match || !ok {
+	if match, ok := MatchingStacks(base.WithNetworkMetadata(2), wildcard); !match || !ok {
 		t.Fatal("wildcard did not match a stack tied to metadata")
 	}
-	if got := WithNetworkMetadata(base, 0); NetworkMetadata(got) != 0 || len(got.Values()) != 0 {
+	if got := base.WithNetworkMetadata(0); got.NetworkMetadata() != 0 || !got.Comparable(base) || !got.Comparable(base.WithNetworkMetadata(2).WithNetworkMetadata(0)) {
 		t.Fatal("tied a stack to its item's own metadata")
 	}
 }

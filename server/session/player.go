@@ -1107,7 +1107,7 @@ func stacksToIngredientItems(_ world.BlockRegistry, inputs []recipe.Item) []prot
 				continue
 			}
 			name, _ := i.Item().EncodeItem()
-			meta := recipe.NetworkMetadata(i)
+			meta := i.NetworkMetadata()
 			if _, ok := i.Value("variants"); ok {
 				meta = math.MaxInt16 // Used to indicate that the item has multiple selectable variants.
 			}
