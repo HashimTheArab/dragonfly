@@ -21,9 +21,14 @@ type Flower struct {
 	Type FlowerType
 }
 
+// HarmsOnContact reports whether the flower is a wither rose.
+func (f Flower) HarmsOnContact() bool {
+	return f.Type == WitherRose()
+}
+
 // EntityInside ...
 func (f Flower) EntityInside(_ cube.Pos, _ *world.Tx, e world.Entity) {
-	if f.Type == WitherRose() {
+	if f.HarmsOnContact() {
 		if living, ok := e.(interface {
 			AddEffect(effect.Effect)
 		}); ok {

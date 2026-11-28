@@ -237,6 +237,11 @@ func (c Campfire) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 	}
 }
 
+// HarmsOnContact reports whether the campfire is lit.
+func (c Campfire) HarmsOnContact() bool {
+	return !c.Extinguished
+}
+
 // EntityInside ...
 func (c Campfire) EntityInside(pos cube.Pos, tx *world.Tx, e world.Entity) {
 	if flammable, ok := e.(flammableEntity); ok {
@@ -245,7 +250,7 @@ func (c Campfire) EntityInside(pos cube.Pos, tx *world.Tx, e world.Entity) {
 			tx.PlaySound(pos.Vec3(), sound.Ignite{})
 			tx.SetBlock(pos, c, nil)
 		}
-		if !c.Extinguished {
+		if c.HarmsOnContact() {
 			if l, ok := e.(livingEntity); ok {
 				l.Hurt(c.Type.Damage(), FireDamageSource{})
 			}

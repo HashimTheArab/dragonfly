@@ -10,6 +10,8 @@ import (
 
 // DecodeNetworkIngredient resolves an ordinary network ingredient. resolve must resolve
 // the supplied item name and metadata; wildcard metadata is resolved using metadata 0.
+// An item resolved without a variant for the metadata, encoding metadata 0, is tied to
+// that metadata with item.Stack.WithNetworkMetadata.
 // Unknown tags, unsupported descriptors and invalid counts or metadata fail closed.
 // Invalid descriptors denote empty cells. The result uses the same variants marker
 // as the embedded recipe catalog to represent wildcard metadata (32767).
@@ -37,13 +39,16 @@ func DecodeNetworkIngredient(in protocol.ItemDescriptorCount, resolve func(strin
 			return nil, false
 		}
 		name, actualMeta := it.EncodeItem()
-		if name != d.Name || actualMeta != meta {
+		if name != d.Name || actualMeta != meta && actualMeta != 0 {
 			return nil, false
 		}
 		st := item.NewStack(it, int(in.Count))
 		if st.Empty() {
 			return nil, false
 		}
+		// The item has no variant for this metadata, so the ingredient is the item as the
+		// peer names it with that value.
+		st = st.WithNetworkMetadata(meta)
 		if wildcard {
 			st = st.WithValue("variants", true)
 		}

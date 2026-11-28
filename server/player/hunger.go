@@ -112,11 +112,15 @@ func (m *hungerManager) canQuicklyRegenerate() bool {
 	return m.foodLevel == 20 && m.saturationLevel > 0
 }
 
+// RegenerationFoodLevel is the lowest food level at which hunger lets a player's health regenerate over time. On
+// peaceful difficulty, health regenerates regardless of the food level.
+const RegenerationFoodLevel = 18
+
 // canRegenerate checks if the player with the amount of food levels in the hunger manager can regenerate.
-// The function returns true if Food() returns either 18-20.
+// The function returns true if Food() is at least RegenerationFoodLevel.
 // The rate of regeneration is 1/4 seconds.
 func (m *hungerManager) canRegenerate() bool {
-	return m.Food() >= 18
+	return m.Food() >= RegenerationFoodLevel
 }
 
 // canSprint returns true if the food level of the player is 7 or higher.

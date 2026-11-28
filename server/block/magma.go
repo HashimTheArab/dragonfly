@@ -18,6 +18,11 @@ func (Magma) LightEmissionLevel() uint8 {
 	return 3
 }
 
+// HarmsOnContact ...
+func (Magma) HarmsOnContact() bool {
+	return true
+}
+
 // EntityStepOn ...
 func (Magma) EntityStepOn(_ cube.Pos, _ *world.Tx, e world.Entity) {
 	if fireProof, ok := e.(interface{ FireProof() bool }); ok && fireProof.FireProof() {

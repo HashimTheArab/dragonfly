@@ -44,6 +44,11 @@ func (l Lava) ReplaceableBy(b world.Block) bool {
 	return true
 }
 
+// HarmsOnContact ...
+func (Lava) HarmsOnContact() bool {
+	return true
+}
+
 // ModifyFallDistance ends the fall of an entity inside the lava.
 func (Lava) ModifyFallDistance(float64) float64 {
 	return 0

@@ -331,7 +331,7 @@ func (b Bed) SafeSpawn(pos cube.Pos, tx *world.Tx) (cube.Pos, bool) {
 	for _, offset := range bedOffsets[b.Facing.Face()] {
 		offsetPos := heelPos.Add(offset)
 
-		if _, solidBlock := tx.Block(offsetPos).Model().(model.Solid); solidBlock {
+		if model.IsSolid(tx.Block(offsetPos).Model()) {
 			if diffuser, ok := tx.Block(offsetPos).(LightDiffuser); !ok || diffuser.LightDiffusionLevel() != 0 {
 				continue
 			}

@@ -48,9 +48,9 @@ func (s *smelter) InsertItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
 		}
 
 		if h.Facing != cube.FaceDown {
-			slot = 1
+			slot = SmelterFuelSlot
 		} else {
-			slot = 0
+			slot = SmelterInputSlot
 		}
 
 		stack := sourceStack.Grow(-sourceStack.Count() + 1)
@@ -88,11 +88,11 @@ func (s *smelter) ExtractItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
 			continue
 		}
 
-		if sourceSlot == 0 {
+		if sourceSlot == SmelterInputSlot {
 			continue
 		}
 
-		if sourceSlot == 1 {
+		if sourceSlot == SmelterFuelSlot {
 			fuel, ok := sourceStack.Item().(item.Fuel)
 			if ok && fuel.FuelInfo().Duration.Seconds() != 0 {
 				continue
@@ -171,15 +171,15 @@ func (s *smelter) setExperience(xp int) {
 }
 
 // setDurations sets the remaining, maximum, and cook durations of the smelter to the given values.
-func (s *smelter) setDurations(remaining, max, cook time.Duration) {
+func (s *smelter) setDurations(remaining, maximum, cook time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.remainingDuration, s.maxDuration, s.cookDuration = remaining, max, cook
+	s.remainingDuration, s.maxDuration, s.cookDuration = remaining, maximum, max(cook, 0)
 }
 
 // tickSmelting ticks the smelter, ensuring the necessary items exist in the furnace, and then processing all inputted
 // items for the necessary duration.
-func (s *smelter) tickSmelting(requirement, decrement time.Duration, lit bool, supported func(item.SmeltInfo) bool) bool {
+func (s *smelter) tickSmelting(requirement time.Duration, lit bool, supported func(item.SmeltInfo) bool) bool {
 	s.mu.Lock()
 
 	// First keep track of our past durations, since if any of them change, we need to be able to tell they did and then
@@ -189,9 +189,9 @@ func (s *smelter) tickSmelting(requirement, decrement time.Duration, lit bool, s
 	prevMaxDuration := s.maxDuration
 
 	// Now get each item in the smelter. We don't need to validate errors here since we know the bounds of the smelter.
-	input, _ := s.inventory.Item(0)
-	fuel, _ := s.inventory.Item(1)
-	product, _ := s.inventory.Item(2)
+	input, _ := s.inventory.Item(SmelterInputSlot)
+	fuel, _ := s.inventory.Item(SmelterFuelSlot)
+	product, _ := s.inventory.Item(SmelterResultSlot)
 
 	// Initialise some default smelt info, and update it if we can smelt the item.
 	var inputInfo item.SmeltInfo
@@ -214,27 +214,29 @@ func (s *smelter) tickSmelting(requirement, decrement time.Duration, lit bool, s
 	// and that we have enough fuel to smelt the item. If all of these conditions are met, then we update the remaining
 	// duration and cook duration and create residue.
 	canSmelt := input.Count() > 0 && (inputInfo.Product.Comparable(product)) && !inputInfo.Product.Empty() && product.Count() < product.MaxCount()
-	if s.remainingDuration <= 0 && canSmelt && fuelInfo.Duration > 0 && fuel.Count() > 0 {
-		s.remainingDuration, s.maxDuration, lit = fuelInfo.Duration, fuelInfo.Duration, true
-		defer s.inventory.SetItem(1, fuelInfo.Residue)
+	if s.remainingDuration <= 0 && canSmelt && fuel.Count() > 0 {
+		if burn := fuelBurnDuration(fuelInfo.Duration, requirement); burn > 0 {
+			s.remainingDuration, s.maxDuration, lit = burn, burn, true
+			defer s.inventory.SetItem(SmelterFuelSlot, fuelInfo.Residue)
+		}
 	}
 
 	// Now we need to process a single stage of fuel loss. First, ensure that we have enough remaining duration.
 	if s.remainingDuration > 0 {
 		// Decrement a tick from the remaining fuel duration.
-		s.remainingDuration -= time.Millisecond * 50
+		s.remainingDuration -= smelterTick
 
 		// If we have a valid smeltable item, process a single stage of smelting.
 		switch {
 		case canSmelt:
 			// Increase the cook duration by a tick.
-			s.cookDuration += time.Millisecond * 50
+			s.cookDuration += smelterTick
 
 			// Check if we've cooked enough to match the requirement.
 			if s.cookDuration >= requirement {
 				// We can now create the product and reduce the input by one.
-				defer s.inventory.SetItem(0, input.Grow(-1))
-				defer s.inventory.SetItem(2, item.NewStack(inputInfo.Product.Item(), product.Count()+inputInfo.Product.Count()))
+				defer s.inventory.SetItem(SmelterInputSlot, input.Grow(-1))
+				defer s.inventory.SetItem(SmelterResultSlot, item.NewStack(inputInfo.Product.Item(), product.Count()+inputInfo.Product.Count()))
 
 				// Calculate the amount of experience to grant. Round the experience down to the nearest integer.
 				// The remaining XP is a chance to be granted an additional experience point.
@@ -260,10 +262,10 @@ func (s *smelter) tickSmelting(requirement, decrement time.Duration, lit bool, s
 		s.maxDuration, lit = 0, false
 	}
 
-	// We've run out of fuel, but we have some remaining cook duration, so instead of stopping entirely, we reduce the
-	// cook duration by the decrement.
+	// We've run out of fuel, but we have some remaining cook duration, so instead of stopping entirely, we let the
+	// cook progress cool down towards zero.
 	if s.cookDuration > 0 && !lit {
-		s.cookDuration -= decrement
+		s.cookDuration = min(max(s.cookDuration-smelterCooldown, 0), requirement)
 	}
 
 	// Update the viewers on the new durations.

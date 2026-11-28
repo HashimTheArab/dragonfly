@@ -90,31 +90,34 @@ func (s stewType) Uint8() uint8 {
 
 // Effects returns suspicious stew effects.
 func (s stewType) Effects() []effect.Effect {
-	var effects []effect.Effect
+	typ, duration, _ := s.effectInfo()
+	return []effect.Effect{effect.New(typ, 1, duration)}
+}
+
+// effectInfo keeps a stew's effect, duration and adverse classification together.
+func (s stewType) effectInfo() (effect.LastingType, time.Duration, bool) {
 	switch s.Uint8() {
 	case 0, 10:
-		effects = append(effects, effect.New(effect.NightVision, 1, time.Second*5))
+		return effect.NightVision, time.Second * 5, false
 	case 1:
-		effects = append(effects, effect.New(effect.JumpBoost, 1, time.Second*5))
+		return effect.JumpBoost, time.Second * 5, false
 	case 2:
-		effects = append(effects, effect.New(effect.Weakness, 1, time.Second*7))
+		return effect.Weakness, time.Second * 7, true
 	case 3, 11:
-		effects = append(effects, effect.New(effect.Blindness, 1, time.Second*6))
+		return effect.Blindness, time.Second * 6, true
 	case 4:
-		effects = append(effects, effect.New(effect.Poison, 1, time.Second*11))
+		return effect.Poison, time.Second * 11, true
 	case 5, 6:
-		effects = append(effects, effect.New(effect.Saturation, 1, time.Second*3/10))
+		return effect.Saturation, time.Second * 3 / 10, false
 	case 7:
-		effects = append(effects, effect.New(effect.FireResistance, 1, time.Second*3))
+		return effect.FireResistance, time.Second * 3, false
 	case 8:
-		effects = append(effects, effect.New(effect.Regeneration, 1, time.Second*7))
+		return effect.Regeneration, time.Second * 7, false
 	case 9:
-		effects = append(effects, effect.New(effect.Wither, 1, time.Second*7))
+		return effect.Wither, time.Second * 7, true
 	case 12:
-		effects = append(effects, effect.New(effect.Nausea, 1, time.Second*7))
+		return effect.Nausea, time.Second * 7, true
 	default:
 		panic("should never happen")
 	}
-
-	return effects
 }

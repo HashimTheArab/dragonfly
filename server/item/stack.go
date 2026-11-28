@@ -31,6 +31,9 @@ type Stack struct {
 
 	data map[string]any
 
+	networkMeta     int16
+	networkMetaTied bool
+
 	enchantments map[EnchantmentType]Enchantment
 }
 
@@ -75,7 +78,7 @@ func (s Stack) Grow(n int) Stack {
 
 // Durability returns the current durability of the item stack. If the item is not one that implements the
 // Durable interface, BaseDurability will always return -1.
-// The closer the durability returned is to 0, the closer the item is to being broken.
+// Zero durability is the last usable state; the next damaging use breaks the item.
 func (s Stack) Durability() int {
 	if durable, ok := s.Item().(Durable); ok {
 		return durable.DurabilityInfo().MaxDurability - s.damage
@@ -95,7 +98,7 @@ func (s Stack) MaxDurability() int {
 // Damage returns a new stack that is damaged by the amount passed. (Meaning, its durability lowered by the
 // amount passed.) If the item does not implement the Durable interface, the original stack is returned.
 // The damage passed may be negative to add durability.
-// If the final durability reaches 0 or below, the item returned is the resulting item of the breaking of the
+// If the final durability falls below 0, the item returned is the resulting item of the breaking of the
 // item. If the final durability reaches a number higher than the maximum durability, the stack returned will
 // get the maximum durability.
 func (s Stack) Damage(d int) Stack {
@@ -105,12 +108,12 @@ func (s Stack) Damage(d int) Stack {
 	}
 	durability := s.Durability()
 	info := durable.DurabilityInfo()
-	if durability-d <= 0 {
+	if durability-d < 0 {
 		if info.Persistent {
 			// Persistent items can't be broken.
 			return s
 		}
-		// A durability of 0, so the item is broken.
+		// Damage exceeded the maximum, so the item is broken.
 		return info.BrokenItem()
 	}
 	if durability-d > info.MaxDurability {
@@ -124,7 +127,7 @@ func (s Stack) Damage(d int) Stack {
 
 // WithDurability returns a new item stack with the durability passed. If the item does not implement the
 // Durable interface, the original stack is returned.
-// The closer the durability d is to 0, the closer the item is to being broken. If a durability of 0 is passed,
+// Zero durability retains the last usable state. If a negative durability is passed,
 // a stack with the item type of the BrokenItem is returned. If a durability is passed that exceeds the
 // maximum durability, the stack returned will have the maximum durability.
 func (s Stack) WithDurability(d int) Stack {
@@ -138,8 +141,8 @@ func (s Stack) WithDurability(d int) Stack {
 		s.damage = 0
 		return s
 	}
-	if d == 0 {
-		// A durability of 0, so the item is broken.
+	if d < 0 {
+		// Damage exceeded the maximum, so the item is broken.
 		return durable.DurabilityInfo().BrokenItem()
 	}
 	s.damage = maxDurability - d
@@ -265,6 +268,35 @@ func (s Stack) Value(key string) (val any, ok bool) {
 	return val, ok
 }
 
+// WithNetworkMetadata returns s tied to meta, the metadata a network peer names s's item
+// with when the item has no variant of its own for it, such as a server naming birch logs
+// minecraft:birch_log with metadata 2. Comparable then treats s as comparable only to
+// stacks tied to the same metadata. s is returned untied when its item encodes meta
+// itself. The tie is matching state: it is never encoded for a client or storage.
+func (s Stack) WithNetworkMetadata(meta int16) Stack {
+	if s.Empty() {
+		return s
+	}
+	s.networkMeta, s.networkMetaTied = 0, false
+	if _, own := s.item.EncodeItem(); own != meta {
+		s.networkMeta, s.networkMetaTied = meta, true
+	}
+	return s
+}
+
+// NetworkMetadata returns the metadata s is named with on the network: the metadata
+// WithNetworkMetadata tied it to, otherwise its item's own.
+func (s Stack) NetworkMetadata() int16 {
+	if s.Empty() {
+		return 0
+	}
+	if s.networkMetaTied {
+		return s.networkMeta
+	}
+	_, meta := s.item.EncodeItem()
+	return meta
+}
+
 // WithEnchantments returns the current stack with the passed enchantments. If an enchantment is not compatible
 // with the item stack, it will not be applied.
 func (s Stack) WithEnchantments(enchants ...Enchantment) Stack {
@@ -376,6 +408,9 @@ func (s Stack) WithItem(t world.Item) Stack {
 		WithAnvilCost(s.anvilCost)
 	cp.unbreakable = s.unbreakable && s.MaxDurability() != -1
 	cp.data = s.data
+	if s.networkMetaTied {
+		cp = cp.WithNetworkMetadata(s.networkMeta)
+	}
 	return cp
 }
 
@@ -433,7 +468,7 @@ func (s Stack) Comparable(s2 Stack) bool {
 			return false
 		}
 	}
-	if !reflect.DeepEqual(s.data, s2.data) {
+	if !reflect.DeepEqual(s.data, s2.data) || s.networkMetaTied != s2.networkMetaTied || s.networkMeta != s2.networkMeta {
 		return false
 	}
 	if nbt, ok := s.Item().(world.NBTer); ok {

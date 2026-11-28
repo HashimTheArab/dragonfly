@@ -8,7 +8,6 @@ import (
 	"github.com/df-mc/dragonfly/server/world/sound"
 	"github.com/go-gl/mathgl/mgl64"
 	"math/rand/v2"
-	"time"
 )
 
 // Smoker is a type of furnace that cooks food items, similar to a furnace, but twice as fast. It also serves as a
@@ -43,7 +42,7 @@ func (s Smoker) Tick(_ int64, pos cube.Pos, tx *world.Tx) {
 	if s.Lit && rand.Float64() <= 0.016 { // Every three or so seconds.
 		tx.PlaySound(pos.Vec3Centre(), sound.SmokerCrackle{})
 	}
-	if lit := s.tickSmelting(time.Second*5, time.Millisecond*200, s.Lit, func(i item.SmeltInfo) bool {
+	if lit := s.tickSmelting(s.CookDuration(), s.Lit, func(i item.SmeltInfo) bool {
 		return i.Food
 	}); s.Lit != lit {
 		s.Lit = lit

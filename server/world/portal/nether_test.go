@@ -243,3 +243,33 @@ func mustDo(t *testing.T, w *world.World, f func(tx *world.Tx)) {
 		t.Fatalf("world task failed: %v", err)
 	}
 }
+
+func TestCreateNetherPortal_UsesLoweredSolidFloor(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		floor world.Block
+	}{
+		{"mud", block.Mud{}},
+		{"soul_sand", block.SoulSand{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := world.Config{Synchronous: true}.New()
+			t.Cleanup(func() { _ = w.Close() })
+
+			mustDo(t, w, func(tx *world.Tx) {
+				for x := -20; x <= 20; x++ {
+					for z := -20; z <= 20; z++ {
+						tx.SetBlock(cube.Pos{x, 10, z}, tc.floor, nil)
+					}
+				}
+				p, ok := portal.CreateNetherPortal(tx, cube.Pos{0, 11, 0})
+				if !ok {
+					t.Fatal("CreateNetherPortal() = false, want true")
+				}
+				if got := p.Spawn().Y(); got != 11 {
+					t.Fatalf("portal spawn Y = %d, want 11 on the %s floor", got, tc.name)
+				}
+			})
+		})
+	}
+}

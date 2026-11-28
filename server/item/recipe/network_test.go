@@ -89,7 +89,7 @@ func TestDecodeNetworkIngredient_CheckedDescriptors(t *testing.T) {
 			}
 		})
 	}
-	for _, resolve := range []func(string, int16) (world.Item, bool){nil, func(string, int16) (world.Item, bool) { return nil, true }, func(string, int16) (world.Item, bool) { return gridTestItem{"wrong", 0}, true }, func(string, int16) (world.Item, bool) { return gridTestItem{"minecraft:oak_planks", 0}, true }} {
+	for _, resolve := range []func(string, int16) (world.Item, bool){nil, func(string, int16) (world.Item, bool) { return nil, true }, func(string, int16) (world.Item, bool) { return gridTestItem{"wrong", 0}, true }, func(string, int16) (world.Item, bool) { return gridTestItem{"minecraft:oak_planks", 2}, true }} {
 		if _, ok := DecodeNetworkIngredient(networkTestIngredient(1, 1), resolve); ok {
 			t.Fatal("accepted absent or inconsistent resolution")
 		}
@@ -183,5 +183,56 @@ func TestDecodeNetworkCraftingPattern_RespectsSymmetry(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestDecodeNetworkCraftingPattern_TiesMetadataTheItemCannotCarry decodes a recipe naming
+// an item by metadata its model has no variant for, as servers name birch logs
+// minecraft:birch_log with metadata 2, and matches it only against stacks the peer names
+// the same way.
+func TestDecodeNetworkCraftingPattern_TiesMetadataTheItemCannotCarry(t *testing.T) {
+	const log = "minecraft:birch_log"
+	resolve := func(name string, _ int16) (world.Item, bool) {
+		if name != log {
+			return nil, false
+		}
+		return gridTestItem{log, 0}, true
+	}
+	wire := protocol.ShapelessRecipe{
+		Block:  "crafting_table",
+		Input:  []protocol.ItemDescriptorCount{{Descriptor: &protocol.DefaultItemDescriptor{Name: log, MetadataValue: 2}, Count: 1}},
+		Output: []protocol.ItemStack{{ItemType: protocol.ItemType{NetworkID: 1}, Count: 4}},
+	}
+	pattern, ok := DecodeNetworkCraftingPattern(&wire, resolve)
+	if !ok {
+		t.Fatal("rejected a recipe naming the item by metadata it has no variant for")
+	}
+	if got := pattern.Input[0].(item.Stack).NetworkMetadata(); got != 2 {
+		t.Fatalf("ingredient names metadata %d, want 2", got)
+	}
+	base := item.NewStack(gridTestItem{log, 0}, 1)
+	for _, tt := range []struct {
+		name string
+		has  item.Stack
+		want bool
+	}{
+		{"same metadata", base.WithNetworkMetadata(2), true},
+		{"item's own metadata", base, false},
+		{"other metadata", base.WithNetworkMetadata(3), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			grid := make([]item.Stack, 4)
+			grid[0] = tt.has
+			if _, ok := pattern.Match(grid, 1); ok != tt.want {
+				t.Fatalf("matched=%v, want %v", ok, tt.want)
+			}
+		})
+	}
+	wildcard := base.WithValue("variants", true)
+	if match, ok := MatchingStacks(base.WithNetworkMetadata(2), wildcard); !match || !ok {
+		t.Fatal("wildcard did not match a stack tied to metadata")
+	}
+	if got := base.WithNetworkMetadata(0); got.NetworkMetadata() != 0 || !got.Comparable(base) || !got.Comparable(base.WithNetworkMetadata(2).WithNetworkMetadata(0)) {
+		t.Fatal("tied a stack to its item's own metadata")
 	}
 }

@@ -68,6 +68,11 @@ func (c Cactus) canGrowHere(pos cube.Pos, tx *world.Tx, recursive bool) bool {
 	return supportsVegetation(c, tx.Block(pos.Sub(cube.Pos{0, 1})))
 }
 
+// HarmsOnContact ...
+func (Cactus) HarmsOnContact() bool {
+	return true
+}
+
 // EntityInside ...
 func (c Cactus) EntityInside(_ cube.Pos, _ *world.Tx, e world.Entity) {
 	if l, ok := e.(livingEntity); ok {

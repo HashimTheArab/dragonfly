@@ -2926,9 +2926,7 @@ func (p *Player) insideOfSolid() bool {
 	pos := cube.PosFromVec3(entity.EyePosition(p))
 	b, box := p.tx.Block(pos), p.handle.Type().BBox(p).Translate(p.Position())
 
-	_, solid := b.Model().(model.Solid)
-	if !solid {
-		// Not solid.
+	if !model.IsSolid(b.Model()) {
 		return false
 	}
 	d, diffuses := b.(block.LightDiffuser)

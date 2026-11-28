@@ -197,6 +197,11 @@ func (f Fire) spread(from, to cube.Pos, tx *world.Tx, r *rand.Rand) {
 	tx.ScheduleBlockUpdate(to, spread, time.Duration(30+r.IntN(10))*time.Second/20)
 }
 
+// HarmsOnContact ...
+func (Fire) HarmsOnContact() bool {
+	return true
+}
+
 // EntityInside ...
 func (f Fire) EntityInside(_ cube.Pos, _ *world.Tx, e world.Entity) {
 	if flammable, ok := e.(flammableEntity); ok {

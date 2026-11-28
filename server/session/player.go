@@ -1106,7 +1106,8 @@ func stacksToIngredientItems(_ world.BlockRegistry, inputs []recipe.Item) []prot
 				items = append(items, protocol.ItemDescriptorCount{Descriptor: &protocol.InvalidItemDescriptor{}})
 				continue
 			}
-			name, meta := i.Item().EncodeItem()
+			name, _ := i.Item().EncodeItem()
+			meta := i.NetworkMetadata()
 			if _, ok := i.Value("variants"); ok {
 				meta = math.MaxInt16 // Used to indicate that the item has multiple selectable variants.
 			}

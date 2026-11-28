@@ -11,6 +11,9 @@ type Pufferfish struct {
 	defaultFood
 }
 
+// HasHarmfulEffects reports the poison, hunger and nausea caused by this food.
+func (Pufferfish) HasHarmfulEffects() bool { return true }
+
 // Consume ...
 func (p Pufferfish) Consume(_ *world.Tx, c Consumer) Stack {
 	c.Saturate(1, 0.2)
