@@ -1,6 +1,8 @@
 package entity
 
 import (
+	"math"
+
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/item/enchantment"
 	"github.com/df-mc/dragonfly/server/world"
@@ -57,7 +59,19 @@ func (FallDamageSource) Fire() bool                { return false }
 func (FallDamageSource) AffectedByEnchantment(e item.EnchantmentType) bool {
 	return e == enchantment.FeatherFalling
 }
-func (FallDamageSource) IgnoreTotem() bool                { return false }
+func (FallDamageSource) IgnoreTotem() bool { return false }
+
+// FallDamage returns the damage an entity takes when it lands after falling
+// distance blocks with a Jump Boost effect of the level passed, 0 for none,
+// before armour, enchantments and effects reduce it. A fall too short to hurt
+// returns 0.
+func FallDamage(distance float64, jumpBoost int) float64 {
+	dmg := distance - 3 - float64(jumpBoost)
+	if dmg < 0.5 {
+		return 0
+	}
+	return math.Ceil(dmg)
+}
 func (GlideDamageSource) ReducedByArmour() bool           { return false }
 func (GlideDamageSource) ReducedByResistance() bool       { return true }
 func (GlideDamageSource) Fire() bool                      { return false }

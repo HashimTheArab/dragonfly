@@ -197,10 +197,15 @@ func (b Bed) setOccupied(pos cube.Pos, tx *world.Tx, occupied bool) {
 	}
 }
 
+// ModifyFallDistance halves the fall of an entity landing on the bed.
+func (Bed) ModifyFallDistance(distance float64) float64 {
+	return distance * 0.5
+}
+
 // EntityLand ...
 func (b Bed) EntityLand(_ cube.Pos, _ *world.Tx, e world.Entity, distance *float64) {
 	if _, ok := e.(fallDistanceEntity); ok {
-		*distance *= 0.5
+		*distance = b.ModifyFallDistance(*distance)
 	}
 	if v, ok := e.(velocityEntity); ok {
 		vel := v.Velocity()
@@ -272,6 +277,12 @@ func (b Bed) side(pos cube.Pos, tx *world.Tx) (Bed, cube.Pos, bool) {
 	sidePos := bedSide(pos, b.Facing, b.Head)
 	o, ok := tx.Block(sidePos).(Bed)
 	return o, sidePos, ok
+}
+
+// OtherHalf returns the position of the other half of the two block bed whose
+// half b is at pos.
+func (b Bed) OtherHalf(pos cube.Pos) cube.Pos {
+	return bedSide(pos, b.Facing, b.Head)
 }
 
 // bedSide returns the position of the other half of a two block bed at pos.

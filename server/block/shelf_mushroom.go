@@ -48,10 +48,15 @@ func (s ShelfMushroom) BoneMeal(pos cube.Pos, tx *world.Tx) item.BoneMealResult 
 	return item.BoneMealResultSmall
 }
 
+// ModifyFallDistance halves the fall of an entity landing on the mushroom.
+func (ShelfMushroom) ModifyFallDistance(distance float64) float64 {
+	return distance * 0.5
+}
+
 // EntityLand bounces entities off the mushroom, taking part of the fall out of them as a bed does.
-func (ShelfMushroom) EntityLand(_ cube.Pos, _ *world.Tx, e world.Entity, distance *float64) {
+func (m ShelfMushroom) EntityLand(_ cube.Pos, _ *world.Tx, e world.Entity, distance *float64) {
 	if _, ok := e.(fallDistanceEntity); ok {
-		*distance *= 0.5
+		*distance = m.ModifyFallDistance(*distance)
 	}
 	if v, ok := e.(velocityEntity); ok {
 		vel := v.Velocity()

@@ -59,6 +59,11 @@ func (Vines) SwordMiningSpeed() float64 { return 1.5 }
 // ShearsMiningSpeed ...
 func (Vines) ShearsMiningSpeed() float64 { return 2 }
 
+// ModifyFallDistance ends the fall of an entity inside the vines.
+func (Vines) ModifyFallDistance(float64) float64 {
+	return 0
+}
+
 // EntityInside ...
 func (Vines) EntityInside(_ cube.Pos, _ *world.Tx, e world.Entity) {
 	if fallEntity, ok := e.(fallDistanceEntity); ok {

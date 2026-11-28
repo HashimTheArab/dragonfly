@@ -22,10 +22,15 @@ func (HayBale) Instrument() sound.Instrument {
 	return sound.Banjo()
 }
 
+// ModifyFallDistance takes four fifths of the fall out of an entity landing on the hay bale.
+func (HayBale) ModifyFallDistance(distance float64) float64 {
+	return distance * 0.2
+}
+
 // EntityLand ...
 func (h HayBale) EntityLand(_ cube.Pos, _ *world.Tx, e world.Entity, distance *float64) {
 	if _, ok := e.(fallDistanceEntity); ok {
-		*distance *= 0.2
+		*distance = h.ModifyFallDistance(*distance)
 	}
 }
 
