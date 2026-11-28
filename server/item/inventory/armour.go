@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"fmt"
+	"github.com/df-mc/dragonfly/server/entity/effect"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/item/enchantment"
 	"github.com/df-mc/dragonfly/server/world"
@@ -109,6 +110,19 @@ func (a *Armour) Boots() item.Stack {
 // the armour itself and its enchantments.
 func (a *Armour) DamageReduction(dmg float64, src world.DamageSource) float64 {
 	return ArmourDamageReduction(dmg, src, a.Items()...)
+}
+
+// FinalDamage returns the damage dmg from src leaves on a player wearing the
+// armour items passed and with a Resistance effect of the level passed, 0 for
+// none, as Player.FinalDamageFrom resolves it for the player itself. Empty
+// items may be included. The damage returned is at least 0.
+func FinalDamage(dmg float64, src world.DamageSource, resistance int, armour ...item.Stack) float64 {
+	dmg = max(dmg, 0)
+	dmg -= ArmourDamageReduction(dmg, src, armour...)
+	if resistance > 0 {
+		dmg *= effect.Resistance.Multiplier(src, resistance)
+	}
+	return dmg
 }
 
 // ArmourDamageReduction returns the damage prevented by a detached set of armour

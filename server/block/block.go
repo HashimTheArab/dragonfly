@@ -111,6 +111,15 @@ type EntityLander interface {
 	EntityLand(pos cube.Pos, tx *world.Tx, e world.Entity, distance *float64)
 }
 
+// FallDistanceModifier is an EntityLander or EntityInsider that changes the
+// fall distance of an entity landing on it or inside it, such as a hay bale
+// softening a landing or water ending a fall.
+type FallDistanceModifier interface {
+	// ModifyFallDistance returns the fall distance an entity that fell distance
+	// blocks has after landing on the block or entering it.
+	ModifyFallDistance(distance float64) float64
+}
+
 // EntityInsider represents a block that reacts to an entity going inside its 1x1x1 axis
 // aligned bounding box.
 type EntityInsider interface {

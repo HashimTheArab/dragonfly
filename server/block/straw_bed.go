@@ -173,10 +173,15 @@ func (s StrawBed) StopSleeping(pos cube.Pos, tx *world.Tx) {
 	tx.PlaySound(pos.Vec3Centre(), sound.Custom{Name: "block.straw_bed.break_leave", Volume: 1, Pitch: 1})
 }
 
+// ModifyFallDistance halves the fall of an entity landing on the bed.
+func (StrawBed) ModifyFallDistance(distance float64) float64 {
+	return distance * 0.5
+}
+
 // EntityLand ...
-func (StrawBed) EntityLand(_ cube.Pos, _ *world.Tx, e world.Entity, distance *float64) {
+func (b StrawBed) EntityLand(_ cube.Pos, _ *world.Tx, e world.Entity, distance *float64) {
 	if _, ok := e.(fallDistanceEntity); ok {
-		*distance *= 0.5
+		*distance = b.ModifyFallDistance(*distance)
 	}
 	if v, ok := e.(velocityEntity); ok {
 		vel := v.Velocity()
